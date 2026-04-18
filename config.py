@@ -30,4 +30,16 @@ APIFY_API_TOKEN = _get_secret("APIFY_API_TOKEN")
 APIFY_ACTOR_ID = _get_secret("APIFY_ACTOR_ID", "apify/instagram-scraper")
 GOOGLE_SHEET_ID = _get_secret("GOOGLE_SHEET_ID")
 GOOGLE_DRIVE_FOLDER_ID = _get_secret("GOOGLE_DRIVE_FOLDER_ID")
-GOOGLE_SERVICE_ACCOUNT_JSON = _get_secret("GOOGLE_SERVICE_ACCOUNT_JSON")
+
+def _get_google_credentials_json() -> str:
+    """Accept credentials as raw JSON or as a base64-encoded string."""
+    raw = _get_secret("GOOGLE_SERVICE_ACCOUNT_JSON")
+    if raw:
+        return raw
+    b64 = _get_secret("GOOGLE_CREDENTIALS_BASE64")
+    if b64:
+        import base64
+        return base64.b64decode(b64).decode()
+    return ""
+
+GOOGLE_SERVICE_ACCOUNT_JSON = _get_google_credentials_json()
