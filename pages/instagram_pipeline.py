@@ -7,12 +7,12 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import anthropic
+import openai
 import requests
 import streamlit as st
 
 from config import (
-    ANTHROPIC_API_KEY,
+    OPENAI_API_KEY,
     APP_PASSWORD,
     GOOGLE_DRIVE_FOLDER_ID,
     GOOGLE_SHEET_ID,
@@ -80,14 +80,17 @@ def _generate_caption(row: dict) -> str:
             f"These hashtags MUST be included as part of the 3-5 total: {row['Required Hashtags'].strip()}"
         )
 
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-    message = client.messages.create(
-        model="claude-sonnet-4-6",
+    client = openai.OpenAI(api_key=OPENAI_API_KEY)
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": _SYS_PROMPT},
+            {"role": "user", "content": "\n\n".join(user_parts)},
+        ],
         max_tokens=600,
-        system=_SYS_PROMPT,
-        messages=[{"role": "user", "content": "\n\n".join(user_parts)}],
+        temperature=0.35,
     )
-    caption = message.content[0].text.strip()
+    caption = response.choices[0].message.content.strip()
 
     if row.get("Top Comment", "").strip():
         caption = f"{row['Top Comment'].strip()}\n\n{caption}"
