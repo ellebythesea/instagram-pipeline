@@ -6,12 +6,12 @@ import shutil
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import anthropic
+import openai
 import streamlit as st
 
 from caption import _format_caption, _sanitize, transcribe_video
 from config import (
-    ANTHROPIC_API_KEY,
+    OPENAI_API_KEY,
     APP_PASSWORD,
     GOOGLE_DRIVE_FOLDER_ID,
     GOOGLE_SHEET_ID,
@@ -40,7 +40,7 @@ def _check_password() -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Caption generation via Claude
+# Caption generation via OpenAI
 # ---------------------------------------------------------------------------
 
 _SYS_PROMPT = (
@@ -64,7 +64,7 @@ def _generate_caption(
     speaker_name: str = "",
     required_hashtags: str = "",
 ) -> str:
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
     user_parts = [f"TRANSCRIPT:\n{transcript}"]
     if speaker_name:
@@ -76,13 +76,16 @@ def _generate_caption(
             f"These hashtags MUST be included as part of the 3-5 total: {required_hashtags}"
         )
 
-    message = client.messages.create(
-        model="claude-sonnet-4-6",
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": _SYS_PROMPT},
+            {"role": "user", "content": "\n\n".join(user_parts)},
+        ],
         max_tokens=600,
-        system=_SYS_PROMPT,
-        messages=[{"role": "user", "content": "\n\n".join(user_parts)}],
+        temperature=0.35,
     )
-    return _format_caption(_sanitize(message.content[0].text.strip()))
+    return _format_caption(_sanitize(response.choices[0].message.content.strip()))
 
 
 # ---------------------------------------------------------------------------
