@@ -1,4 +1,15 @@
-"""Google Sheets helper — read pending rows and write results back."""
+"""Google Sheets helper — read rows and write pipeline results.
+
+Column order is fixed per spec. Headers are used for reads (get_all_records),
+column letter ranges are used for writes since ranges are inherently positional.
+
+Sheet layout:
+  A  Instagram URL      B  Source Username    C  Media Type
+  D  Photo Count        E  Media Drive Link   F  Thumbnail Drive Link
+  G  Original Caption   H  Transcript         I  Speaker Name
+  J  Required Hashtags  K  Top Comment        L  Footer
+  M  Generated Caption  N  Status
+"""
 
 import json
 import os
@@ -23,37 +34,74 @@ def _get_client() -> gspread.Client:
     return gspread.authorize(creds)
 
 
+def _worksheet(sheet_id: str) -> gspread.Worksheet:
+    return _get_client().open_by_key(sheet_id).sheet1
+
+
+def get_all_rows(sheet_id: str) -> list[dict]:
+    """Return all data rows as dicts keyed by header name, plus row_number."""
+    ws = _worksheet(sheet_id)
+    records = ws.get_all_records(default_blank="")
+    for i, r in enumerate(records):
+        r["row_number"] = i + 2  # header is row 1
+    return records
+
+
 def get_pending_rows(sheet_id: str) -> list[dict]:
-    """Return rows where Status (col I) is blank, including their 1-based row numbers."""
-    ws = _get_client().open_by_key(sheet_id).sheet1
-    all_values = ws.get_all_values()
-
-    pending = []
-    for idx, row in enumerate(all_values[1:], start=2):  # row 1 is header
-        padded = (row + [""] * 9)[:9]
-        if not padded[8].strip() and padded[0].strip():  # col I empty, col A has URL
-            pending.append({
-                "row_number": idx,
-                "url": padded[0].strip(),
-                "speaker_name": padded[1].strip(),
-                "required_hashtags": padded[2].strip(),
-                "top_comment": padded[3].strip(),
-            })
-    return pending
+    """Rows where Status is empty and URL is present."""
+    return [
+        r for r in get_all_rows(sheet_id)
+        if not r.get("Status", "").strip() and r.get("Instagram URL", "").strip()
+    ]
 
 
-def update_row(
+def get_ingested_rows(sheet_id: str) -> list[dict]:
+    """Rows where Status is 'ingested'."""
+    return [
+        r for r in get_all_rows(sheet_id)
+        if r.get("Status", "").strip().lower() == "ingested"
+    ]
+
+
+def update_ingest_result(
     sheet_id: str,
     row_number: int,
     username: str,
-    drive_link: str,
+    media_type: str,
+    photo_count: int,
+    media_link: str,
+    thumbnail_link: str,
+    original_caption: str,
     transcript: str,
-    caption: str,
     status: str,
 ) -> None:
-    """Write results to columns E–I of the specified row."""
-    ws = _get_client().open_by_key(sheet_id).sheet1
+    """Write ingest results to cols B–H and status to col N."""
+    ws = _worksheet(sheet_id)
     ws.update(
-        f"E{row_number}:I{row_number}",
-        [[username, drive_link, transcript, caption, status]],
+        f"B{row_number}:H{row_number}",
+        [[username, media_type, str(photo_count) if photo_count else "",
+          media_link, thumbnail_link, original_caption, transcript]],
+    )
+    ws.update(f"N{row_number}", [[status]])
+
+
+def update_caption(sheet_id: str, row_number: int, caption: str, status: str) -> None:
+    """Write generated caption to col M and status to col N."""
+    ws = _worksheet(sheet_id)
+    ws.update(f"M{row_number}:N{row_number}", [[caption, status]])
+
+
+def update_metadata(
+    sheet_id: str,
+    row_number: int,
+    speaker_name: str,
+    hashtags: str,
+    top_comment: str,
+    footer: str,
+) -> None:
+    """Write user metadata to cols I–L."""
+    ws = _worksheet(sheet_id)
+    ws.update(
+        f"I{row_number}:L{row_number}",
+        [[speaker_name, hashtags, top_comment, footer]],
     )

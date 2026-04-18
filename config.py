@@ -25,8 +25,10 @@ AUDIO_BITRATE = _get_secret("AUDIO_BITRATE", "32k")
 CAPTION_SPLIT_THRESHOLD = int(_get_secret("CAPTION_SPLIT_THRESHOLD", "400"))
 
 # Instagram Pipeline (batch Google Sheets workflow)
+ANTHROPIC_API_KEY = _get_secret("ANTHROPIC_API_KEY")
 APIFY_API_TOKEN = _get_secret("APIFY_API_TOKEN")
-APIFY_ACTOR_ID = _get_secret("APIFY_ACTOR_ID", "apify/instagram-scraper")
+APIFY_REEL_ACTOR_ID = _get_secret("APIFY_REEL_ACTOR_ID", "xMc5Ga1oCONPmWJIa")
+APIFY_POST_ACTOR_ID = _get_secret("APIFY_POST_ACTOR_ID", "apify/instagram-scraper")
 GOOGLE_SHEET_ID = _get_secret("GOOGLE_SHEET_ID")
 GOOGLE_DRIVE_FOLDER_ID = _get_secret("GOOGLE_DRIVE_FOLDER_ID")
 
