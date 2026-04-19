@@ -108,6 +108,13 @@ st.markdown(
             bottom: 0.75rem;
         }
     }
+    .editor-row {
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        border-radius: 18px;
+        padding: 1rem 1rem 0.5rem;
+        margin-bottom: 1rem;
+        background: rgba(255, 255, 255, 0.85);
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -120,79 +127,83 @@ for row in rows:
     status = row.get("Status", "")
     url = row.get("Instagram URL", "")
 
-    header = f"Row {row_num} — @{username}  ·  {media_type}  ·  {status}"
-    with st.expander(header, expanded=(status == "ingested")):
-        left, right = st.columns([1, 2])
+    st.markdown('<div class="editor-row">', unsafe_allow_html=True)
+    st.markdown(f"**Row {row_num}** — @{username}  ·  {media_type}  ·  {status}")
+    left, right = st.columns([1, 2])
 
-        # --- Left: media preview + read-only fields ---
-        with left:
-            thumb_link = row.get("Thumbnail Drive Link", "")
-            if thumb_link:
-                img_url = _drive_image_url(thumb_link)
-                if img_url:
-                    st.image(img_url, use_container_width=True)
-                else:
-                    st.link_button("View thumbnail", thumb_link)
+    # --- Left: media preview + read-only fields ---
+    with left:
+        thumb_link = row.get("Thumbnail Drive Link", "")
+        if thumb_link:
+            img_url = _drive_image_url(thumb_link)
+            if img_url:
+                st.image(img_url, use_container_width=True)
+            else:
+                st.link_button("View thumbnail", thumb_link)
 
-            if url:
-                st.markdown(f"[Open post on Instagram ↗]({url})")
+        if url:
+            st.markdown(f"[Open post on Instagram ↗]({url})")
 
-            orig = row.get("Original Caption", "")
-            if orig and not _looks_like_drive_link(orig):
-                st.text_area(
-                    "Original Caption",
-                    value=orig,
-                    height=100,
-                    disabled=True,
-                    key=f"orig_{row_num}",
-                )
-            elif orig:
-                st.caption("Original caption for this row looks misaligned. Re-ingest the row to refresh it.")
-
-            transcript = row.get("Transcript", "")
-            if transcript:
-                st.markdown("**Transcript** — copy with the button in the top-right corner:")
-                st.code(transcript, language=None)
-
-        # --- Right: editable metadata + generated caption ---
-        with right:
-            speaker = st.text_input(
-                "Speaker Name",
-                value=row.get("Speaker Name", ""),
-                placeholder="e.g. Alexandria Ocasio-Cortez",
-                key=f"speaker_{row_num}",
+        orig = row.get("Original Caption", "")
+        if orig and not _looks_like_drive_link(orig):
+            st.text_area(
+                "Original Caption",
+                value=orig,
+                height=100,
+                disabled=True,
+                key=f"orig_{row_num}",
             )
+        elif orig:
+            st.caption("Original caption for this row looks misaligned. Re-ingest the row to refresh it.")
 
-            # Preset hashtag selector
-            preset_choices = st.multiselect(
-                "Add preset hashtags",
-                options=list(PRESET_HASHTAGS.keys()),
-                default=[],
-                key=f"presets_{row_num}",
-                help="Selecting a preset appends it to Required Hashtags on save.",
-            )
+        transcript = row.get("Transcript", "")
+        if transcript:
+            st.markdown("**Transcript** — copy with the button in the top-right corner:")
+            st.code(transcript, language=None)
 
-            custom_hashtags = st.text_input(
-                "Required Hashtags",
-                value=row.get("Required Hashtags", ""),
-                placeholder="#CustomTag #AnotherTag",
-                key=f"hashtags_{row_num}",
-            )
+    # --- Right: editable metadata + generated caption ---
+    with right:
+        speaker = st.text_input(
+            "Speaker Name",
+            value=row.get("Speaker Name", ""),
+            placeholder="e.g. Alexandria Ocasio-Cortez",
+            key=f"speaker_{row_num}",
+        )
 
-            top_comment = st.text_area(
-                "Top Comment",
-                value=row.get("Top Comment", ""),
-                height=60,
-                placeholder="Prepended above the generated caption.",
-                key=f"top_{row_num}",
-            )
+        # Preset hashtag selector
+        preset_choices = st.multiselect(
+            "Add preset hashtags",
+            options=list(PRESET_HASHTAGS.keys()),
+            default=[],
+            key=f"presets_{row_num}",
+            help="Selecting a preset appends it to Required Hashtags on save.",
+        )
 
-        # --- Generated caption ---
+        custom_hashtags = st.text_input(
+            "Required Hashtags",
+            value=row.get("Required Hashtags", ""),
+            placeholder="#CustomTag #AnotherTag",
+            key=f"hashtags_{row_num}",
+        )
+
+        top_comment = st.text_area(
+            "Top Comment",
+            value=row.get("Top Comment", ""),
+            height=60,
+            placeholder="Prepended above the generated caption.",
+            key=f"top_{row_num}",
+        )
+
         generated = row.get("Generated Caption", "").strip()
         if generated:
-            st.divider()
-            st.markdown("**Generated Caption** — copy with the button in the top-right corner:")
-            st.code(generated, language=None)
+            st.text_area(
+                "Generated Caption Preview",
+                value=generated,
+                height=90,
+                disabled=True,
+                key=f"generated_preview_{row_num}",
+            )
+    st.markdown("</div>", unsafe_allow_html=True)
 
 ingested_rows = [r for r in rows if r.get("Status", "").strip().lower() == "ingested"]
 
