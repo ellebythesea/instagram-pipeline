@@ -158,7 +158,6 @@ for row in rows:
 
         transcript = row.get("Transcript", "")
         if transcript:
-            st.markdown("**Transcript** — copy with the button in the top-right corner:")
             st.code(transcript, language=None)
 
     # --- Right: editable metadata + generated caption ---
