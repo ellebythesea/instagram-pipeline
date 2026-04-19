@@ -84,7 +84,8 @@ def _ingest_row(row: dict) -> tuple:
         return ("", "", "", "", "", "", "", f"error: {e}")
 
     finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+        if tmp_dir:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 # ---------------------------------------------------------------------------
