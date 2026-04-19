@@ -63,9 +63,6 @@ def _ingest_row(row: dict) -> tuple:
         from post_scraper import process_url as process_post_url
         data = process_post_url(url)
 
-        if data["photo_count"] <= 1:
-            return ("", "", "", "", "", "", "", "skipped: not a carousel")
-
         uploaded = upload_media_bundle(data)
         tmp_dir = uploaded["tmp_dir"]
 
