@@ -17,7 +17,7 @@ import os
 import gspread
 from google.oauth2.service_account import Credentials
 
-from config import GOOGLE_SERVICE_ACCOUNT_JSON
+from config import GOOGLE_SERVICE_ACCOUNT_JSON, GOOGLE_WORKSHEET_NAME
 
 _SCOPES = [
     "https://spreadsheets.google.com/feeds",
@@ -35,7 +35,18 @@ def _get_client() -> gspread.Client:
 
 
 def _worksheet(sheet_id: str) -> gspread.Worksheet:
-    return _get_client().open_by_key(sheet_id).sheet1
+    workbook = _get_client().open_by_key(sheet_id)
+
+    if GOOGLE_WORKSHEET_NAME:
+        return workbook.worksheet(GOOGLE_WORKSHEET_NAME)
+
+    expected_headers = {"Instagram URL", "Status"}
+    for ws in workbook.worksheets():
+        headers = {h.strip() for h in ws.row_values(1) if h.strip()}
+        if expected_headers.issubset(headers):
+            return ws
+
+    return workbook.sheet1
 
 
 def get_all_rows(sheet_id: str) -> list[dict]:

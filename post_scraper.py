@@ -1,4 +1,4 @@
-"""Apify post scraper — fetches image URLs, original caption, and metadata.
+"""Apify post scraper — fetches photo or video URLs, caption, and metadata.
 
 Swappable module. Replace this file to use a different post source.
 Uses apify/instagram-scraper with directUrls input.
@@ -18,7 +18,7 @@ def _extract_post_id(url: str) -> str:
 
 
 def process_url(url: str) -> dict:
-    """Scrape an Instagram photo or carousel via Apify.
+    """Scrape an Instagram post or reel via Apify's general Instagram scraper.
 
     Returns:
         username, media_type, media_urls, thumbnail_url,
@@ -73,6 +73,31 @@ def process_url(url: str) -> dict:
             post_date = date.today().isoformat()
     else:
         post_date = date.today().isoformat()
+
+    # Prefer video fields when the actor returns a reel/video item.
+    video_url = (
+        item.get("videoUrl")
+        or item.get("videoHDUrl")
+        or item.get("video_url")
+    )
+    if video_url:
+        thumbnail_url = (
+            item.get("thumbnailUrl")
+            or item.get("displayUrl")
+            or item.get("imageUrl")
+            or ""
+        )
+        return {
+            "username": username,
+            "media_type": "reel",
+            "media_urls": [video_url],
+            "thumbnail_url": thumbnail_url,
+            "original_caption": original_caption,
+            "transcript": "",
+            "photo_count": 0,
+            "post_id": post_id,
+            "post_date": post_date,
+        }
 
     # Collect image URLs — handle single photo and carousels
     image_urls = []

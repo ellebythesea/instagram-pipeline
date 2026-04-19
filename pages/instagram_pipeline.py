@@ -122,13 +122,20 @@ def _ingest_row(row: dict) -> tuple:
     url = row["Instagram URL"].strip()
     tmp_dir = tempfile.mkdtemp(prefix="ig_")
     try:
-        # Route to correct scraper
-        if "/reel" in url.lower():
-            from reel_scraper import process_url
-        else:
-            from post_scraper import process_url
+        # Use the general Instagram actor first; it handles photos and many reels.
+        from post_scraper import process_url as process_post_url
 
-        data = process_url(url)
+        data = process_post_url(url)
+
+        # Fallback to the dedicated reel actor only if the general actor can't handle a reel URL.
+        if data["media_type"] != "reel" and "/reel" in url.lower():
+            try:
+                from reel_scraper import process_url as process_reel_url
+                reel_data = process_reel_url(url)
+                if reel_data.get("media_urls"):
+                    data = reel_data
+            except Exception:
+                pass
 
         ext = ".mp4" if data["media_type"] == "reel" else ".jpg"
         post_id = data["post_id"]
