@@ -13,9 +13,8 @@ from config import APP_PASSWORD, DEFAULT_POST_FOOTER, GOOGLE_SHEET_ID
 from sheets import get_all_rows, update_metadata
 
 PRESET_HASHTAGS = {
-    "Good Influence": "#GoodInfluence",
-    "American Experiment Project": "#AmericanExperimentProject",
-    "Palette Media": "#PaletteMedia",
+    "Good Influence": "#usapolitics",
+    "American Experiment Project": "#usa",
 }
 
 EDITABLE_STATUSES = {"ingested", "done", "error"}
