@@ -12,6 +12,7 @@ import streamlit as st
 from config import (
     OPENAI_API_KEY,
     APP_PASSWORD,
+    DEFAULT_POST_FOOTER,
     GOOGLE_SHEET_ID,
 )
 from ingest_helpers import upload_media_bundle
@@ -91,8 +92,9 @@ def _generate_caption(row: dict) -> str:
 
     if row.get("Top Comment", "").strip():
         caption = f"{row['Top Comment'].strip()}\n\n{caption}"
-    if row.get("Footer", "").strip():
-        caption = f"{caption}\n\n{row['Footer'].strip()}"
+    footer = DEFAULT_POST_FOOTER.strip()
+    if footer:
+        caption = f"{caption}\n\n{footer}"
 
     return caption
 

@@ -3,12 +3,13 @@
 import os
 import re
 import sys
+from urllib.parse import parse_qs, urlparse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import streamlit as st
 
-from config import APP_PASSWORD, GOOGLE_SHEET_ID
+from config import APP_PASSWORD, DEFAULT_POST_FOOTER, GOOGLE_SHEET_ID
 from sheets import get_all_rows, update_metadata
 
 PRESET_HASHTAGS = {
@@ -39,7 +40,11 @@ def _drive_image_url(drive_link: str) -> str:
     """Convert a Drive web view link to a direct image URL."""
     m = re.search(r"/d/([a-zA-Z0-9_-]+)/", drive_link)
     if m:
-        return f"https://drive.google.com/uc?id={m.group(1)}"
+        return f"https://drive.google.com/thumbnail?id={m.group(1)}&sz=w1200"
+    parsed = urlparse(drive_link)
+    file_id = parse_qs(parsed.query).get("id", [""])[0]
+    if file_id:
+        return f"https://drive.google.com/thumbnail?id={file_id}&sz=w1200"
     return ""
 
 
@@ -69,6 +74,7 @@ if not rows:
     st.stop()
 
 st.caption(f"Showing {len(rows)} processed post(s). Fill in metadata and save — changes write directly to the Google Sheet.")
+st.caption(f"All generated captions automatically end with: {DEFAULT_POST_FOOTER}")
 
 for row in rows:
     row_num = row["row_number"]
@@ -147,14 +153,6 @@ for row in rows:
                 key=f"top_{row_num}",
             )
 
-            footer = st.text_area(
-                "Footer",
-                value=row.get("Footer", ""),
-                height=60,
-                placeholder="Appended below the generated caption.",
-                key=f"footer_{row_num}",
-            )
-
             if st.button("Save", key=f"save_{row_num}", type="primary"):
                 # Combine preset tags with custom input
                 preset_tags = " ".join(PRESET_HASHTAGS[p] for p in preset_choices)
@@ -166,7 +164,7 @@ for row in rows:
                         speaker.strip(),
                         combined,
                         top_comment.strip(),
-                        footer.strip(),
+                        "",
                     )
                     st.success("Saved to sheet.")
                     st.rerun()
