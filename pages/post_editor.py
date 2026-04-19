@@ -18,7 +18,7 @@ PRESET_HASHTAGS = {
     "American Experiment Project": "#usa",
 }
 
-EDITABLE_STATUSES = {"ingested", "done", "error"}
+EDITABLE_STATUSES = {"ingested"}
 
 
 def _check_password() -> bool:
