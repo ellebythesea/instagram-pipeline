@@ -5,8 +5,8 @@ import tempfile
 
 import requests
 
-from config import GOOGLE_DRIVE_FOLDER_ID
-from drive import upload_to_drive
+from config import GOOGLE_DRIVE_FOLDER_ID, GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER
+from drive import get_or_create_subfolder, upload_to_drive
 
 
 def download_file(url: str, dest: str) -> None:
@@ -28,6 +28,10 @@ def upload_media_bundle(data: dict) -> dict:
     ext = ".mp4" if data["media_type"] == "reel" else ".jpg"
     post_id = data["post_id"]
     post_date = data["post_date"]
+    screenshots_folder_id = get_or_create_subfolder(
+        GOOGLE_DRIVE_FOLDER_ID,
+        GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER,
+    )
 
     media_links = []
     for i, media_url in enumerate(data["media_urls"]):
@@ -42,7 +46,7 @@ def upload_media_bundle(data: dict) -> dict:
         thumb_path = os.path.join(tmp_dir, thumb_filename)
         try:
             download_file(data["thumbnail_url"], thumb_path)
-            thumbnail_link = upload_to_drive(thumb_path, thumb_filename, GOOGLE_DRIVE_FOLDER_ID)
+            thumbnail_link = upload_to_drive(thumb_path, thumb_filename, screenshots_folder_id)
         except Exception:
             thumbnail_link = media_links[0] if media_links else ""
 
@@ -57,12 +61,16 @@ def upload_thumbnail_only(data: dict) -> dict:
     """Upload only the thumbnail image for a reel/post and skip media upload."""
     tmp_dir = tempfile.mkdtemp(prefix="ig_")
     thumbnail_link = ""
+    screenshots_folder_id = get_or_create_subfolder(
+        GOOGLE_DRIVE_FOLDER_ID,
+        GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER,
+    )
 
     if data.get("thumbnail_url"):
         thumb_filename = f"{data['post_date']}_{data['post_id']}_thumb.jpg"
         thumb_path = os.path.join(tmp_dir, thumb_filename)
         download_file(data["thumbnail_url"], thumb_path)
-        thumbnail_link = upload_to_drive(thumb_path, thumb_filename, GOOGLE_DRIVE_FOLDER_ID)
+        thumbnail_link = upload_to_drive(thumb_path, thumb_filename, screenshots_folder_id)
 
     return {
         "tmp_dir": tmp_dir,

@@ -58,3 +58,43 @@ def upload_to_drive(file_path: str, filename: str, folder_id: str) -> str:
     ).execute()
 
     return uploaded.get("webViewLink", "")
+
+
+def get_or_create_subfolder(parent_folder_id: str, folder_name: str) -> str:
+    """Return a child folder id under the given parent, creating it if needed."""
+    service = _get_service()
+    escaped_name = folder_name.replace("'", "\\'")
+    query = (
+        f"name = '{escaped_name}' and "
+        "mimeType = 'application/vnd.google-apps.folder' and "
+        f"'{parent_folder_id}' in parents and trashed = false"
+    )
+    result = (
+        service.files()
+        .list(
+            q=query,
+            fields="files(id,name)",
+            pageSize=1,
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True,
+        )
+        .execute()
+    )
+    files = result.get("files", [])
+    if files:
+        return files[0]["id"]
+
+    created = (
+        service.files()
+        .create(
+            body={
+                "name": folder_name,
+                "mimeType": "application/vnd.google-apps.folder",
+                "parents": [parent_folder_id],
+            },
+            fields="id",
+            supportsAllDrives=True,
+        )
+        .execute()
+    )
+    return created["id"]
