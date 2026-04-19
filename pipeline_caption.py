@@ -27,11 +27,11 @@ def _extract_hashtags(text: str) -> list[str]:
     return re.findall(r"#[A-Za-z0-9_]+", text or "")
 
 
-def _append_required_hashtags(caption: str, required_hashtags: str) -> str:
+def _collect_required_hashtags(caption: str, required_hashtags: str) -> list[str]:
     existing = {tag.lower() for tag in _extract_hashtags(caption)}
     remaining_slots = max(0, 5 - len(existing))
     if remaining_slots == 0:
-        return caption
+        return []
 
     requested = []
     for tag in _extract_hashtags(required_hashtags):
@@ -43,10 +43,7 @@ def _append_required_hashtags(caption: str, required_hashtags: str) -> str:
         if len(requested) >= remaining_slots:
             break
 
-    if not requested:
-        return caption
-
-    return f"{caption}\n\n{' '.join(requested)}"
+    return requested
 
 
 def generate_row_caption(row: dict) -> str:
@@ -87,11 +84,13 @@ def generate_row_caption(row: dict) -> str:
     footer = DEFAULT_POST_FOOTER.strip()
     if footer:
         footer_parts.append(footer)
-    if footer_parts:
-        caption = f"{caption}\n\n{' '.join(footer_parts)}"
 
     required_hashtags = row.get("Required Hashtags", "").strip()
-    if required_hashtags:
-        caption = _append_required_hashtags(caption, required_hashtags)
+    appended_required = _collect_required_hashtags(caption, required_hashtags) if required_hashtags else []
+    if appended_required:
+        footer_parts.append(" ".join(appended_required))
+
+    if footer_parts:
+        caption = f"{caption}\n\n{' '.join(footer_parts)}"
 
     return caption

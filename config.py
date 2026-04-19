@@ -25,7 +25,7 @@ AUDIO_BITRATE = _get_secret("AUDIO_BITRATE", "32k")
 CAPTION_SPLIT_THRESHOLD = int(_get_secret("CAPTION_SPLIT_THRESHOLD", "400"))
 DEFAULT_POST_FOOTER = _get_secret(
     "DEFAULT_POST_FOOTER",
-    "Help this information get to more voters. 🇺🇸 A well-informed electorate is a prerequisite to Democracy.—Thomas Jefferson",
+    "Help this information get to more voters. 🇺🇸 A well-informed electorate is a prerequisite to Democracy. - Thomas Jefferson",
 )
 
 # Instagram Pipeline (batch Google Sheets workflow)
