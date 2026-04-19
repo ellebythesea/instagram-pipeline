@@ -14,6 +14,8 @@ Sheet layout:
 
 import json
 import os
+import random
+import time
 
 import gspread
 from google.oauth2.service_account import Credentials
@@ -42,6 +44,10 @@ _EXPECTED_HEADERS = [
     "Status",
 ]
 
+_ROWS_CACHE_TTL_SECONDS = 10
+_rows_cache: dict[str, tuple[float, list[dict]]] = {}
+_headers_checked: set[tuple[str, str]] = set()
+
 
 def _get_client() -> gspread.Client:
     creds_src = GOOGLE_SERVICE_ACCOUNT_JSON
@@ -52,41 +58,71 @@ def _get_client() -> gspread.Client:
     return gspread.authorize(creds)
 
 
+def _with_backoff(fn, *args, **kwargs):
+    delay = 1.0
+    for attempt in range(5):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as e:
+            message = str(e)
+            if "Exceeded in a metric read request" not in message and "429" not in message:
+                raise
+            if attempt == 4:
+                raise
+            time.sleep(delay + random.uniform(0, 0.5))
+            delay = min(delay * 2, 8.0)
+
+
 def _worksheet(sheet_id: str) -> gspread.Worksheet:
     workbook = _get_client().open_by_key(sheet_id)
 
     if GOOGLE_WORKSHEET_NAME:
         ws = workbook.worksheet(GOOGLE_WORKSHEET_NAME)
-        _ensure_headers(ws)
+        _ensure_headers(sheet_id, ws)
         return ws
 
     expected_headers = {"Instagram URL", "Status"}
     for ws in workbook.worksheets():
         headers = {h.strip() for h in ws.row_values(1) if h.strip()}
         if expected_headers.issubset(headers):
-            _ensure_headers(ws)
+            _ensure_headers(sheet_id, ws)
             return ws
 
     ws = workbook.sheet1
-    _ensure_headers(ws)
+    _ensure_headers(sheet_id, ws)
     return ws
 
 
-def _ensure_headers(ws: gspread.Worksheet) -> None:
+def _ensure_headers(sheet_id: str, ws: gspread.Worksheet) -> None:
     """Restore the expected header row if it is missing or incorrect."""
-    current = ws.row_values(1)
+    cache_key = (sheet_id, ws.title)
+    if cache_key in _headers_checked:
+        return
+    current = _with_backoff(ws.row_values, 1)
     normalized = current[:len(_EXPECTED_HEADERS)]
     if normalized == _EXPECTED_HEADERS:
+        _headers_checked.add(cache_key)
         return
-    ws.update("A1:N1", [_EXPECTED_HEADERS])
+    _with_backoff(ws.update, "A1:N1", [_EXPECTED_HEADERS])
+    _headers_checked.add(cache_key)
+
+
+def _invalidate_rows_cache(sheet_id: str) -> None:
+    _rows_cache.pop(sheet_id, None)
 
 
 def get_all_rows(sheet_id: str) -> list[dict]:
     """Return all data rows as dicts keyed by header name, plus row_number."""
+    cached = _rows_cache.get(sheet_id)
+    now = time.time()
+    if cached and now - cached[0] < _ROWS_CACHE_TTL_SECONDS:
+        return [dict(r) for r in cached[1]]
+
     ws = _worksheet(sheet_id)
-    records = ws.get_all_records(default_blank="")
+    records = _with_backoff(ws.get_all_records, default_blank="")
     for i, r in enumerate(records):
         r["row_number"] = i + 2  # header is row 1
+    _rows_cache[sheet_id] = (now, [dict(r) for r in records])
     return records
 
 
@@ -120,19 +156,22 @@ def update_ingest_result(
 ) -> None:
     """Write ingest results to cols B–G, username to L, and status to N."""
     ws = _worksheet(sheet_id)
-    ws.update(
+    _with_backoff(
+        ws.update,
         f"B{row_number}:G{row_number}",
         [[media_type, str(photo_count) if photo_count else "",
           media_link, thumbnail_link, original_caption, transcript]],
     )
-    ws.update(f"L{row_number}", [[username]])
-    ws.update(f"N{row_number}", [[status]])
+    _with_backoff(ws.update, f"L{row_number}", [[username]])
+    _with_backoff(ws.update, f"N{row_number}", [[status]])
+    _invalidate_rows_cache(sheet_id)
 
 
 def update_caption(sheet_id: str, row_number: int, caption: str, status: str) -> None:
     """Write generated caption to col M and status to col N."""
     ws = _worksheet(sheet_id)
-    ws.update(f"M{row_number}:N{row_number}", [[caption, status]])
+    _with_backoff(ws.update, f"M{row_number}:N{row_number}", [[caption, status]])
+    _invalidate_rows_cache(sheet_id)
 
 
 def update_metadata(
@@ -145,7 +184,9 @@ def update_metadata(
 ) -> None:
     """Write user metadata to cols H–K."""
     ws = _worksheet(sheet_id)
-    ws.update(
+    _with_backoff(
+        ws.update,
         f"H{row_number}:K{row_number}",
         [[speaker_name, hashtags, top_comment, footer]],
     )
+    _invalidate_rows_cache(sheet_id)

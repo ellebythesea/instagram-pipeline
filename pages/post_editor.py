@@ -11,7 +11,7 @@ import streamlit as st
 
 from config import APP_PASSWORD, DEFAULT_POST_FOOTER, GOOGLE_SHEET_ID
 from pipeline_caption import generate_row_caption
-from sheets import get_all_rows, get_ingested_rows, update_caption, update_metadata
+from sheets import get_all_rows, update_caption, update_metadata
 
 PRESET_HASHTAGS = {
     "Good Influence": "#usapolitics",
@@ -224,11 +224,7 @@ with sticky_container:
         )
 
 if generate_btn:
-    try:
-        ingested = get_ingested_rows(GOOGLE_SHEET_ID)
-    except Exception as e:
-        st.error(f"Could not read sheet: {e}")
-        st.stop()
+    ingested = ingested_rows
 
     if not ingested:
         st.info("No ingested rows found.")
