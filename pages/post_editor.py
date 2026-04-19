@@ -151,13 +151,8 @@ for row in rows:
 
             transcript = row.get("Transcript", "")
             if transcript:
-                st.text_area(
-                    "Transcript",
-                    value=transcript,
-                    height=120,
-                    disabled=True,
-                    key=f"trans_{row_num}",
-                )
+                st.markdown("**Transcript** — copy with the button in the top-right corner:")
+                st.code(transcript, language=None)
 
         # --- Right: editable metadata + generated caption ---
         with right:
