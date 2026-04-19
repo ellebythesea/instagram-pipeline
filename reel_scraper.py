@@ -27,10 +27,25 @@ def process_url(url: str) -> dict:
     Raises RuntimeError on failure.
     """
     client = ApifyClient(APIFY_API_TOKEN)
-    run = client.actor(APIFY_REEL_ACTOR_ID).call(
-        run_input={"url": url},
-        timeout_secs=300,
-    )
+    actor = client.actor(APIFY_REEL_ACTOR_ID)
+
+    try:
+        run = actor.call(
+            run_input={"url": url},
+            timeout_secs=300,
+        )
+    except Exception as e:
+        if "input.username" not in str(e):
+            raise
+        run = actor.call(
+            run_input={
+                "username": [url],
+                "resultsLimit": 1,
+                "includeTranscript": True,
+                "includeDownloadedVideo": False,
+            },
+            timeout_secs=300,
+        )
 
     if not run or run.get("status") != "SUCCEEDED":
         raise RuntimeError(
@@ -70,6 +85,8 @@ def process_url(url: str) -> dict:
     transcript = (
         item.get("transcript")
         or item.get("transcription")
+        or item.get("captionText")
+        or item.get("accessibilityCaption")
         or item.get("captions")
         or ""
     )
