@@ -78,23 +78,37 @@ st.caption(
     "All generated captions automatically end with: "
     f"Follow @username for more. {DEFAULT_POST_FOOTER}"
 )
+st.caption("Caption generation uses the transcript when present, otherwise it uses the original Instagram caption.")
 
 st.markdown(
     """
     <style>
-    div[data-testid="stVerticalBlock"]:has(> div.sticky-generate-bar) {
-        position: sticky;
-        bottom: 0;
-        z-index: 20;
-        padding-bottom: 0.5rem;
+    .stApp [data-testid="stAppViewContainer"] {
+        padding-bottom: 9rem;
     }
-    .sticky-generate-bar {
+    div[data-testid="stVerticalBlock"]:has(> div.sticky-generate-anchor) {
+        position: fixed;
+        right: 1.25rem;
+        bottom: 1.25rem;
+        width: min(460px, calc(100vw - 2.5rem));
+        z-index: 999;
         background: rgba(255, 255, 255, 0.96);
         border: 1px solid rgba(0, 0, 0, 0.08);
         border-radius: 18px;
         box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
         padding: 0.9rem 1rem;
         backdrop-filter: blur(10px);
+    }
+    .sticky-generate-anchor {
+        display: none;
+    }
+    @media (max-width: 640px) {
+        div[data-testid="stVerticalBlock"]:has(> div.sticky-generate-anchor) {
+            right: 0.75rem;
+            left: 0.75rem;
+            width: auto;
+            bottom: 0.75rem;
+        }
     }
     </style>
     """,
@@ -207,7 +221,7 @@ ingested_rows = [r for r in rows if r.get("Status", "").strip().lower() == "inge
 
 sticky_container = st.container()
 with sticky_container:
-    st.markdown('<div class="sticky-generate-bar"></div>', unsafe_allow_html=True)
+    st.markdown('<div class="sticky-generate-anchor"></div>', unsafe_allow_html=True)
     info_col, button_col = st.columns([3, 1])
     with info_col:
         if ingested_rows:
