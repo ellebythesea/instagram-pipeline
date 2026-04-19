@@ -4,10 +4,11 @@ Column order is fixed per spec. Headers are used for reads (get_all_records),
 column letter ranges are used for writes since ranges are inherently positional.
 
 Sheet layout:
-  A  Instagram URL      B  Source Username    C  Media Type
-  D  Photo Count        E  Media Drive Link   F  Thumbnail Drive Link
-  G  Original Caption   H  Transcript         I  Speaker Name
-  J  Required Hashtags  K  Top Comment        L  Footer
+  A  Instagram URL      B  Media Type         C  Photo Count
+  D  Media Drive Link   E  Thumbnail Drive Link
+  F  Original Caption   G  Transcript         H  Speaker Name
+  I  Required Hashtags  J  Top Comment        K  Footer
+  L  Source Username
   M  Generated Caption  N  Status
 """
 
@@ -86,13 +87,14 @@ def update_ingest_result(
     transcript: str,
     status: str,
 ) -> None:
-    """Write ingest results to cols B–H and status to col N."""
+    """Write ingest results to cols B–G, username to L, and status to N."""
     ws = _worksheet(sheet_id)
     ws.update(
-        f"B{row_number}:H{row_number}",
-        [[username, media_type, str(photo_count) if photo_count else "",
+        f"B{row_number}:G{row_number}",
+        [[media_type, str(photo_count) if photo_count else "",
           media_link, thumbnail_link, original_caption, transcript]],
     )
+    ws.update(f"L{row_number}", [[username]])
     ws.update(f"N{row_number}", [[status]])
 
 
@@ -110,9 +112,9 @@ def update_metadata(
     top_comment: str,
     footer: str,
 ) -> None:
-    """Write user metadata to cols I–L."""
+    """Write user metadata to cols H–K."""
     ws = _worksheet(sheet_id)
     ws.update(
-        f"I{row_number}:L{row_number}",
+        f"H{row_number}:K{row_number}",
         [[speaker_name, hashtags, top_comment, footer]],
     )
