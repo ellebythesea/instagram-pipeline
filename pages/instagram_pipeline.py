@@ -3,21 +3,18 @@
 import os
 import sys
 import shutil
-import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import openai
-import requests
 import streamlit as st
 
 from config import (
     OPENAI_API_KEY,
     APP_PASSWORD,
-    GOOGLE_DRIVE_FOLDER_ID,
     GOOGLE_SHEET_ID,
 )
-from drive import upload_to_drive
+from ingest_helpers import upload_media_bundle
 from sheets import (
     get_all_rows,
     get_pending_rows,
@@ -100,77 +97,30 @@ def _generate_caption(row: dict) -> str:
     return caption
 
 
-# ---------------------------------------------------------------------------
-# Ingest helpers
-# ---------------------------------------------------------------------------
-
-def _download_file(url: str, dest: str) -> None:
-    resp = requests.get(url, timeout=120, stream=True)
-    resp.raise_for_status()
-    with open(dest, "wb") as f:
-        for chunk in resp.iter_content(chunk_size=8192):
-            f.write(chunk)
-
-
-def _make_filename(post_id: str, post_date: str, ext: str, index: int = 0) -> str:
-    suffix = f"_{index}" if index > 0 else ""
-    return f"{post_date}_{post_id}{suffix}{ext}"
-
-
 def _ingest_row(row: dict) -> tuple:
     """Process one row through ingest. Returns tuple of result fields + status string."""
     url = row["Instagram URL"].strip()
-    tmp_dir = tempfile.mkdtemp(prefix="ig_")
+    tmp_dir = None
     try:
-        # Use the general Instagram actor first; it handles photos and many reels.
         from post_scraper import process_url as process_post_url
 
         data = process_post_url(url)
 
-        # Fallback to the dedicated reel actor only if the general actor can't handle a reel URL.
-        if data["media_type"] != "reel" and "/reel" in url.lower():
-            try:
-                from reel_scraper import process_url as process_reel_url
-                reel_data = process_reel_url(url)
-                if reel_data.get("media_urls"):
-                    data = reel_data
-            except Exception:
-                pass
+        if data["media_type"] == "reel":
+            return ("", "", "", "", "", "", "", "skipped: use Reel Downloader")
 
-        ext = ".mp4" if data["media_type"] == "reel" else ".jpg"
-        post_id = data["post_id"]
-        post_date = data["post_date"]
+        if data["photo_count"] <= 1:
+            return ("", "", "", "", "", "", "", "skipped: not a carousel")
 
-        # Download and upload all media files
-        media_links = []
-        for i, media_url in enumerate(data["media_urls"]):
-            filename = _make_filename(post_id, post_date, ext, index=i)
-            local_path = os.path.join(tmp_dir, filename)
-            _download_file(media_url, local_path)
-            link = upload_to_drive(local_path, filename, GOOGLE_DRIVE_FOLDER_ID)
-            media_links.append(link)
-
-        media_link = ", ".join(media_links)
-
-        # Download and upload thumbnail
-        thumbnail_link = ""
-        if data["thumbnail_url"]:
-            thumb_filename = _make_filename(post_id, post_date, ".jpg") + "_thumb.jpg"
-            # Avoid double extension
-            thumb_filename = f"{post_date}_{post_id}_thumb.jpg"
-            thumb_path = os.path.join(tmp_dir, thumb_filename)
-            try:
-                _download_file(data["thumbnail_url"], thumb_path)
-                thumbnail_link = upload_to_drive(thumb_path, thumb_filename, GOOGLE_DRIVE_FOLDER_ID)
-            except Exception:
-                thumbnail_link = media_links[0] if media_links else ""
+        uploaded = upload_media_bundle(data)
+        tmp_dir = uploaded["tmp_dir"]
 
         return (
             data["username"],
             data["media_type"],
             data["photo_count"],
-            media_link,
-            thumbnail_link,
+            uploaded["media_link"],
+            uploaded["thumbnail_link"],
             data["original_caption"],
             data["transcript"],
             "ingested",
@@ -227,6 +177,7 @@ if ingest_btn:
         st.info("No new rows to process (column A filled, column N empty).")
     else:
         st.write(f"Found **{len(pending)}** row(s) to ingest.")
+        st.caption("This flow only ingests carousels. Reels are marked to use the Reel Downloader page.")
         progress = st.progress(0)
 
         for i, row in enumerate(pending):
