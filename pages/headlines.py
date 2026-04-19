@@ -85,11 +85,10 @@ if submitted:
         status.update(label="Instagram data fetched", state="complete")
 
     original_caption = (post.get("original_caption") or "").strip()
-    transcript = (post.get("transcript") or "").strip()
-    source_text = original_caption or transcript
+    source_text = original_caption
 
     if not source_text:
-        st.error("Apify did not return a caption or transcript for this URL.")
+        st.error("Apify did not return an Instagram caption for this URL.")
         st.stop()
 
     with st.status("Generating headline...", expanded=True) as status:
@@ -102,6 +101,3 @@ if submitted:
 
     with st.expander("Source caption"):
         st.write(original_caption or "(none)")
-    if transcript:
-        with st.expander("Transcript fallback"):
-            st.write(transcript)
