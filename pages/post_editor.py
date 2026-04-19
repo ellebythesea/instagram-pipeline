@@ -10,7 +10,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import streamlit as st
 
 from config import APP_PASSWORD, DEFAULT_POST_FOOTER, GOOGLE_SHEET_ID
-from sheets import get_all_rows, update_metadata
+from pipeline_caption import generate_row_caption
+from sheets import get_all_rows, get_ingested_rows, update_caption, update_metadata
 
 PRESET_HASHTAGS = {
     "Good Influence": "#usapolitics",
@@ -76,6 +77,28 @@ st.caption(f"Showing {len(rows)} processed post(s). Fill in metadata and save �
 st.caption(
     "All generated captions automatically end with: "
     f"Follow @username for more. {DEFAULT_POST_FOOTER}"
+)
+
+st.markdown(
+    """
+    <style>
+    div[data-testid="stVerticalBlock"]:has(> div.sticky-generate-bar) {
+        position: sticky;
+        bottom: 0;
+        z-index: 20;
+        padding-bottom: 0.5rem;
+    }
+    .sticky-generate-bar {
+        background: rgba(255, 255, 255, 0.96);
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        border-radius: 18px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+        padding: 0.9rem 1rem;
+        backdrop-filter: blur(10px);
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
 )
 
 for row in rows:
@@ -179,3 +202,65 @@ for row in rows:
             st.divider()
             st.markdown("**Generated Caption** — copy with the button in the top-right corner:")
             st.code(generated, language=None)
+
+ingested_rows = [r for r in rows if r.get("Status", "").strip().lower() == "ingested"]
+
+sticky_container = st.container()
+with sticky_container:
+    st.markdown('<div class="sticky-generate-bar"></div>', unsafe_allow_html=True)
+    info_col, button_col = st.columns([3, 1])
+    with info_col:
+        if ingested_rows:
+            st.caption(f"{len(ingested_rows)} post(s) are ready for caption generation.")
+        else:
+            st.caption("No ingested posts are ready for caption generation.")
+    with button_col:
+        generate_btn = st.button(
+            "Generate Captions",
+            type="primary",
+            use_container_width=True,
+            disabled=not ingested_rows,
+        )
+
+if generate_btn:
+    try:
+        ingested = get_ingested_rows(GOOGLE_SHEET_ID)
+    except Exception as e:
+        st.error(f"Could not read sheet: {e}")
+        st.stop()
+
+    if not ingested:
+        st.info("No ingested rows found.")
+    else:
+        st.write(f"Found **{len(ingested)}** row(s) to generate captions for.")
+        progress = st.progress(0)
+
+        for i, row in enumerate(ingested):
+            row_num = row["row_number"]
+            url = row["Instagram URL"]
+            label = url[:60] + "..." if len(url) > 60 else url
+
+            with st.status(f"Row {row_num}: {label}", expanded=False) as s:
+                try:
+                    caption = generate_row_caption(row)
+                    status = "done"
+                except Exception as e:
+                    caption = ""
+                    status = f"error: caption — {e}"
+
+                try:
+                    update_caption(GOOGLE_SHEET_ID, row_num, caption, status)
+                except Exception as e:
+                    s.update(label=f"Row {row_num}: error writing to sheet — {e}", state="error")
+                    progress.progress((i + 1) / len(ingested))
+                    continue
+
+                if status.startswith("error"):
+                    s.update(label=f"Row {row_num}: {status}", state="error")
+                else:
+                    s.update(label=f"Row {row_num}: caption generated", state="complete")
+
+            progress.progress((i + 1) / len(ingested))
+
+        st.success(f"Done. Generated captions for {len(ingested)} row(s).")
+        st.rerun()
