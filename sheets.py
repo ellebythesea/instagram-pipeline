@@ -4,12 +4,12 @@ Column order is fixed per spec. Headers are used for reads (get_all_records),
 column letter ranges are used for writes since ranges are inherently positional.
 
 Sheet layout:
-  A  Instagram URL      B  Media Type         C  Photo Count
-  D  Media Drive Link   E  Thumbnail Drive Link
-  F  Original Caption   G  Transcript         H  Speaker Name
-  I  Required Hashtags  J  Top Comment        K  Footer
-  L  Source Username
-  M  Generated Caption  N  Status
+  A  Instagram URL      B  Source Username    C  Generated Caption
+  D  Media Type         E  Photo Count        F  Media Drive Link
+  G  Thumbnail Drive Link
+  H  Original Caption   I  Transcript         J  Top Comment
+  K  Speaker Name       L  Required Hashtags  M  Footer
+  N  Status
 """
 
 import json
@@ -29,18 +29,18 @@ _SCOPES = [
 
 _EXPECTED_HEADERS = [
     "Instagram URL",
+    "Source Username",
+    "Generated Caption",
     "Media Type",
     "Photo Count",
     "Media Drive Link",
     "Thumbnail Drive Link",
     "Original Caption",
     "Transcript",
+    "Top Comment",
     "Speaker Name",
     "Required Hashtags",
-    "Top Comment",
     "Footer",
-    "Source Username",
-    "Generated Caption",
     "Status",
 ]
 
@@ -154,23 +154,30 @@ def update_ingest_result(
     transcript: str,
     status: str,
 ) -> None:
-    """Write ingest results to cols B–G, username to L, and status to N."""
+    """Write ingest results to cols B and D–I, and status to N."""
     ws = _worksheet(sheet_id)
+    _with_backoff(ws.update, f"B{row_number}", [[username]])
     _with_backoff(
         ws.update,
-        f"B{row_number}:G{row_number}",
-        [[media_type, str(photo_count) if photo_count else "",
-          media_link, thumbnail_link, original_caption, transcript]],
+        f"D{row_number}:I{row_number}",
+        [[
+            media_type,
+            str(photo_count) if photo_count else "",
+            media_link,
+            thumbnail_link,
+            original_caption,
+            transcript,
+        ]],
     )
-    _with_backoff(ws.update, f"L{row_number}", [[username]])
     _with_backoff(ws.update, f"N{row_number}", [[status]])
     _invalidate_rows_cache(sheet_id)
 
 
 def update_caption(sheet_id: str, row_number: int, caption: str, status: str) -> None:
-    """Write generated caption to col M and status to col N."""
+    """Write generated caption to col C and status to col N."""
     ws = _worksheet(sheet_id)
-    _with_backoff(ws.update, f"M{row_number}:N{row_number}", [[caption, status]])
+    _with_backoff(ws.update, f"C{row_number}", [[caption]])
+    _with_backoff(ws.update, f"N{row_number}", [[status]])
     _invalidate_rows_cache(sheet_id)
 
 
@@ -182,11 +189,11 @@ def update_metadata(
     top_comment: str,
     footer: str,
 ) -> None:
-    """Write user metadata to cols H–K."""
+    """Write user metadata to cols J–M."""
     ws = _worksheet(sheet_id)
     _with_backoff(
         ws.update,
-        f"H{row_number}:K{row_number}",
-        [[speaker_name, hashtags, top_comment, footer]],
+        f"J{row_number}:M{row_number}",
+        [[top_comment, speaker_name, hashtags, footer]],
     )
     _invalidate_rows_cache(sheet_id)
