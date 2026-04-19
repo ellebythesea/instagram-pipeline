@@ -1,13 +1,10 @@
 # app.py
 """Streamlit app: paste an Instagram link, get a caption back."""
 
-import os
-import shutil
 import streamlit as st
 
 from config import APP_PASSWORD
-from instagram import download_instagram_post
-from caption import transcribe_video, generate_caption
+from caption import generate_caption
 
 
 # ---------------------------------------------------------------------------
@@ -53,61 +50,59 @@ if submitted:
         st.warning("Please enter an Instagram URL.")
         st.stop()
 
-    # Step 1 -- download
-    with st.status("Downloading video...", expanded=True) as status:
-        post = download_instagram_post(ig_url.strip())
-        if post is None:
+    url = ig_url.strip()
+
+    # Step 1 -- fetch Instagram data from Apify
+    with st.status("Fetching post data from Apify...", expanded=True) as status:
+        try:
+            if "/reel/" in url.lower() or "/reels/" in url.lower():
+                from reel_scraper import process_url
+            else:
+                from post_scraper import process_url
+            post = process_url(url)
+        except Exception as e:
             st.error(
-                "Could not download the video. Make sure the URL is a public Instagram reel or post "
-                "and that the link is correct."
+                f"Could not fetch Instagram data from Apify: {e}"
             )
             st.stop()
-        status.update(label="Video downloaded", state="complete")
+        status.update(label="Instagram data fetched", state="complete")
 
-    try:
-        # Step 2 -- transcribe
-        with st.status("Transcribing audio...", expanded=True) as status:
-            transcript = transcribe_video(post.video_path)
-            if not transcript:
-                st.error("Transcription failed. The video may not contain audible speech.")
-                st.stop()
-            status.update(label="Transcription complete", state="complete")
+    transcript = (post.get("transcript") or "").strip()
+    original_caption = (post.get("original_caption") or "").strip()
+    source_text = transcript or original_caption
 
-        # Step 3 -- generate caption
-        with st.status("Generating caption...", expanded=True) as status:
-            caption_body = generate_caption(transcript, speaker_name=speaker.strip(), extra_prompt=extra.strip())
-            status.update(label="Caption ready", state="complete")
+    if not source_text:
+        st.error("Apify did not return a transcript or original caption for this URL.")
+        st.stop()
 
-        # Step 4 -- build footer
-        footer_parts = []
-        if post.original_caption:
-            footer_parts.append(post.original_caption.strip())
-        if post.username and post.username != "unknown":
-            footer_parts.append(f"@{post.username.lstrip('@')}")
+    # Step 2 -- generate caption
+    with st.status("Generating caption...", expanded=True) as status:
+        caption_body = generate_caption(source_text, speaker_name=speaker.strip(), extra_prompt=extra.strip())
+        status.update(label="Caption ready", state="complete")
 
-        footer = "\n".join(footer_parts) if footer_parts else ""
+    # Step 3 -- build footer
+    footer_parts = []
+    if original_caption:
+        footer_parts.append(original_caption)
+    username = (post.get("username") or "").strip()
+    if username and username != "unknown":
+        footer_parts.append(f"@{username.lstrip('@')}")
 
-        full_caption = caption_body
-        if footer:
-            full_caption = f"{caption_body}\n\n---\n{footer}"
+    footer = "\n".join(footer_parts) if footer_parts else ""
 
-        # Display
-        st.divider()
-        st.subheader("Your Caption")
-        st.text_area("Copy this caption", value=full_caption, height=300, label_visibility="collapsed")
+    full_caption = caption_body
+    if footer:
+        full_caption = f"{caption_body}\n\n---\n{footer}"
 
-        # Also show pieces in expanders for transparency
-        with st.expander("Transcript"):
-            st.write(transcript)
-        with st.expander("Original Instagram caption"):
-            st.write(post.original_caption or "(none)")
-        with st.expander("Username"):
-            st.write(f"@{post.username}" if post.username != "unknown" else "(unknown)")
+    # Display
+    st.divider()
+    st.subheader("Your Caption")
+    st.text_area("Copy this caption", value=full_caption, height=300, label_visibility="collapsed")
 
-    finally:
-        # Cleanup downloaded video
-        try:
-            parent = os.path.dirname(post.video_path)
-            shutil.rmtree(parent, ignore_errors=True)
-        except Exception:
-            pass
+    # Also show pieces in expanders for transparency
+    with st.expander("Transcript"):
+        st.write(transcript or "(none from Apify)")
+    with st.expander("Original Instagram caption"):
+        st.write(original_caption or "(none)")
+    with st.expander("Username"):
+        st.write(f"@{username}" if username and username != "unknown" else "(unknown)")
