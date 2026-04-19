@@ -92,9 +92,15 @@ def _generate_caption(row: dict) -> str:
 
     if row.get("Top Comment", "").strip():
         caption = f"{row['Top Comment'].strip()}\n\n{caption}"
+    username = row.get("Source Username", "").strip().lstrip("@")
+    footer_parts = []
+    if username and username.lower() != "unknown":
+        footer_parts.append(f"Follow @{username} for more.")
     footer = DEFAULT_POST_FOOTER.strip()
     if footer:
-        caption = f"{caption}\n\n{footer}"
+        footer_parts.append(footer)
+    if footer_parts:
+        caption = f"{caption}\n\n{' '.join(footer_parts)}"
 
     return caption
 

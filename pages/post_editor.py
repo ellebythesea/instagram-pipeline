@@ -73,7 +73,10 @@ if not rows:
     st.stop()
 
 st.caption(f"Showing {len(rows)} processed post(s). Fill in metadata and save — changes write directly to the Google Sheet.")
-st.caption(f"All generated captions automatically end with: {DEFAULT_POST_FOOTER}")
+st.caption(
+    "All generated captions automatically end with: "
+    f"Follow @username for more. {DEFAULT_POST_FOOTER}"
+)
 
 for row in rows:
     row_num = row["row_number"]
