@@ -75,6 +75,10 @@ def generate_row_caption(row: dict) -> str:
     if row.get("Top Comment", "").strip():
         caption = f"{row['Top Comment'].strip()}\n\n{caption}"
 
+    original_caption = row.get("Original Caption", "").strip()
+    if original_caption:
+        caption = f"{caption}\n\n--\n\n{original_caption}"
+
     username = row.get("Source Username", "").strip().lstrip("@")
     footer_parts = []
     if username and username.lower() != "unknown":
