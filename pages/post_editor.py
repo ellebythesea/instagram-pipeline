@@ -48,6 +48,11 @@ def _drive_image_url(drive_link: str) -> str:
     return ""
 
 
+def _looks_like_drive_link(value: str) -> bool:
+    s = (value or "").strip().lower()
+    return s.startswith("https://drive.google.com/") or s.startswith("http://drive.google.com/")
+
+
 # ---------------------------------------------------------------------------
 # UI
 # ---------------------------------------------------------------------------
@@ -72,14 +77,6 @@ rows = [
 if not rows:
     st.info("No ingested posts yet. Run **Process New Rows** on the Pipeline Dashboard first.")
     st.stop()
-
-st.caption(f"Showing {len(rows)} processed post(s). Fill in metadata and save — changes write directly to the Google Sheet.")
-st.caption(
-    "All generated captions automatically end with: "
-    f"Follow @username for more. {DEFAULT_POST_FOOTER}"
-)
-st.caption("Caption generation uses the transcript when present, otherwise it uses the original Instagram caption.")
-st.caption("You do not need to save each row. Generate Captions uses the current values shown in the editor.")
 
 st.markdown(
     """
@@ -141,7 +138,7 @@ for row in rows:
                 st.markdown(f"[Open post on Instagram ↗]({url})")
 
             orig = row.get("Original Caption", "")
-            if orig:
+            if orig and not _looks_like_drive_link(orig):
                 st.text_area(
                     "Original Caption",
                     value=orig,
@@ -149,6 +146,8 @@ for row in rows:
                     disabled=True,
                     key=f"orig_{row_num}",
                 )
+            elif orig:
+                st.caption("Original caption for this row looks misaligned. Re-ingest the row to refresh it.")
 
             transcript = row.get("Transcript", "")
             if transcript:
