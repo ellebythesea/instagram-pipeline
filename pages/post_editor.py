@@ -185,6 +185,14 @@ for row in rows:
             key=f"hashtags_{row_num}",
         )
 
+        caption_context = st.text_area(
+            "Caption Context",
+            value=row.get("Caption Context", ""),
+            height=90,
+            placeholder="Add any context you want the caption generator to use when the post lacks enough source text.",
+            key=f"context_{row_num}",
+        )
+
         top_comment = st.text_area(
             "Top Comment",
             value=row.get("Top Comment", ""),
@@ -239,10 +247,12 @@ if generate_btn:
             speaker = st.session_state.get(f"speaker_{row_num}", row.get("Speaker Name", ""))
             preset_choices = st.session_state.get(f"presets_{row_num}", [])
             custom_hashtags = st.session_state.get(f"hashtags_{row_num}", row.get("Required Hashtags", ""))
+            caption_context = st.session_state.get(f"context_{row_num}", row.get("Caption Context", ""))
             top_comment = st.session_state.get(f"top_{row_num}", row.get("Top Comment", ""))
             preset_tags = " ".join(PRESET_HASHTAGS[p] for p in preset_choices)
             combined_hashtags = " ".join(filter(None, [custom_hashtags.strip(), preset_tags])).strip()
             row_for_caption = dict(row)
+            row_for_caption["Caption Context"] = caption_context.strip()
             row_for_caption["Speaker Name"] = speaker.strip()
             row_for_caption["Required Hashtags"] = combined_hashtags
             row_for_caption["Top Comment"] = top_comment.strip()
@@ -252,6 +262,7 @@ if generate_btn:
                     update_metadata(
                         GOOGLE_SHEET_ID,
                         row_num,
+                        row_for_caption["Caption Context"],
                         row_for_caption["Speaker Name"],
                         row_for_caption["Required Hashtags"],
                         row_for_caption["Top Comment"],

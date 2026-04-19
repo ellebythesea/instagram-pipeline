@@ -48,11 +48,28 @@ def _collect_required_hashtags(caption: str, required_hashtags: str) -> list[str
 
 def generate_row_caption(row: dict) -> str:
     """Generate a final caption string for one sheet row."""
-    content = row.get("Transcript", "").strip() or row.get("Original Caption", "").strip()
-    if not content:
-        raise ValueError("No transcript or original caption available")
+    transcript = row.get("Transcript", "").strip()
+    original_caption = row.get("Original Caption", "").strip()
+    caption_context = row.get("Caption Context", "").strip()
 
-    user_parts = [f"TRANSCRIPT:\n{content}"]
+    content = transcript or original_caption or caption_context
+    if not content:
+        raise ValueError("No transcript, original caption, or caption context available")
+
+    user_parts = []
+    if transcript:
+        user_parts.append(f"TRANSCRIPT:\n{transcript}")
+    if original_caption:
+        user_parts.append(f"ORIGINAL INSTAGRAM CAPTION:\n{original_caption}")
+    if caption_context:
+        user_parts.append(
+            "ADDITIONAL CONTEXT FROM EDITOR:\n"
+            f"{caption_context}\n"
+            "Use this to fill in missing context, but do not present uncertain claims as facts."
+        )
+    if not user_parts:
+        user_parts.append(f"SOURCE TEXT:\n{content}")
+
     if row.get("Speaker Name", "").strip():
         user_parts.append(
             f"The speaker in this transcript is: {row['Speaker Name'].strip()}. Reference them by name."
@@ -72,7 +89,6 @@ def generate_row_caption(row: dict) -> str:
     if row.get("Top Comment", "").strip():
         caption = f"{row['Top Comment'].strip()}\n\n{caption}"
 
-    original_caption = row.get("Original Caption", "").strip()
     if original_caption:
         caption = f"{caption}\n\n--\n\n{original_caption}"
 

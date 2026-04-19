@@ -9,7 +9,7 @@ Sheet layout:
   G  Thumbnail Drive Link
   H  Original Caption   I  Transcript         J  Top Comment
   K  Speaker Name       L  Required Hashtags  M  Footer
-  N  Status
+  N  Status             O  Caption Context
 """
 
 import json
@@ -42,6 +42,7 @@ _EXPECTED_HEADERS = [
     "Required Hashtags",
     "Footer",
     "Status",
+    "Caption Context",
 ]
 
 _ROWS_CACHE_TTL_SECONDS = 10
@@ -103,7 +104,7 @@ def _ensure_headers(sheet_id: str, ws: gspread.Worksheet) -> None:
     if normalized == _EXPECTED_HEADERS:
         _headers_checked.add(cache_key)
         return
-    _with_backoff(ws.update, "A1:N1", [_EXPECTED_HEADERS])
+    _with_backoff(ws.update, "A1:O1", [_EXPECTED_HEADERS])
     _headers_checked.add(cache_key)
 
 
@@ -154,7 +155,7 @@ def update_ingest_result(
     transcript: str,
     status: str,
 ) -> None:
-    """Write ingest results to cols B and D–I, and status to N."""
+    """Write ingest results to cols B and D-I, and status to N."""
     ws = _worksheet(sheet_id)
     _with_backoff(ws.update, f"B{row_number}", [[username]])
     _with_backoff(
@@ -184,16 +185,18 @@ def update_caption(sheet_id: str, row_number: int, caption: str, status: str) ->
 def update_metadata(
     sheet_id: str,
     row_number: int,
+    caption_context: str,
     speaker_name: str,
     hashtags: str,
     top_comment: str,
     footer: str,
 ) -> None:
-    """Write user metadata to cols J–M."""
+    """Write user metadata to cols J-M and caption context to O."""
     ws = _worksheet(sheet_id)
     _with_backoff(
         ws.update,
         f"J{row_number}:M{row_number}",
         [[top_comment, speaker_name, hashtags, footer]],
     )
+    _with_backoff(ws.update, f"O{row_number}", [[caption_context]])
     _invalidate_rows_cache(sheet_id)
