@@ -25,6 +25,23 @@ _SCOPES = [
     "https://www.googleapis.com/auth/drive",
 ]
 
+_EXPECTED_HEADERS = [
+    "Instagram URL",
+    "Media Type",
+    "Photo Count",
+    "Media Drive Link",
+    "Thumbnail Drive Link",
+    "Original Caption",
+    "Transcript",
+    "Speaker Name",
+    "Required Hashtags",
+    "Top Comment",
+    "Footer",
+    "Source Username",
+    "Generated Caption",
+    "Status",
+]
+
 
 def _get_client() -> gspread.Client:
     creds_src = GOOGLE_SERVICE_ACCOUNT_JSON
@@ -39,15 +56,29 @@ def _worksheet(sheet_id: str) -> gspread.Worksheet:
     workbook = _get_client().open_by_key(sheet_id)
 
     if GOOGLE_WORKSHEET_NAME:
-        return workbook.worksheet(GOOGLE_WORKSHEET_NAME)
+        ws = workbook.worksheet(GOOGLE_WORKSHEET_NAME)
+        _ensure_headers(ws)
+        return ws
 
     expected_headers = {"Instagram URL", "Status"}
     for ws in workbook.worksheets():
         headers = {h.strip() for h in ws.row_values(1) if h.strip()}
         if expected_headers.issubset(headers):
+            _ensure_headers(ws)
             return ws
 
-    return workbook.sheet1
+    ws = workbook.sheet1
+    _ensure_headers(ws)
+    return ws
+
+
+def _ensure_headers(ws: gspread.Worksheet) -> None:
+    """Restore the expected header row if it is missing or incorrect."""
+    current = ws.row_values(1)
+    normalized = current[:len(_EXPECTED_HEADERS)]
+    if normalized == _EXPECTED_HEADERS:
+        return
+    ws.update("A1:N1", [_EXPECTED_HEADERS])
 
 
 def get_all_rows(sheet_id: str) -> list[dict]:
