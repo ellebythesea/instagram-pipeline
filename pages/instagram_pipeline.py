@@ -12,7 +12,7 @@ from config import (
     APP_PASSWORD,
     GOOGLE_SHEET_ID,
 )
-from ingest_helpers import upload_media_bundle
+from ingest_helpers import upload_media_bundle, upload_thumbnail_only
 from sheets import (
     get_all_rows,
     get_pending_rows,
@@ -43,12 +43,25 @@ def _ingest_row(row: dict) -> tuple:
     url = row["Instagram URL"].strip()
     tmp_dir = None
     try:
+        if "/reel/" in url.lower() or "/reels/" in url.lower():
+            from reel_scraper import process_url as process_reel_url
+            data = process_reel_url(url)
+            uploaded = upload_thumbnail_only(data)
+            tmp_dir = uploaded["tmp_dir"]
+
+            return (
+                data["username"],
+                data["media_type"],
+                data["photo_count"],
+                uploaded["media_link"],
+                uploaded["thumbnail_link"],
+                data["original_caption"],
+                data["transcript"],
+                "ingested",
+            )
+
         from post_scraper import process_url as process_post_url
-
         data = process_post_url(url)
-
-        if data["media_type"] == "reel":
-            return ("", "", "", "", "", "", "", "skipped: use Reel Downloader")
 
         if data["photo_count"] <= 1:
             return ("", "", "", "", "", "", "", "skipped: not a carousel")
@@ -114,7 +127,7 @@ if ingest_btn:
         st.info("No new rows to process (column A filled, column N empty).")
     else:
         st.write(f"Found **{len(pending)}** row(s) to ingest.")
-        st.caption("This flow only ingests carousels. Reels are marked to use the Reel Downloader page.")
+        st.caption("Reels ingest transcript and metadata into the sheet without uploading the reel video to Drive.")
         progress = st.progress(0)
 
         for i, row in enumerate(pending):

@@ -51,3 +51,21 @@ def upload_media_bundle(data: dict) -> dict:
         "media_link": ", ".join(media_links),
         "thumbnail_link": thumbnail_link,
     }
+
+
+def upload_thumbnail_only(data: dict) -> dict:
+    """Upload only the thumbnail image for a reel/post and skip media upload."""
+    tmp_dir = tempfile.mkdtemp(prefix="ig_")
+    thumbnail_link = ""
+
+    if data.get("thumbnail_url"):
+        thumb_filename = f"{data['post_date']}_{data['post_id']}_thumb.jpg"
+        thumb_path = os.path.join(tmp_dir, thumb_filename)
+        download_file(data["thumbnail_url"], thumb_path)
+        thumbnail_link = upload_to_drive(thumb_path, thumb_filename, GOOGLE_DRIVE_FOLDER_ID)
+
+    return {
+        "tmp_dir": tmp_dir,
+        "media_link": "",
+        "thumbnail_link": thumbnail_link,
+    }
