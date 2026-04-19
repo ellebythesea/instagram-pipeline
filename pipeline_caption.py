@@ -33,10 +33,6 @@ def generate_row_caption(row: dict) -> str:
         user_parts.append(
             f"The speaker in this transcript is: {row['Speaker Name'].strip()}. Reference them by name."
         )
-    if row.get("Required Hashtags", "").strip():
-        user_parts.append(
-            f"These hashtags MUST be included as part of the 3-5 total: {row['Required Hashtags'].strip()}"
-        )
 
     response = client.chat.completions.create(
         model="gpt-4o",
@@ -62,5 +58,9 @@ def generate_row_caption(row: dict) -> str:
         footer_parts.append(footer)
     if footer_parts:
         caption = f"{caption}\n\n{' '.join(footer_parts)}"
+
+    required_hashtags = row.get("Required Hashtags", "").strip()
+    if required_hashtags:
+        caption = f"{caption}\n\n{required_hashtags}"
 
     return caption
