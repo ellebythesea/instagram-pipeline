@@ -79,6 +79,7 @@ st.caption(
     f"Follow @username for more. {DEFAULT_POST_FOOTER}"
 )
 st.caption("Caption generation uses the transcript when present, otherwise it uses the original Instagram caption.")
+st.caption("You do not need to save each row. Generate Captions uses the current values shown in the editor.")
 
 st.markdown(
     """
@@ -192,24 +193,6 @@ for row in rows:
                 key=f"top_{row_num}",
             )
 
-            if st.button("Save", key=f"save_{row_num}", type="primary"):
-                # Combine preset tags with custom input
-                preset_tags = " ".join(PRESET_HASHTAGS[p] for p in preset_choices)
-                combined = " ".join(filter(None, [custom_hashtags.strip(), preset_tags])).strip()
-                try:
-                    update_metadata(
-                        GOOGLE_SHEET_ID,
-                        row_num,
-                        speaker.strip(),
-                        combined,
-                        top_comment.strip(),
-                        "",
-                    )
-                    st.success("Saved to sheet.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Save failed: {e}")
-
         # --- Generated caption ---
         generated = row.get("Generated Caption", "").strip()
         if generated:
@@ -253,10 +236,28 @@ if generate_btn:
             row_num = row["row_number"]
             url = row["Instagram URL"]
             label = url[:60] + "..." if len(url) > 60 else url
+            speaker = st.session_state.get(f"speaker_{row_num}", row.get("Speaker Name", ""))
+            preset_choices = st.session_state.get(f"presets_{row_num}", [])
+            custom_hashtags = st.session_state.get(f"hashtags_{row_num}", row.get("Required Hashtags", ""))
+            top_comment = st.session_state.get(f"top_{row_num}", row.get("Top Comment", ""))
+            preset_tags = " ".join(PRESET_HASHTAGS[p] for p in preset_choices)
+            combined_hashtags = " ".join(filter(None, [custom_hashtags.strip(), preset_tags])).strip()
+            row_for_caption = dict(row)
+            row_for_caption["Speaker Name"] = speaker.strip()
+            row_for_caption["Required Hashtags"] = combined_hashtags
+            row_for_caption["Top Comment"] = top_comment.strip()
 
             with st.status(f"Row {row_num}: {label}", expanded=False) as s:
                 try:
-                    caption = generate_row_caption(row)
+                    update_metadata(
+                        GOOGLE_SHEET_ID,
+                        row_num,
+                        row_for_caption["Speaker Name"],
+                        row_for_caption["Required Hashtags"],
+                        row_for_caption["Top Comment"],
+                        "",
+                    )
+                    caption = generate_row_caption(row_for_caption)
                     status = "done"
                 except Exception as e:
                     caption = ""
