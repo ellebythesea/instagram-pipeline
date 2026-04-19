@@ -21,9 +21,9 @@ def check_password() -> bool:
     return False
 
 
-st.set_page_config(page_title="Caption This", page_icon="📸", layout="centered")
+st.set_page_config(page_title="Caption this", page_icon="📸", layout="centered")
 
-st.title("Caption This")
+st.title("Caption this")
 st.caption("Paste a reel or post link, enter the speaker's name, and get a ready-to-post caption.")
 
 if not check_password():
