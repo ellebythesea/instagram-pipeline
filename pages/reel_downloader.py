@@ -3,14 +3,13 @@
 import os
 import sys
 import shutil
-import mimetypes
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import streamlit as st
 
 from config import APP_PASSWORD, GOOGLE_SHEET_ID
-from ingest_helpers import make_filename, upload_media_bundle
+from ingest_helpers import build_download_payload, download_media_bundle
 from reel_scraper import process_url
 from sheets import get_all_rows, update_ingest_result
 
@@ -36,15 +35,14 @@ def _normalize_url(url: str) -> str:
 
 st.set_page_config(page_title="Reel Downloader", page_icon="🎞️", layout="centered")
 st.title("Reel Downloader")
-st.caption("Paste a reel URL to upload it to Drive and optionally download it to this device.")
+st.caption("Paste a reel URL to keep the thumbnail in Drive and download the reel to this device.")
 
 if not _check_password():
     st.stop()
 
 with st.form("reel_download_form"):
     reel_url = st.text_input("Instagram Reel URL", placeholder="https://www.instagram.com/reel/...")
-    save_to_device = st.checkbox("Also prepare a download for this device", value=True)
-    submitted = st.form_submit_button("Download Reel", type="primary", use_container_width=True)
+    submitted = st.form_submit_button("Prepare Reel", type="primary", use_container_width=True)
 
 if submitted:
     if not reel_url.strip():
@@ -58,22 +56,20 @@ if submitted:
     tmp_dir = None
     local_filename = ""
     local_media_bytes = b""
+    local_media_mime = "video/mp4"
     try:
         with st.status("Fetching reel metadata...", expanded=True) as status:
             data = process_url(reel_url.strip())
             status.update(label="Reel metadata fetched", state="complete")
 
-        with st.status("Uploading reel to Drive...", expanded=True) as status:
-            uploaded = upload_media_bundle(data)
+        with st.status("Preparing reel download and thumbnail...", expanded=True) as status:
+            uploaded = download_media_bundle(data)
             tmp_dir = uploaded["tmp_dir"]
-            status.update(label="Reel uploaded", state="complete")
-
-        if save_to_device and tmp_dir:
-            local_filename = make_filename(data["post_id"], data["post_date"], ".mp4")
-            local_path = os.path.join(tmp_dir, local_filename)
-            if os.path.exists(local_path):
-                with open(local_path, "rb") as f:
-                    local_media_bytes = f.read()
+            local_filename, local_media_bytes, local_media_mime = build_download_payload(
+                uploaded["media_paths"],
+                f"{data['post_date']}_{data['post_id']}",
+            )
+            status.update(label="Reel ready", state="complete")
 
         matching_row = next(
             (
@@ -98,9 +94,8 @@ if submitted:
                 )
                 status.update(label=f"Updated sheet row {matching_row['row_number']}", state="complete")
 
-        st.success("Reel uploaded to Drive.")
+        st.success("Reel ready. The thumbnail is in Drive and the reel can be saved to this device.")
         st.write(f"Username: @{data['username']}")
-        st.write(f"Media link: {uploaded['media_link']}")
         if matching_row:
             st.write(f"Sheet row updated: {matching_row['row_number']}")
         else:
@@ -118,7 +113,7 @@ if submitted:
                 "Save reel to this device",
                 data=local_media_bytes,
                 file_name=local_filename,
-                mime=mimetypes.guess_type(local_filename)[0] or "video/mp4",
+                mime=local_media_mime,
                 use_container_width=True,
             )
             st.caption(
