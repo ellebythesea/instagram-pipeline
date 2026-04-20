@@ -1,5 +1,6 @@
-"""Manual reel downloader page."""
+"""Single-link media downloader page."""
 
+import mimetypes
 import os
 import sys
 import shutil
@@ -9,8 +10,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import streamlit as st
 
 from config import APP_PASSWORD, GOOGLE_SHEET_ID
-from ingest_helpers import build_download_payload, download_media_bundle
-from reel_scraper import process_url
+from ingest_helpers import upload_media_bundle
+from post_scraper import process_url as process_post_url
+from reel_scraper import process_url as process_reel_url
 from sheets import get_all_rows, update_ingest_result
 
 
@@ -33,53 +35,55 @@ def _normalize_url(url: str) -> str:
     return url.strip().rstrip("/")
 
 
-st.set_page_config(page_title="Reel Downloader", page_icon="🎞️", layout="centered")
-st.title("Reel Downloader")
-st.caption("Paste a reel URL to keep the thumbnail in Drive and download the reel to this device.")
+def _is_reel_url(url: str) -> bool:
+    lowered = url.lower()
+    return "/reel/" in lowered or "/reels/" in lowered
+
+
+st.set_page_config(page_title="Media downloader", page_icon="🎞️", layout="centered")
+st.title("Media downloader")
+st.caption("Paste one Instagram URL. Reels, single-photo posts, and carousels upload to Drive, then each item can be downloaded individually.")
 
 if not _check_password():
     st.stop()
 
-with st.form("reel_download_form"):
-    reel_url = st.text_input("Instagram Reel URL", placeholder="https://www.instagram.com/reel/...")
-    submitted = st.form_submit_button("Prepare Reel", type="primary", use_container_width=True)
+with st.form("media_download_form"):
+    media_url = st.text_input(
+        "Instagram URL",
+        placeholder="https://www.instagram.com/p/... or /reel/...",
+    )
+    submitted = st.form_submit_button("Download media", type="primary", use_container_width=True)
 
 if submitted:
-    if not reel_url.strip():
-        st.warning("Please enter a reel URL.")
-        st.stop()
-
-    if "/reel/" not in reel_url.lower() and "/reels/" not in reel_url.lower():
-        st.warning("This page only accepts reel URLs.")
+    if not media_url.strip():
+        st.warning("Please enter an Instagram URL.")
         st.stop()
 
     tmp_dir = None
-    local_filename = ""
-    local_media_bytes = b""
-    local_media_mime = "video/mp4"
     try:
-        with st.status("Fetching reel metadata...", expanded=True) as status:
-            data = process_url(reel_url.strip())
-            status.update(label="Reel metadata fetched", state="complete")
+        url = media_url.strip()
 
-        with st.status("Preparing reel download and thumbnail...", expanded=True) as status:
-            uploaded = download_media_bundle(data)
+        with st.status("Fetching media metadata...", expanded=True) as status:
+            if _is_reel_url(url):
+                data = process_reel_url(url)
+            else:
+                data = process_post_url(url)
+            status.update(label="Media metadata fetched", state="complete")
+
+        with st.status("Uploading media to Drive...", expanded=True) as status:
+            uploaded = upload_media_bundle(data)
             tmp_dir = uploaded["tmp_dir"]
-            local_filename, local_media_bytes, local_media_mime = build_download_payload(
-                uploaded["media_paths"],
-                f"{data['post_date']}_{data['post_id']}",
-            )
-            status.update(label="Reel ready", state="complete")
+            status.update(label="Media uploaded", state="complete")
 
         matching_row = next(
             (
                 row for row in get_all_rows(GOOGLE_SHEET_ID)
-                if _normalize_url(row.get("Instagram URL", "")) == _normalize_url(reel_url)
+                if _normalize_url(row.get("Instagram URL", "")) == _normalize_url(url)
             ),
             None,
         )
         if matching_row:
-            with st.status("Writing reel data to Google Sheet...", expanded=True) as status:
+            with st.status("Writing media data to Google Sheet...", expanded=True) as status:
                 update_ingest_result(
                     GOOGLE_SHEET_ID,
                     matching_row["row_number"],
@@ -94,34 +98,57 @@ if submitted:
                 )
                 status.update(label=f"Updated sheet row {matching_row['row_number']}", state="complete")
 
-        st.success("Reel ready. The thumbnail is in Drive and the reel can be saved to this device.")
+        st.success("Media uploaded to Drive.")
         st.write(f"Username: @{data['username']}")
+        st.write(f"Media type: {data['media_type']}")
+        if uploaded["media_link"]:
+            st.write(f"Media link(s): {uploaded['media_link']}")
+        if uploaded["thumbnail_link"]:
+            st.write(f"Thumbnail link: {uploaded['thumbnail_link']}")
         if matching_row:
             st.write(f"Sheet row updated: {matching_row['row_number']}")
         else:
             st.info("No matching row found in the sheet for this URL, so nothing was written back to Google Sheets.")
-        if uploaded["thumbnail_link"]:
-            st.write(f"Thumbnail link: {uploaded['thumbnail_link']}")
+
         if data.get("original_caption"):
             with st.expander("Original caption"):
                 st.write(data["original_caption"])
         if data.get("transcript"):
             with st.expander("Transcript"):
                 st.write(data["transcript"])
-        if local_media_bytes:
-            st.download_button(
-                "Save reel to this device",
-                data=local_media_bytes,
-                file_name=local_filename,
-                mime=local_media_mime,
-                use_container_width=True,
-            )
-            st.caption(
-                "This triggers your browser's download flow. The exact save location depends on the device and browser settings."
-            )
+
+        st.subheader("Media files")
+        preview_path = uploaded.get("thumbnail_path", "")
+        media_paths = uploaded.get("media_paths", [])
+        media_links = [link.strip() for link in uploaded.get("media_link", "").split(",") if link.strip()]
+
+        for i, media_path in enumerate(media_paths):
+            image_col, action_col = st.columns([1, 2])
+            with image_col:
+                if data["media_type"] == "photo":
+                    st.image(media_path, width=150)
+                elif preview_path and os.path.exists(preview_path):
+                    st.image(preview_path, width=150)
+                else:
+                    st.caption("Preview unavailable")
+
+            with action_col:
+                file_name = os.path.basename(media_path)
+                st.write(file_name)
+                if i < len(media_links):
+                    st.link_button(f"Open item {i + 1} in Drive", media_links[i], use_container_width=True)
+                with open(media_path, "rb") as f:
+                    st.download_button(
+                        f"Save item {i + 1} to this device",
+                        data=f.read(),
+                        file_name=file_name,
+                        mime=mimetypes.guess_type(file_name)[0] or "application/octet-stream",
+                        key=f"download_media_item_{i}",
+                        use_container_width=True,
+                    )
 
     except Exception as e:
-        st.error(f"Reel download failed: {e}")
+        st.error(f"Media download failed: {e}")
 
     finally:
         if tmp_dir:

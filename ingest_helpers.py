@@ -37,26 +37,32 @@ def upload_media_bundle(data: dict) -> dict:
     )
 
     media_links = []
+    media_paths = []
     for i, media_url in enumerate(data["media_urls"]):
         filename = make_filename(post_id, post_date, ext, index=i)
         local_path = os.path.join(tmp_dir, filename)
         download_file(media_url, local_path)
+        media_paths.append(local_path)
         media_links.append(upload_to_drive(local_path, filename, GOOGLE_DRIVE_FOLDER_ID))
 
     thumbnail_link = ""
+    thumbnail_path = ""
     if data.get("thumbnail_url"):
         thumb_filename = f"{post_date}_{post_id}_thumb.jpg"
         thumb_path = os.path.join(tmp_dir, thumb_filename)
         try:
             download_file(data["thumbnail_url"], thumb_path)
+            thumbnail_path = thumb_path
             thumbnail_link = upload_to_drive(thumb_path, thumb_filename, screenshots_folder_id)
         except Exception:
             thumbnail_link = media_links[0] if media_links else ""
 
     return {
         "tmp_dir": tmp_dir,
+        "media_paths": media_paths,
         "media_link": ", ".join(media_links),
         "thumbnail_link": thumbnail_link,
+        "thumbnail_path": thumbnail_path,
     }
 
 
