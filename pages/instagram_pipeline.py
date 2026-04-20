@@ -12,7 +12,7 @@ from config import (
     APP_PASSWORD,
     GOOGLE_SHEET_ID,
 )
-from ingest_helpers import build_download_payload, download_media_bundle, upload_thumbnail_only
+from ingest_helpers import upload_media_bundle, upload_thumbnail_only
 from sheets import (
     get_all_rows,
     get_pending_rows,
@@ -39,7 +39,7 @@ def _check_password() -> bool:
 
 
 def _ingest_row(row: dict) -> dict:
-    """Process one row through ingest and return sheet fields plus optional download payload."""
+    """Process one row through ingest and return sheet fields."""
     url = row["Instagram URL"].strip()
     tmp_dir = None
     try:
@@ -57,18 +57,13 @@ def _ingest_row(row: dict) -> dict:
                 "original_caption": data["original_caption"],
                 "transcript": data["transcript"],
                 "status": "ingested",
-                "download": None,
             }
 
         from post_scraper import process_url as process_post_url
         data = process_post_url(url)
 
-        uploaded = download_media_bundle(data)
+        uploaded = upload_media_bundle(data)
         tmp_dir = uploaded["tmp_dir"]
-        filename, payload, mime = build_download_payload(
-            uploaded["media_paths"],
-            f"{data['post_date']}_{data['post_id']}",
-        )
 
         return {
             "username": data["username"],
@@ -79,11 +74,6 @@ def _ingest_row(row: dict) -> dict:
             "original_caption": data["original_caption"],
             "transcript": data["transcript"],
             "status": "ingested",
-            "download": {
-                "filename": filename,
-                "payload": payload,
-                "mime": mime,
-            },
         }
 
     except Exception as e:
@@ -96,7 +86,6 @@ def _ingest_row(row: dict) -> dict:
             "original_caption": "",
             "transcript": "",
             "status": f"error: {e}",
-            "download": None,
         }
 
     finally:
@@ -144,9 +133,8 @@ if ingest_btn:
         st.info("No new rows to process (column A filled, column N empty).")
     else:
         st.write(f"Found **{len(pending)}** row(s) to ingest.")
-        st.caption("Thumbnails stay in Drive for previews. Post media is prepared for device download instead of being uploaded to Drive.")
+        st.caption("Photos and carousels upload their media to Drive. Reels still keep thumbnail-only ingest in this batch flow.")
         progress = st.progress(0)
-        download_items = []
 
         for i, row in enumerate(pending):
             row_num = row["row_number"]
@@ -180,28 +168,7 @@ if ingest_btn:
                         label=f"Row {row_num}: ingested — @{result['username']} ({result['media_type']})",
                         state="complete",
                     )
-                    if result["download"]:
-                        download_items.append(
-                            {
-                                "row_number": row_num,
-                                "filename": result["download"]["filename"],
-                                "payload": result["download"]["payload"],
-                                "mime": result["download"]["mime"],
-                            }
-                        )
 
             progress.progress((i + 1) / len(pending))
 
         st.success(f"Done. Ingested {len(pending)} row(s).")
-        if download_items:
-            st.subheader("Save post media")
-            st.caption("Photo and carousel media now downloads to this device. Thumbnails remain in Drive for browser previews.")
-            for item in download_items:
-                st.download_button(
-                    f"Save row {item['row_number']} media",
-                    data=item["payload"],
-                    file_name=item["filename"],
-                    mime=item["mime"],
-                    key=f"download_row_{item['row_number']}",
-                    use_container_width=True,
-                )
