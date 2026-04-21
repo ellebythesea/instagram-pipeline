@@ -134,10 +134,7 @@ st.markdown(
     """
     <style>
     .pipeline-grid [data-testid="column"] {
-        padding: 0 !important;
-    }
-    .pipeline-grid [data-testid="stVerticalBlock"] > [data-testid="stVerticalBlockBorderWrapper"] {
-        width: 100%;
+        padding: 0 0.2rem !important;
     }
     .pipeline-grid .pipeline-header-text {
         font-weight: 700;
@@ -148,8 +145,9 @@ st.markdown(
         line-height: 1.45;
         overflow-wrap: anywhere;
     }
-    .pipeline-grid .pipeline-header-cell {
-        background: #f8fafc;
+    .pipeline-row-separator {
+        border-top: 1px solid rgba(15, 23, 42, 0.14);
+        margin: 0.35rem 0 0.75rem;
     }
     .pipeline-grid [data-testid="stButton"] > button {
         width: 100%;
@@ -175,12 +173,9 @@ try:
         header = st.columns([3.2, 1.3, 1.1, 1.1, 2.8, 1.5], gap="small")
         labels = ["Instagram URL", "Source Username", "Media Type", "Status", "Generated Caption", "Actions"]
         for col, label in zip(header, labels):
-            with col:
-                cell = st.container(border=True)
-                cell.markdown(
-                    f'<div class="pipeline-header-text">{label}</div>',
-                    unsafe_allow_html=True,
-                )
+            col.markdown(f'<div class="pipeline-header-text">{label}</div>', unsafe_allow_html=True)
+
+        st.markdown('<div class="pipeline-row-separator"></div>', unsafe_allow_html=True)
 
         for row in all_rows:
             cols = st.columns([3.2, 1.3, 1.1, 1.1, 2.8, 1.5], gap="small")
@@ -192,19 +187,13 @@ try:
                 (row.get("Generated Caption", "") or "").strip(),
             ]
             for idx, value in enumerate(cell_values):
-                with cols[idx]:
-                    cell = st.container(border=True)
-                    text = value[:120] + ("..." if idx == 4 and len(value) > 120 else "")
-                    cell.markdown(
-                        f'<div class="pipeline-cell-text">{text}</div>',
-                        unsafe_allow_html=True,
-                    )
+                text = value[:120] + ("..." if idx == 4 and len(value) > 120 else "")
+                cols[idx].markdown(f'<div class="pipeline-cell-text">{text}</div>', unsafe_allow_html=True)
 
             status = (row.get("Status", "") or "").strip().lower()
             with cols[5]:
-                cell = st.container(border=True)
                 if status == "done":
-                    if cell.button("Re-run with Transcript", key=f"rerun_transcript_{row['row_number']}"):
+                    if st.button("Re-run with Transcript", key=f"rerun_transcript_{row['row_number']}"):
                         with st.spinner(f"Refreshing row {row['row_number']} with transcript..."):
                             try:
                                 _rerun_with_transcript(row)
@@ -216,7 +205,8 @@ try:
                                 )
                             st.rerun()
                 else:
-                    cell.markdown("&nbsp;", unsafe_allow_html=True)
+                    st.markdown("&nbsp;", unsafe_allow_html=True)
+            st.markdown('<div class="pipeline-row-separator"></div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
     else:
         st.info("No rows in sheet yet. Add Instagram URLs to column A to get started.")
