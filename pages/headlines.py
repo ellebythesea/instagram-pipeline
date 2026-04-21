@@ -29,12 +29,13 @@ def _check_password() -> bool:
 def _fetch_post_data(url: str) -> dict:
     if "/reel/" in url.lower() or "/reels/" in url.lower():
         from reel_scraper import process_url
+        return process_url(url, include_transcript=False)
     else:
         from post_scraper import process_url
-    return process_url(url)
+        return process_url(url)
 
 
-def _generate_headline(source_text: str) -> str:
+def _generate_headlines(source_text: str) -> list[str]:
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
     response = client.chat.completions.create(
         model="gpt-4o",
@@ -43,9 +44,9 @@ def _generate_headline(source_text: str) -> str:
                 "role": "system",
                 "content": (
                     "You write short, salacious, attention-grabbing political headlines. "
-                    "Return one headline only. Keep it under 12 words. "
+                    "Return exactly 3 distinct headline options. Keep each under 12 words. "
                     "Do not use hashtags. Do not use quotation marks unless essential. "
-                    "Do not add labels, bullets, or extra explanation."
+                    "Do not add labels or extra explanation. Put each headline on its own line."
                 ),
             },
             {
@@ -56,19 +57,63 @@ def _generate_headline(source_text: str) -> str:
         max_tokens=60,
         temperature=0.9,
     )
-    return response.choices[0].message.content.strip().replace("#", "")
+    raw_lines = response.choices[0].message.content.strip().splitlines()
+    headlines = []
+    for line in raw_lines:
+        cleaned = line.strip().lstrip("-*0123456789. ").replace("#", "")
+        if cleaned:
+            headlines.append(cleaned)
+        if len(headlines) == 3:
+            break
+    return headlines
+
+
+def _generate_caption_from_caption(source_text: str) -> str:
+    client = openai.OpenAI(api_key=OPENAI_API_KEY)
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You write sharp political Instagram captions from an existing Instagram caption only. "
+                    "Return exactly two short paragraphs, no hashtags, no labels, and no quotation marks unless essential. "
+                    "Do not mention transcription or missing audio. Keep it concise, punchy, and readable."
+                ),
+            },
+            {
+                "role": "user",
+                "content": f"Write a caption from this Instagram caption:\n\n{source_text}",
+            },
+        ],
+        max_tokens=220,
+        temperature=0.5,
+    )
+    return response.choices[0].message.content.strip()
+
+
+def _build_footered_caption(caption_body: str, username: str) -> str:
+    footer_parts = []
+    cleaned_username = (username or "").strip().lstrip("@")
+    if cleaned_username and cleaned_username.lower() != "unknown":
+        footer_parts.append(f"Follow @{cleaned_username} for more.")
+    footer_parts.append(
+        "Help this information get to more voters. 🇺🇸 "
+        "A well-informed electorate is a prerequisite to Democracy. - Thomas Jefferson"
+    )
+    return f"{caption_body.strip()}\n\n{' '.join(footer_parts)}"
 
 
 st.set_page_config(page_title="Headlines", page_icon="🗞️", layout="centered")
 st.title("Headlines")
-st.caption("Paste an Instagram URL and get a short salacious headline based on the post caption.")
+st.caption("Paste an Instagram URL and get three salacious headlines plus a caption based only on the post caption.")
 
 if not _check_password():
     st.stop()
 
 with st.form("headline_form"):
     ig_url = st.text_input("Instagram URL", placeholder="https://www.instagram.com/p/... or /reel/...")
-    submitted = st.form_submit_button("Generate Headline", type="primary", use_container_width=True)
+    submitted = st.form_submit_button("Generate Headlines", type="primary", use_container_width=True)
 
 if submitted:
     if not ig_url.strip():
@@ -91,13 +136,20 @@ if submitted:
         st.error("Apify did not return an Instagram caption for this URL.")
         st.stop()
 
-    with st.status("Generating headline...", expanded=True) as status:
-        headline = _generate_headline(source_text)
-        status.update(label="Headline ready", state="complete")
+    with st.status("Generating headlines and caption...", expanded=True) as status:
+        headlines = _generate_headlines(source_text)
+        caption_body = _generate_caption_from_caption(source_text)
+        final_caption = _build_footered_caption(caption_body, post.get("username", ""))
+        status.update(label="Headlines and caption ready", state="complete")
 
     st.divider()
-    st.subheader("Headline")
-    st.code(headline, language=None)
+    st.subheader("Headline options")
+    for idx, headline in enumerate(headlines, start=1):
+        st.caption(f"Option {idx}")
+        st.code(headline, language=None)
+
+    st.subheader("Caption")
+    st.code(final_caption, language=None)
 
     with st.expander("Source caption"):
         st.write(original_caption or "(none)")
