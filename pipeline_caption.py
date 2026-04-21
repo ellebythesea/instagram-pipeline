@@ -27,23 +27,49 @@ def _extract_hashtags(text: str) -> list[str]:
     return re.findall(r"#[A-Za-z0-9_]+", text or "")
 
 
-def _collect_required_hashtags(caption: str, required_hashtags: str) -> list[str]:
-    existing = {tag.lower() for tag in _extract_hashtags(caption)}
-    remaining_slots = max(0, 5 - len(existing))
-    if remaining_slots == 0:
-        return []
+def _unique_hashtags_in_order(text: str) -> list[str]:
+    seen = set()
+    ordered = []
+    for tag in _extract_hashtags(text):
+        lowered = tag.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        ordered.append(tag)
+    return ordered
 
-    requested = []
-    for tag in _extract_hashtags(required_hashtags):
-        if tag.lower() in existing:
+
+def _remove_disallowed_hashtags(text: str, allowed_tags: set[str]) -> str:
+    def repl(match: re.Match) -> str:
+        tag = match.group(0)
+        return tag if tag.lower() in allowed_tags else ""
+
+    cleaned = re.sub(r"#[A-Za-z0-9_]+", repl, text or "")
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    cleaned = re.sub(r"\n[ \t]+\n", "\n\n", cleaned)
+    cleaned = re.sub(r" +([,.;:!?])", r"\1", cleaned)
+    return cleaned.strip()
+
+
+def _finalize_required_hashtags(caption: str, required_hashtags: str) -> tuple[str, list[str]]:
+    required = _unique_hashtags_in_order(required_hashtags)[:5]
+    existing = _unique_hashtags_in_order(caption)
+
+    allowed = list(required)
+    allowed_lower = {tag.lower() for tag in allowed}
+    for tag in existing:
+        lowered = tag.lower()
+        if lowered in allowed_lower:
             continue
-        if tag.lower() in {t.lower() for t in requested}:
-            continue
-        requested.append(tag)
-        if len(requested) >= remaining_slots:
+        if len(allowed) >= 5:
             break
+        allowed.append(tag)
+        allowed_lower.add(lowered)
 
-    return requested
+    caption = _remove_disallowed_hashtags(caption, allowed_lower)
+    missing_required = [tag for tag in required if tag.lower() not in {t.lower() for t in _extract_hashtags(caption)}]
+    remaining_slots = max(0, 5 - len({tag.lower() for tag in _extract_hashtags(caption)}))
+    return caption, missing_required[:remaining_slots]
 
 
 def generate_row_caption(row: dict) -> str:
@@ -92,6 +118,11 @@ def generate_row_caption(row: dict) -> str:
     if original_caption:
         caption = f"{caption}\n\n--\n\n{original_caption}"
 
+    required_hashtags = row.get("Required Hashtags", "").strip()
+    appended_required = []
+    if required_hashtags:
+        caption, appended_required = _finalize_required_hashtags(caption, required_hashtags)
+
     username = row.get("Source Username", "").strip().lstrip("@")
     footer_parts = []
     if username and username.lower() != "unknown":
@@ -101,8 +132,6 @@ def generate_row_caption(row: dict) -> str:
     if footer:
         footer_parts.append(footer)
 
-    required_hashtags = row.get("Required Hashtags", "").strip()
-    appended_required = _collect_required_hashtags(caption, required_hashtags) if required_hashtags else []
     if appended_required:
         footer_parts.append(" ".join(appended_required))
 
