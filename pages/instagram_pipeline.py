@@ -130,6 +130,46 @@ st.title("Instagram Pipeline")
 if not _check_password():
     st.stop()
 
+st.markdown(
+    """
+    <style>
+    .pipeline-table {
+        border: 1px solid rgba(15, 23, 42, 0.14);
+        border-radius: 14px;
+        overflow: hidden;
+        background: #ffffff;
+        margin-bottom: 1rem;
+    }
+    .pipeline-table .pipeline-row {
+        border-top: 1px solid rgba(15, 23, 42, 0.1);
+        padding: 0.15rem 0;
+    }
+    .pipeline-table .pipeline-row:first-child {
+        border-top: none;
+        background: rgba(15, 23, 42, 0.04);
+    }
+    .pipeline-table .pipeline-cell {
+        min-height: 58px;
+        padding: 0.75rem 0.85rem;
+        border-left: 1px solid rgba(15, 23, 42, 0.08);
+        display: flex;
+        align-items: center;
+        overflow-wrap: anywhere;
+        font-size: 0.96rem;
+    }
+    .pipeline-table .pipeline-row .pipeline-cell:first-child {
+        border-left: none;
+    }
+    .pipeline-table .pipeline-header {
+        font-weight: 600;
+        color: #0f172a;
+        min-height: 50px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 success_message = st.session_state.pop("pipeline_success", "")
 error_message = st.session_state.pop("pipeline_error", "")
 if success_message:
@@ -142,22 +182,28 @@ st.subheader("All Rows")
 try:
     all_rows = get_all_rows(GOOGLE_SHEET_ID)
     if all_rows:
+        st.markdown('<div class="pipeline-table">', unsafe_allow_html=True)
+        st.markdown('<div class="pipeline-row">', unsafe_allow_html=True)
         header = st.columns([3.2, 1.3, 1.1, 1.1, 2.8, 1.5])
         labels = ["Instagram URL", "Source Username", "Media Type", "Status", "Generated Caption", "Actions"]
         for col, label in zip(header, labels):
-            col.markdown(f"**{label}**")
+            col.markdown(f'<div class="pipeline-cell pipeline-header">{label}</div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
         for row in all_rows:
+            st.markdown('<div class="pipeline-row">', unsafe_allow_html=True)
             cols = st.columns([3.2, 1.3, 1.1, 1.1, 2.8, 1.5])
-            cols[0].write(row.get("Instagram URL", ""))
-            cols[1].write(row.get("Source Username", ""))
-            cols[2].write(row.get("Media Type", ""))
-            cols[3].write(row.get("Status", ""))
+            cols[0].markdown(f'<div class="pipeline-cell">{row.get("Instagram URL", "")}</div>', unsafe_allow_html=True)
+            cols[1].markdown(f'<div class="pipeline-cell">{row.get("Source Username", "")}</div>', unsafe_allow_html=True)
+            cols[2].markdown(f'<div class="pipeline-cell">{row.get("Media Type", "")}</div>', unsafe_allow_html=True)
+            cols[3].markdown(f'<div class="pipeline-cell">{row.get("Status", "")}</div>', unsafe_allow_html=True)
             generated = (row.get("Generated Caption", "") or "").strip()
-            cols[4].write(generated[:120] + ("..." if len(generated) > 120 else ""))
+            preview = generated[:120] + ("..." if len(generated) > 120 else "")
+            cols[4].markdown(f'<div class="pipeline-cell">{preview}</div>', unsafe_allow_html=True)
 
             status = (row.get("Status", "") or "").strip().lower()
             with cols[5]:
+                st.markdown('<div class="pipeline-cell">', unsafe_allow_html=True)
                 if status == "done":
                     if st.button("Re-run with Transcript", key=f"rerun_transcript_{row['row_number']}"):
                         with st.spinner(f"Refreshing row {row['row_number']} with transcript..."):
@@ -170,8 +216,9 @@ try:
                                     f"Row {row['row_number']} refreshed with transcript and caption regenerated."
                                 )
                             st.rerun()
-                else:
-                    st.write("")
+                st.markdown("</div>", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
     else:
         st.info("No rows in sheet yet. Add Instagram URLs to column A to get started.")
 except Exception as e:
