@@ -3,6 +3,7 @@
 import os
 import sys
 import shutil
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -154,6 +155,29 @@ def _download_media_to_drive(row: dict) -> None:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+def _is_sheets_read_quota_error(error: Exception) -> bool:
+    message = str(error)
+    return (
+        "Quota exceeded for quota metric 'Read requests'" in message
+        or "Read requests per minute per user" in message
+        or "Exceeded in a metric read request" in message
+    )
+
+
+def _run_with_sheet_quota_countdown(fn, waiting_label: str):
+    while True:
+        try:
+            return fn()
+        except Exception as e:
+            if not _is_sheets_read_quota_error(e):
+                raise
+            countdown = st.empty()
+            for remaining in range(60, 0, -1):
+                countdown.warning(f"{waiting_label} Sheets read quota hit. Retrying in {remaining}s.")
+                time.sleep(1)
+            countdown.empty()
+
+
 def _queue_pipeline_action(row_number: int, action: str) -> None:
     queue = st.session_state.setdefault("pipeline_action_queue", [])
     queue.append({"row_number": row_number, "action": action})
@@ -178,7 +202,10 @@ def _process_next_queued_action() -> None:
     row_number = current["row_number"]
     action = current["action"]
 
-    rows = get_all_rows(GOOGLE_SHEET_ID)
+    rows = _run_with_sheet_quota_countdown(
+        lambda: get_all_rows(GOOGLE_SHEET_ID),
+        "Queued action paused:",
+    )
     row = next((r for r in rows if r.get("row_number") == row_number), None)
     if not row:
         st.session_state["pipeline_error"] = f"Row {row_number}: row not found in sheet."
@@ -264,7 +291,10 @@ if error_message:
 # --- Status table ---
 st.subheader("All Rows")
 try:
-    all_rows = get_all_rows(GOOGLE_SHEET_ID)
+    all_rows = _run_with_sheet_quota_countdown(
+        lambda: get_all_rows(GOOGLE_SHEET_ID),
+        "Loading rows paused:",
+    )
     if all_rows:
         st.markdown('<div class="pipeline-grid">', unsafe_allow_html=True)
         header = st.columns([0.8, 3.0, 1.3, 1.1, 1.1, 2.8, 1.5], gap="small")
@@ -331,7 +361,10 @@ ingest_btn = st.button("⬇️ Process New Rows", type="primary", use_container_
 # --- Ingest ---
 if ingest_btn:
     try:
-        pending = get_pending_rows(GOOGLE_SHEET_ID)
+        pending = _run_with_sheet_quota_countdown(
+            lambda: get_pending_rows(GOOGLE_SHEET_ID),
+            "Processing new rows paused:",
+        )
     except Exception as e:
         st.error(f"Could not read sheet: {e}")
         st.stop()
