@@ -324,7 +324,14 @@ for row in rows:
         generated = row.get("Generated Caption", "").strip()
         if generated:
             st.caption("Generated Caption")
-            st.code(generated, language=None)
+            preview = generated.replace("\n", " ").strip()
+            st.text_input(
+                "Generated Caption Preview",
+                value=preview,
+                disabled=True,
+                label_visibility="collapsed",
+                key=f"generated_preview_{row_num}",
+            )
 
         action_cols = st.columns(3)
         with action_cols[0]:
