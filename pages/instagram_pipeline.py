@@ -170,16 +170,17 @@ try:
     all_rows = get_all_rows(GOOGLE_SHEET_ID)
     if all_rows:
         st.markdown('<div class="pipeline-grid">', unsafe_allow_html=True)
-        header = st.columns([3.2, 1.3, 1.1, 1.1, 2.8, 1.5], gap="small")
-        labels = ["Instagram URL", "Source Username", "Media Type", "Status", "Generated Caption", "Actions"]
+        header = st.columns([0.8, 3.0, 1.3, 1.1, 1.1, 2.8, 1.5], gap="small")
+        labels = ["Row", "Instagram URL", "Source Username", "Media Type", "Status", "Generated Caption", "Actions"]
         for col, label in zip(header, labels):
             col.markdown(f'<div class="pipeline-header-text">{label}</div>', unsafe_allow_html=True)
 
         st.markdown('<div class="pipeline-row-separator"></div>', unsafe_allow_html=True)
 
         for row in all_rows:
-            cols = st.columns([3.2, 1.3, 1.1, 1.1, 2.8, 1.5], gap="small")
+            cols = st.columns([0.8, 3.0, 1.3, 1.1, 1.1, 2.8, 1.5], gap="small")
             cell_values = [
+                str(row.get("row_number", "")),
                 row.get("Instagram URL", ""),
                 row.get("Source Username", ""),
                 row.get("Media Type", ""),
@@ -187,8 +188,8 @@ try:
                 (row.get("Generated Caption", "") or "").strip(),
             ]
             for idx, value in enumerate(cell_values):
-                text = value[:120] + ("..." if idx == 4 and len(value) > 120 else "")
-                if idx == 0 and value:
+                text = value[:120] + ("..." if idx == 5 and len(value) > 120 else "")
+                if idx == 1 and value:
                     cols[idx].markdown(
                         f'<div class="pipeline-cell-text"><a href="{value}" target="_blank">{text}</a></div>',
                         unsafe_allow_html=True,
@@ -197,7 +198,7 @@ try:
                     cols[idx].markdown(f'<div class="pipeline-cell-text">{text}</div>', unsafe_allow_html=True)
 
             status = (row.get("Status", "") or "").strip().lower()
-            with cols[5]:
+            with cols[6]:
                 if status == "done":
                     if st.button("Re-run with Transcript", key=f"rerun_transcript_{row['row_number']}"):
                         with st.spinner(f"Refreshing row {row['row_number']} with transcript..."):
