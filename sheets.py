@@ -182,6 +182,13 @@ def update_caption(sheet_id: str, row_number: int, caption: str, status: str) ->
     _invalidate_rows_cache(sheet_id)
 
 
+def update_transcript(sheet_id: str, row_number: int, transcript: str) -> None:
+    """Write transcript to col I for a single row."""
+    ws = _worksheet(sheet_id)
+    _with_backoff(ws.update, f"I{row_number}", [[transcript]])
+    _invalidate_rows_cache(sheet_id)
+
+
 def update_metadata(
     sheet_id: str,
     row_number: int,

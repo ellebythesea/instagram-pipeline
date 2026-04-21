@@ -13,10 +13,14 @@ from config import (
     GOOGLE_SHEET_ID,
 )
 from ingest_helpers import upload_media_bundle, upload_thumbnail_only
+from pipeline_caption import generate_row_caption
+from reel_scraper import process_url as process_reel_url
 from sheets import (
     get_all_rows,
     get_pending_rows,
+    update_caption,
     update_ingest_result,
+    update_transcript,
 )
 
 # ---------------------------------------------------------------------------
@@ -44,8 +48,7 @@ def _ingest_row(row: dict) -> dict:
     tmp_dir = None
     try:
         if "/reel/" in url.lower() or "/reels/" in url.lower():
-            from reel_scraper import process_url as process_reel_url
-            data = process_reel_url(url)
+            data = process_reel_url(url, include_transcript=False)
             uploaded = upload_thumbnail_only(data)
             tmp_dir = uploaded["tmp_dir"]
             return {
@@ -93,6 +96,30 @@ def _ingest_row(row: dict) -> dict:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+def _rerun_with_transcript(row: dict) -> None:
+    """Fetch a reel transcript on demand, rewrite the sheet row, and regenerate the caption."""
+    url = row.get("Instagram URL", "").strip()
+    if "/reel/" not in url.lower() and "/reels/" not in url.lower():
+        raise ValueError("Re-run with transcript is only available for reel URLs.")
+
+    refreshed = process_reel_url(url, include_transcript=True)
+    transcript = (refreshed.get("transcript") or "").strip()
+    if not transcript:
+        raise ValueError("Apify did not return a transcript for this reel.")
+
+    row_num = row["row_number"]
+    update_transcript(GOOGLE_SHEET_ID, row_num, transcript)
+
+    updated_row = dict(row)
+    updated_row["Transcript"] = transcript
+    updated_row["Source Username"] = refreshed.get("username") or updated_row.get("Source Username", "")
+    updated_row["Original Caption"] = refreshed.get("original_caption") or updated_row.get("Original Caption", "")
+    updated_row["Media Type"] = refreshed.get("media_type") or updated_row.get("Media Type", "")
+
+    caption = generate_row_caption(updated_row)
+    update_caption(GOOGLE_SHEET_ID, row_num, caption, "done")
+
+
 # ---------------------------------------------------------------------------
 # UI
 # ---------------------------------------------------------------------------
@@ -103,15 +130,48 @@ st.title("Instagram Pipeline")
 if not _check_password():
     st.stop()
 
+success_message = st.session_state.pop("pipeline_success", "")
+error_message = st.session_state.pop("pipeline_error", "")
+if success_message:
+    st.success(success_message)
+if error_message:
+    st.error(error_message)
+
 # --- Status table ---
 st.subheader("All Rows")
 try:
     all_rows = get_all_rows(GOOGLE_SHEET_ID)
     if all_rows:
-        import pandas as pd
-        display_cols = ["Instagram URL", "Source Username", "Media Type", "Status", "Generated Caption"]
-        df = pd.DataFrame([{c: r.get(c, "") for c in display_cols} for r in all_rows])
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        header = st.columns([3.2, 1.3, 1.1, 1.1, 2.8, 1.5])
+        labels = ["Instagram URL", "Source Username", "Media Type", "Status", "Generated Caption", "Actions"]
+        for col, label in zip(header, labels):
+            col.markdown(f"**{label}**")
+
+        for row in all_rows:
+            cols = st.columns([3.2, 1.3, 1.1, 1.1, 2.8, 1.5])
+            cols[0].write(row.get("Instagram URL", ""))
+            cols[1].write(row.get("Source Username", ""))
+            cols[2].write(row.get("Media Type", ""))
+            cols[3].write(row.get("Status", ""))
+            generated = (row.get("Generated Caption", "") or "").strip()
+            cols[4].write(generated[:120] + ("..." if len(generated) > 120 else ""))
+
+            status = (row.get("Status", "") or "").strip().lower()
+            with cols[5]:
+                if status == "done":
+                    if st.button("Re-run with Transcript", key=f"rerun_transcript_{row['row_number']}"):
+                        with st.spinner(f"Refreshing row {row['row_number']} with transcript..."):
+                            try:
+                                _rerun_with_transcript(row)
+                            except Exception as e:
+                                st.session_state["pipeline_error"] = f"Row {row['row_number']}: {e}"
+                            else:
+                                st.session_state["pipeline_success"] = (
+                                    f"Row {row['row_number']} refreshed with transcript and caption regenerated."
+                                )
+                            st.rerun()
+                else:
+                    st.write("")
     else:
         st.info("No rows in sheet yet. Add Instagram URLs to column A to get started.")
 except Exception as e:

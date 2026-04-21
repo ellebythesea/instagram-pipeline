@@ -18,7 +18,7 @@ def _extract_post_id(url: str) -> str:
     return m.group(1) if m else "unknown"
 
 
-def process_url(url: str) -> dict:
+def process_url(url: str, include_transcript: bool = False) -> dict:
     """Scrape an Instagram reel via Apify.
 
     Returns:
@@ -41,7 +41,7 @@ def process_url(url: str) -> dict:
             run_input={
                 "username": [url],
                 "resultsLimit": 1,
-                "includeTranscript": True,
+                "includeTranscript": include_transcript,
                 "includeDownloadedVideo": False,
             },
             timeout_secs=300,
