@@ -244,41 +244,6 @@ st.title("Instagram Pipeline")
 if not _check_password():
     st.stop()
 
-st.markdown(
-    """
-    <style>
-    .pipeline-grid [data-testid="column"] {
-        padding: 0 0.2rem !important;
-    }
-    .pipeline-grid .pipeline-header-text {
-        font-weight: 700;
-        color: #0f172a;
-    }
-    .pipeline-grid .pipeline-cell-text {
-        font-size: 0.96rem;
-        line-height: 1.45;
-        overflow-wrap: anywhere;
-    }
-    .pipeline-actions {
-        display: flex;
-        gap: 0.4rem;
-        align-items: center;
-    }
-    .pipeline-actions [data-testid="stButton"] {
-        flex: 1 1 0;
-    }
-    .pipeline-row-separator {
-        border-top: 1px solid rgba(15, 23, 42, 0.14);
-        margin: 0.35rem 0 0.75rem;
-    }
-    .pipeline-grid [data-testid="stButton"] > button {
-        width: 100%;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
 _process_next_queued_action()
 
 success_message = st.session_state.pop("pipeline_success", "")
@@ -296,59 +261,29 @@ try:
         "Loading rows paused:",
     )
     if all_rows:
-        st.markdown('<div class="pipeline-grid">', unsafe_allow_html=True)
-        header = st.columns([0.8, 3.0, 1.3, 1.1, 1.1, 2.8, 1.5], gap="small")
-        labels = ["Row", "Instagram URL", "Source Username", "Media Type", "Status", "Generated Caption", "Actions"]
-        for col, label in zip(header, labels):
-            col.markdown(f'<div class="pipeline-header-text">{label}</div>', unsafe_allow_html=True)
-
-        st.markdown('<div class="pipeline-row-separator"></div>', unsafe_allow_html=True)
-
-        for row in all_rows:
-            cols = st.columns([0.8, 3.0, 1.3, 1.1, 1.1, 2.8, 1.5], gap="small")
-            cell_values = [
-                str(row.get("row_number", "")),
-                row.get("Instagram URL", ""),
-                row.get("Source Username", ""),
-                row.get("Media Type", ""),
-                row.get("Status", ""),
-                (row.get("Generated Caption", "") or "").strip(),
+        import pandas as pd
+        df = pd.DataFrame(
+            [
+                {
+                    "Row": r.get("row_number", ""),
+                    "Instagram URL": r.get("Instagram URL", ""),
+                    "Source Username": r.get("Source Username", ""),
+                    "Media Type": r.get("Media Type", ""),
+                    "Status": r.get("Status", ""),
+                    "Generated Caption": r.get("Generated Caption", ""),
+                }
+                for r in all_rows
             ]
-            for idx, value in enumerate(cell_values):
-                text = value[:120] + ("..." if idx == 5 and len(value) > 120 else "")
-                if idx == 1 and value:
-                    cols[idx].markdown(
-                        f'<div class="pipeline-cell-text"><a href="{value}" target="_blank">{text}</a></div>',
-                        unsafe_allow_html=True,
-                    )
-                else:
-                    cols[idx].markdown(f'<div class="pipeline-cell-text">{text}</div>', unsafe_allow_html=True)
-
-            status = (row.get("Status", "") or "").strip().lower()
-            with cols[6]:
-                mic_col, dl_col = st.columns(2, gap="small")
-                with mic_col:
-                    rerun_disabled = status != "done"
-                    transcript_label = "✅" if _is_action_complete(row["row_number"], "transcript") else "🎙️"
-                    if st.button(
-                        transcript_label,
-                        key=f"rerun_transcript_{row['row_number']}",
-                        help="Re-run caption generation with transcript",
-                        disabled=rerun_disabled,
-                    ):
-                        _queue_pipeline_action(row["row_number"], "transcript")
-                        st.rerun()
-                with dl_col:
-                    download_label = "✅" if _is_action_complete(row["row_number"], "download") else "⬇️"
-                    if st.button(
-                        download_label,
-                        key=f"download_media_{row['row_number']}",
-                        help="Upload this row's media to the Drive folder",
-                    ):
-                        _queue_pipeline_action(row["row_number"], "download")
-                        st.rerun()
-            st.markdown('<div class="pipeline-row-separator"></div>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        )
+        st.dataframe(
+            df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Instagram URL": st.column_config.LinkColumn("Instagram URL"),
+                "Generated Caption": st.column_config.TextColumn("Generated Caption", width="large"),
+            },
+        )
     else:
         st.info("No rows in sheet yet. Add Instagram URLs to column A to get started.")
 except Exception as e:
