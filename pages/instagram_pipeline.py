@@ -133,45 +133,25 @@ if not _check_password():
 st.markdown(
     """
     <style>
-    .pipeline-table {
-        border: 1px solid rgba(15, 23, 42, 0.14);
-        border-radius: 14px;
-        overflow: hidden;
-        background: #ffffff;
-        margin-bottom: 1rem;
+    .pipeline-grid [data-testid="column"] {
+        padding: 0 !important;
     }
-    .pipeline-table .pipeline-row-block {
-        border-top: 1px solid rgba(15, 23, 42, 0.12);
-    }
-    .pipeline-table .pipeline-row-block:first-child {
-        border-top: none;
-    }
-    .pipeline-table .pipeline-cell {
-        min-height: 58px;
-        padding: 0.75rem 0.85rem;
-        border-left: 1px solid rgba(15, 23, 42, 0.12);
-        display: flex;
-        align-items: center;
-        overflow-wrap: anywhere;
-        font-size: 0.96rem;
-        height: 100%;
-    }
-    .pipeline-table .pipeline-cell.first {
-        border-left: none;
-    }
-    .pipeline-table .pipeline-header {
-        font-weight: 600;
-        color: #0f172a;
-        min-height: 50px;
-        background: rgba(15, 23, 42, 0.04);
-    }
-    .pipeline-table [data-testid="column"] {
-        padding: 0;
-    }
-    .pipeline-table [data-testid="stButton"] {
+    .pipeline-grid [data-testid="stVerticalBlock"] > [data-testid="stVerticalBlockBorderWrapper"] {
         width: 100%;
     }
-    .pipeline-table [data-testid="stButton"] > button {
+    .pipeline-grid .pipeline-header-text {
+        font-weight: 700;
+        color: #0f172a;
+    }
+    .pipeline-grid .pipeline-cell-text {
+        font-size: 0.96rem;
+        line-height: 1.45;
+        overflow-wrap: anywhere;
+    }
+    .pipeline-grid .pipeline-header-cell {
+        background: #f8fafc;
+    }
+    .pipeline-grid [data-testid="stButton"] > button {
         width: 100%;
     }
     </style>
@@ -191,37 +171,40 @@ st.subheader("All Rows")
 try:
     all_rows = get_all_rows(GOOGLE_SHEET_ID)
     if all_rows:
-        st.markdown('<div class="pipeline-table">', unsafe_allow_html=True)
-        st.markdown('<div class="pipeline-row-block">', unsafe_allow_html=True)
-        header = st.columns([3.2, 1.3, 1.1, 1.1, 2.8, 1.5])
+        st.markdown('<div class="pipeline-grid">', unsafe_allow_html=True)
+        header = st.columns([3.2, 1.3, 1.1, 1.1, 2.8, 1.5], gap="small")
         labels = ["Instagram URL", "Source Username", "Media Type", "Status", "Generated Caption", "Actions"]
-        for idx, (col, label) in enumerate(zip(header, labels)):
-            first_class = " first" if idx == 0 else ""
-            col.markdown(
-                f'<div class="pipeline-cell pipeline-header{first_class}">{label}</div>',
-                unsafe_allow_html=True,
-            )
-        st.markdown('</div>', unsafe_allow_html=True)
+        for col, label in zip(header, labels):
+            with col:
+                cell = st.container(border=True)
+                cell.markdown(
+                    f'<div class="pipeline-header-text">{label}</div>',
+                    unsafe_allow_html=True,
+                )
 
         for row in all_rows:
-            st.markdown('<div class="pipeline-row-block">', unsafe_allow_html=True)
-            cols = st.columns([3.2, 1.3, 1.1, 1.1, 2.8, 1.5])
-            cols[0].markdown(
-                f'<div class="pipeline-cell first">{row.get("Instagram URL", "")}</div>',
-                unsafe_allow_html=True,
-            )
-            cols[1].markdown(f'<div class="pipeline-cell">{row.get("Source Username", "")}</div>', unsafe_allow_html=True)
-            cols[2].markdown(f'<div class="pipeline-cell">{row.get("Media Type", "")}</div>', unsafe_allow_html=True)
-            cols[3].markdown(f'<div class="pipeline-cell">{row.get("Status", "")}</div>', unsafe_allow_html=True)
-            generated = (row.get("Generated Caption", "") or "").strip()
-            preview = generated[:120] + ("..." if len(generated) > 120 else "")
-            cols[4].markdown(f'<div class="pipeline-cell">{preview}</div>', unsafe_allow_html=True)
+            cols = st.columns([3.2, 1.3, 1.1, 1.1, 2.8, 1.5], gap="small")
+            cell_values = [
+                row.get("Instagram URL", ""),
+                row.get("Source Username", ""),
+                row.get("Media Type", ""),
+                row.get("Status", ""),
+                (row.get("Generated Caption", "") or "").strip(),
+            ]
+            for idx, value in enumerate(cell_values):
+                with cols[idx]:
+                    cell = st.container(border=True)
+                    text = value[:120] + ("..." if idx == 4 and len(value) > 120 else "")
+                    cell.markdown(
+                        f'<div class="pipeline-cell-text">{text}</div>',
+                        unsafe_allow_html=True,
+                    )
 
             status = (row.get("Status", "") or "").strip().lower()
             with cols[5]:
-                st.markdown('<div class="pipeline-cell">', unsafe_allow_html=True)
+                cell = st.container(border=True)
                 if status == "done":
-                    if st.button("Re-run with Transcript", key=f"rerun_transcript_{row['row_number']}"):
+                    if cell.button("Re-run with Transcript", key=f"rerun_transcript_{row['row_number']}"):
                         with st.spinner(f"Refreshing row {row['row_number']} with transcript..."):
                             try:
                                 _rerun_with_transcript(row)
@@ -232,8 +215,8 @@ try:
                                     f"Row {row['row_number']} refreshed with transcript and caption regenerated."
                                 )
                             st.rerun()
-                st.markdown("</div>", unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
+                else:
+                    cell.markdown("&nbsp;", unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
     else:
         st.info("No rows in sheet yet. Add Instagram URLs to column A to get started.")
