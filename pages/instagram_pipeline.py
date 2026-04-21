@@ -154,6 +154,59 @@ def _download_media_to_drive(row: dict) -> None:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+def _queue_pipeline_action(row_number: int, action: str) -> None:
+    queue = st.session_state.setdefault("pipeline_action_queue", [])
+    queue.append({"row_number": row_number, "action": action})
+
+
+def _mark_action_complete(row_number: int, action: str) -> None:
+    completed = st.session_state.setdefault("pipeline_action_completed", {})
+    completed[f"{row_number}:{action}"] = True
+
+
+def _is_action_complete(row_number: int, action: str) -> bool:
+    completed = st.session_state.setdefault("pipeline_action_completed", {})
+    return bool(completed.get(f"{row_number}:{action}"))
+
+
+def _process_next_queued_action() -> None:
+    queue = st.session_state.setdefault("pipeline_action_queue", [])
+    if not queue:
+        return
+
+    current = queue.pop(0)
+    row_number = current["row_number"]
+    action = current["action"]
+
+    rows = get_all_rows(GOOGLE_SHEET_ID)
+    row = next((r for r in rows if r.get("row_number") == row_number), None)
+    if not row:
+        st.session_state["pipeline_error"] = f"Row {row_number}: row not found in sheet."
+        if queue:
+            st.rerun()
+        return
+
+    try:
+        if action == "transcript":
+            with st.spinner(f"Refreshing row {row_number} with transcript..."):
+                _rerun_with_transcript(row)
+            st.session_state["pipeline_success"] = (
+                f"Row {row_number} refreshed with transcript and caption regenerated."
+            )
+        elif action == "download":
+            with st.spinner(f"Uploading row {row_number} media to Drive..."):
+                _download_media_to_drive(row)
+            st.session_state["pipeline_success"] = f"Row {row_number} media uploaded to Drive."
+        else:
+            raise ValueError(f"Unknown action: {action}")
+        _mark_action_complete(row_number, action)
+    except Exception as e:
+        st.session_state["pipeline_error"] = f"Row {row_number}: {e}"
+
+    if queue:
+        st.rerun()
+
+
 # ---------------------------------------------------------------------------
 # UI
 # ---------------------------------------------------------------------------
@@ -198,6 +251,8 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+_process_next_queued_action()
 
 success_message = st.session_state.pop("pipeline_success", "")
 error_message = st.session_state.pop("pipeline_error", "")
@@ -244,38 +299,24 @@ try:
                 mic_col, dl_col = st.columns(2, gap="small")
                 with mic_col:
                     rerun_disabled = status != "done"
+                    transcript_label = "✅" if _is_action_complete(row["row_number"], "transcript") else "🎙️"
                     if st.button(
-                        "🎙️",
+                        transcript_label,
                         key=f"rerun_transcript_{row['row_number']}",
                         help="Re-run caption generation with transcript",
                         disabled=rerun_disabled,
                     ):
-                        with st.spinner(f"Refreshing row {row['row_number']} with transcript..."):
-                            try:
-                                _rerun_with_transcript(row)
-                            except Exception as e:
-                                st.session_state["pipeline_error"] = f"Row {row['row_number']}: {e}"
-                            else:
-                                st.session_state["pipeline_success"] = (
-                                    f"Row {row['row_number']} refreshed with transcript and caption regenerated."
-                                )
-                            st.rerun()
+                        _queue_pipeline_action(row["row_number"], "transcript")
+                        st.rerun()
                 with dl_col:
+                    download_label = "✅" if _is_action_complete(row["row_number"], "download") else "⬇️"
                     if st.button(
-                        "⬇️",
+                        download_label,
                         key=f"download_media_{row['row_number']}",
                         help="Upload this row's media to the Drive folder",
                     ):
-                        with st.spinner(f"Uploading row {row['row_number']} media to Drive..."):
-                            try:
-                                _download_media_to_drive(row)
-                            except Exception as e:
-                                st.session_state["pipeline_error"] = f"Row {row['row_number']}: {e}"
-                            else:
-                                st.session_state["pipeline_success"] = (
-                                    f"Row {row['row_number']} media uploaded to Drive."
-                                )
-                            st.rerun()
+                        _queue_pipeline_action(row["row_number"], "download")
+                        st.rerun()
             st.markdown('<div class="pipeline-row-separator"></div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
     else:
