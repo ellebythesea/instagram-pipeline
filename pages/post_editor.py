@@ -341,6 +341,7 @@ for row in rows:
                 key=f"post_editor_transcript_{row_num}",
                 help="Re-run with transcript",
                 disabled=rerun_disabled,
+                use_container_width=True,
             ):
                 with st.spinner(f"Refreshing row {row_num} with transcript..."):
                     try:
@@ -355,6 +356,7 @@ for row in rows:
                 "⬇️",
                 key=f"post_editor_download_{row_num}",
                 help="Download media to Drive",
+                use_container_width=True,
             ):
                 with st.spinner(f"Uploading row {row_num} media to Drive..."):
                     try:
@@ -371,6 +373,7 @@ for row in rows:
                 key=f"post_editor_image_text_{row_num}",
                 help="Re-do caption from image text",
                 disabled=image_redo_disabled,
+                use_container_width=True,
             ):
                 with st.spinner(f"Extracting image text for row {row_num}..."):
                     try:
