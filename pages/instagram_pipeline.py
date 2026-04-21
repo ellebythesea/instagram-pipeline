@@ -188,7 +188,13 @@ try:
             ]
             for idx, value in enumerate(cell_values):
                 text = value[:120] + ("..." if idx == 4 and len(value) > 120 else "")
-                cols[idx].markdown(f'<div class="pipeline-cell-text">{text}</div>', unsafe_allow_html=True)
+                if idx == 0 and value:
+                    cols[idx].markdown(
+                        f'<div class="pipeline-cell-text"><a href="{value}" target="_blank">{text}</a></div>',
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    cols[idx].markdown(f'<div class="pipeline-cell-text">{text}</div>', unsafe_allow_html=True)
 
             status = (row.get("Status", "") or "").strip().lower()
             with cols[5]:
