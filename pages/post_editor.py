@@ -336,7 +336,12 @@ for row in rows:
         action_cols = st.columns(3)
         with action_cols[0]:
             rerun_disabled = "/reel/" not in url.lower() and "/reels/" not in url.lower()
-            if st.button("🎙️ Re-run with Transcript", key=f"post_editor_transcript_{row_num}", disabled=rerun_disabled):
+            if st.button(
+                "🎙️",
+                key=f"post_editor_transcript_{row_num}",
+                help="Re-run with transcript",
+                disabled=rerun_disabled,
+            ):
                 with st.spinner(f"Refreshing row {row_num} with transcript..."):
                     try:
                         _rerun_with_transcript(row)
@@ -346,7 +351,11 @@ for row in rows:
                         st.success(f"Row {row_num}: transcript caption rerun complete.")
                         st.rerun()
         with action_cols[1]:
-            if st.button("⬇️ Download Media", key=f"post_editor_download_{row_num}"):
+            if st.button(
+                "⬇️",
+                key=f"post_editor_download_{row_num}",
+                help="Download media to Drive",
+            ):
                 with st.spinner(f"Uploading row {row_num} media to Drive..."):
                     try:
                         _download_media_to_drive(row)
@@ -357,7 +366,12 @@ for row in rows:
                         st.rerun()
         with action_cols[2]:
             image_redo_disabled = (media_type or "").strip().lower() != "photo"
-            if st.button("🖼️ Re-do from Image Text", key=f"post_editor_image_text_{row_num}", disabled=image_redo_disabled):
+            if st.button(
+                "🖼️",
+                key=f"post_editor_image_text_{row_num}",
+                help="Re-do caption from image text",
+                disabled=image_redo_disabled,
+            ):
                 with st.spinner(f"Extracting image text for row {row_num}..."):
                     try:
                         _redo_caption_from_image_text(row)
