@@ -14,6 +14,7 @@ from config import (
 )
 from ingest_helpers import upload_media_bundle, upload_thumbnail_only
 from pipeline_caption import generate_row_caption
+from post_scraper import process_url as process_post_url
 from reel_scraper import process_url as process_reel_url
 from sheets import (
     get_all_rows,
@@ -120,6 +121,39 @@ def _rerun_with_transcript(row: dict) -> None:
     update_caption(GOOGLE_SHEET_ID, row_num, caption, "done")
 
 
+def _download_media_to_drive(row: dict) -> None:
+    """Upload a row's media to Drive from the pipeline table."""
+    url = row.get("Instagram URL", "").strip()
+    if not url:
+        raise ValueError("This row does not have an Instagram URL.")
+
+    tmp_dir = None
+    try:
+        if "/reel/" in url.lower() or "/reels/" in url.lower():
+            data = process_reel_url(url, include_transcript=False)
+        else:
+            data = process_post_url(url)
+
+        uploaded = upload_media_bundle(data)
+        tmp_dir = uploaded["tmp_dir"]
+        row_num = row["row_number"]
+        update_ingest_result(
+            GOOGLE_SHEET_ID,
+            row_num,
+            data["username"],
+            data["media_type"],
+            data["photo_count"],
+            uploaded["media_link"],
+            uploaded["thumbnail_link"],
+            data["original_caption"] or row.get("Original Caption", ""),
+            row.get("Transcript", ""),
+            row.get("Status", "") or "ingested",
+        )
+    finally:
+        if tmp_dir:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
 # ---------------------------------------------------------------------------
 # UI
 # ---------------------------------------------------------------------------
@@ -144,6 +178,14 @@ st.markdown(
         font-size: 0.96rem;
         line-height: 1.45;
         overflow-wrap: anywhere;
+    }
+    .pipeline-actions {
+        display: flex;
+        gap: 0.4rem;
+        align-items: center;
+    }
+    .pipeline-actions [data-testid="stButton"] {
+        flex: 1 1 0;
     }
     .pipeline-row-separator {
         border-top: 1px solid rgba(15, 23, 42, 0.14);
@@ -199,8 +241,15 @@ try:
 
             status = (row.get("Status", "") or "").strip().lower()
             with cols[6]:
-                if status == "done":
-                    if st.button("Re-run with Transcript", key=f"rerun_transcript_{row['row_number']}"):
+                mic_col, dl_col = st.columns(2, gap="small")
+                with mic_col:
+                    rerun_disabled = status != "done"
+                    if st.button(
+                        "🎙️",
+                        key=f"rerun_transcript_{row['row_number']}",
+                        help="Re-run caption generation with transcript",
+                        disabled=rerun_disabled,
+                    ):
                         with st.spinner(f"Refreshing row {row['row_number']} with transcript..."):
                             try:
                                 _rerun_with_transcript(row)
@@ -211,8 +260,22 @@ try:
                                     f"Row {row['row_number']} refreshed with transcript and caption regenerated."
                                 )
                             st.rerun()
-                else:
-                    st.markdown("&nbsp;", unsafe_allow_html=True)
+                with dl_col:
+                    if st.button(
+                        "⬇️",
+                        key=f"download_media_{row['row_number']}",
+                        help="Upload this row's media to the Drive folder",
+                    ):
+                        with st.spinner(f"Uploading row {row['row_number']} media to Drive..."):
+                            try:
+                                _download_media_to_drive(row)
+                            except Exception as e:
+                                st.session_state["pipeline_error"] = f"Row {row['row_number']}: {e}"
+                            else:
+                                st.session_state["pipeline_success"] = (
+                                    f"Row {row['row_number']} media uploaded to Drive."
+                                )
+                            st.rerun()
             st.markdown('<div class="pipeline-row-separator"></div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
     else:
