@@ -140,30 +140,39 @@ st.markdown(
         background: #ffffff;
         margin-bottom: 1rem;
     }
-    .pipeline-table .pipeline-row {
-        border-top: 1px solid rgba(15, 23, 42, 0.1);
-        padding: 0.15rem 0;
+    .pipeline-table .pipeline-row-block {
+        border-top: 1px solid rgba(15, 23, 42, 0.12);
     }
-    .pipeline-table .pipeline-row:first-child {
+    .pipeline-table .pipeline-row-block:first-child {
         border-top: none;
-        background: rgba(15, 23, 42, 0.04);
     }
     .pipeline-table .pipeline-cell {
         min-height: 58px;
         padding: 0.75rem 0.85rem;
-        border-left: 1px solid rgba(15, 23, 42, 0.08);
+        border-left: 1px solid rgba(15, 23, 42, 0.12);
         display: flex;
         align-items: center;
         overflow-wrap: anywhere;
         font-size: 0.96rem;
+        height: 100%;
     }
-    .pipeline-table .pipeline-row .pipeline-cell:first-child {
+    .pipeline-table .pipeline-cell.first {
         border-left: none;
     }
     .pipeline-table .pipeline-header {
         font-weight: 600;
         color: #0f172a;
         min-height: 50px;
+        background: rgba(15, 23, 42, 0.04);
+    }
+    .pipeline-table [data-testid="column"] {
+        padding: 0;
+    }
+    .pipeline-table [data-testid="stButton"] {
+        width: 100%;
+    }
+    .pipeline-table [data-testid="stButton"] > button {
+        width: 100%;
     }
     </style>
     """,
@@ -183,17 +192,24 @@ try:
     all_rows = get_all_rows(GOOGLE_SHEET_ID)
     if all_rows:
         st.markdown('<div class="pipeline-table">', unsafe_allow_html=True)
-        st.markdown('<div class="pipeline-row">', unsafe_allow_html=True)
+        st.markdown('<div class="pipeline-row-block">', unsafe_allow_html=True)
         header = st.columns([3.2, 1.3, 1.1, 1.1, 2.8, 1.5])
         labels = ["Instagram URL", "Source Username", "Media Type", "Status", "Generated Caption", "Actions"]
-        for col, label in zip(header, labels):
-            col.markdown(f'<div class="pipeline-cell pipeline-header">{label}</div>', unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+        for idx, (col, label) in enumerate(zip(header, labels)):
+            first_class = " first" if idx == 0 else ""
+            col.markdown(
+                f'<div class="pipeline-cell pipeline-header{first_class}">{label}</div>',
+                unsafe_allow_html=True,
+            )
+        st.markdown('</div>', unsafe_allow_html=True)
 
         for row in all_rows:
-            st.markdown('<div class="pipeline-row">', unsafe_allow_html=True)
+            st.markdown('<div class="pipeline-row-block">', unsafe_allow_html=True)
             cols = st.columns([3.2, 1.3, 1.1, 1.1, 2.8, 1.5])
-            cols[0].markdown(f'<div class="pipeline-cell">{row.get("Instagram URL", "")}</div>', unsafe_allow_html=True)
+            cols[0].markdown(
+                f'<div class="pipeline-cell first">{row.get("Instagram URL", "")}</div>',
+                unsafe_allow_html=True,
+            )
             cols[1].markdown(f'<div class="pipeline-cell">{row.get("Source Username", "")}</div>', unsafe_allow_html=True)
             cols[2].markdown(f'<div class="pipeline-cell">{row.get("Media Type", "")}</div>', unsafe_allow_html=True)
             cols[3].markdown(f'<div class="pipeline-cell">{row.get("Status", "")}</div>', unsafe_allow_html=True)
@@ -217,8 +233,8 @@ try:
                                 )
                             st.rerun()
                 st.markdown("</div>", unsafe_allow_html=True)
-            st.markdown("</div>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
     else:
         st.info("No rows in sheet yet. Add Instagram URLs to column A to get started.")
 except Exception as e:
