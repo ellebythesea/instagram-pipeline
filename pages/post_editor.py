@@ -265,8 +265,28 @@ for row in rows:
             st.markdown(f"[Open post on Instagram ↗]({url})")
 
         orig = row.get("Original Caption", "")
-        if orig and _looks_like_drive_link(orig):
+        if orig and not _looks_like_drive_link(orig):
+            st.caption("Original Caption")
+            st.text_input(
+                "Original Caption Preview",
+                value=orig.replace("\n", " ").strip(),
+                disabled=True,
+                label_visibility="collapsed",
+                key=f"orig_preview_{row_num}",
+            )
+        elif orig:
             st.caption("Original caption for this row looks misaligned. Re-ingest the row to refresh it.")
+
+        generated = row.get("Generated Caption", "").strip()
+        if generated:
+            st.caption("Generated Caption")
+            st.text_input(
+                "Generated Caption Preview",
+                value=generated.replace("\n", " ").strip(),
+                disabled=True,
+                label_visibility="collapsed",
+                key=f"generated_preview_{row_num}",
+            )
 
         transcript = row.get("Transcript", "")
         if transcript:
@@ -312,11 +332,6 @@ for row in rows:
             placeholder="Prepended above the generated caption.",
             key=f"top_{row_num}",
         )
-
-        generated = row.get("Generated Caption", "").strip()
-        if generated:
-            st.caption("Generated Caption")
-            st.code(generated, language=None)
 
         action_cols = st.columns(3)
         with action_cols[0]:
