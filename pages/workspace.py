@@ -1115,6 +1115,7 @@ if active_tab == "Edit":
                         st.info("Thumbnail will appear here after ingest.")
 
                 with top_right:
+                    generated_single_line = " ".join((generated or "(none)").splitlines()).strip() or "(none)"
                     st.markdown(
                         f'<div class="workspace-status-line">Row {row_num} · {media_type or "pending"} · {status or "blank"}</div>',
                         unsafe_allow_html=True,
@@ -1122,7 +1123,7 @@ if active_tab == "Edit":
                     st.markdown(f"#### @{username}" if username else f"#### Row {row_num}")
 
                     st.markdown('<div class="workspace-section-label">Generated Caption</div>', unsafe_allow_html=True)
-                    st.code(generated or "(none)", language=None)
+                    st.code(generated_single_line, language=None)
 
                     st.text_input(
                         "Speaker Name",
