@@ -237,10 +237,16 @@ st.markdown(
         margin-bottom: 1rem;
         background: rgba(255, 255, 255, 0.85);
     }
+    .editor-row [data-testid="stCodeBlock"] {
+        max-height: 3.1rem;
+        overflow: hidden;
+        margin-bottom: 0.5rem;
+    }
     .editor-row [data-testid="stCodeBlock"] pre {
         max-height: 3.1rem;
         overflow: hidden;
         white-space: pre-wrap;
+        margin: 0;
     }
     </style>
     """,
