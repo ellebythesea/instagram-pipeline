@@ -132,12 +132,12 @@ if submitted:
 
     st.divider()
     st.subheader("Headline options")
-    for idx, headline in enumerate(headlines, start=1):
-        st.caption(f"Option {idx}")
-        st.code(headline, language=None)
+    headline_tabs = st.tabs(["Option 1", "Option 2", "Option 3", "Original caption"])
+    for idx in range(3):
+        with headline_tabs[idx]:
+            st.code(headlines[idx] if idx < len(headlines) else "(none)", language=None)
+    with headline_tabs[3]:
+        st.code(original_caption or "(none)", language=None)
 
     st.subheader("Caption")
     st.code(final_caption, language=None)
-
-    with st.expander("Source caption"):
-        st.write(original_caption or "(none)")
