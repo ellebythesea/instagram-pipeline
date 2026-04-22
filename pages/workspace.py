@@ -841,13 +841,19 @@ st.markdown(
     div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="column"] {
         min-width: 0 !important;
     }
-    div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stHorizontalBlock"],
-    div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] {
+    div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stHorizontalBlock"] {
         display: flex !important;
         flex-direction: row !important;
         align-items: stretch !important;
         gap: 1rem;
         flex-wrap: nowrap !important;
+    }
+    div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) 4rem 4rem !important;
+        align-items: stretch !important;
+        column-gap: 0.75rem !important;
+        row-gap: 0 !important;
     }
     div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:first-child {
         flex: 0 0 42% !important;
@@ -859,12 +865,15 @@ st.markdown(
     }
     div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stCodeBlock"] {
         margin: 0.2rem 0 0.35rem;
+        min-height: 2.1rem !important;
+        max-height: 2.1rem !important;
+        overflow: hidden !important;
     }
     div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stCodeBlock"] pre {
         min-height: 2.1rem;
         max-height: 2.1rem;
         overflow: hidden;
-        white-space: pre;
+        white-space: nowrap !important;
         text-overflow: ellipsis;
         line-height: 1.1rem;
         padding: 0.45rem 2.75rem 0.45rem 0.7rem;
@@ -873,22 +882,27 @@ st.markdown(
     div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stCodeBlock"] code {
         line-height: 1.1rem;
         font-size: 0.86rem;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        display: block !important;
     }
     div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) .stButton > button {
         white-space: nowrap;
     }
-    div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:first-child {
+    div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"] {
         min-width: 0 !important;
-        flex: 0 0 58% !important;
-        width: 58% !important;
-        max-width: 58% !important;
+        width: auto !important;
+        max-width: none !important;
     }
-    div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:nth-child(2),
+    div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:first-child {
+        grid-column: 1;
+    }
+    div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:nth-child(2) {
+        grid-column: 2;
+    }
     div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:nth-child(3) {
-        min-width: 0 !important;
-        flex: 0 0 21% !important;
-        width: 21% !important;
-        max-width: 21% !important;
+        grid-column: 3;
     }
     .workspace-content-tabs [data-baseweb="tab-list"] {
         gap: 0.5rem;
@@ -922,18 +936,10 @@ st.markdown(
             flex: 0 0 56% !important;
             width: 56% !important;
         }
-        div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:first-child {
-            min-width: 0 !important;
-            flex: 0 0 58% !important;
-            width: 58% !important;
-            max-width: 58% !important;
-        }
-        div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:nth-child(2),
-        div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:nth-child(3) {
-            min-width: 0 !important;
-            flex: 0 0 21% !important;
-            width: 21% !important;
-            max-width: 21% !important;
+        div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] {
+            display: grid !important;
+            grid-template-columns: minmax(0, 1fr) 4rem 4rem !important;
+            column-gap: 0.75rem !important;
         }
     }
     div[data-testid="stVerticalBlock"]:has(> div.workspace-generate-anchor) {
