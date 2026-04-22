@@ -894,7 +894,6 @@ if active_tab == "Edit":
                 with top_right:
                     menu_label = "Photo run" if not _is_reel_url(url) else "Transcribe"
                     title_col, menu_col = st.columns([12, 1], vertical_alignment="center")
-                    generated_single_line = " ".join((generated or "(none)").splitlines()).strip() or "(none)"
                     st.markdown(
                         f'<div class="workspace-status-line">Row {row_num} · {media_type or "pending"} · {status or "blank"}</div>',
                         unsafe_allow_html=True,
@@ -966,7 +965,7 @@ if active_tab == "Edit":
                                 st.rerun()
 
                     st.markdown('<div class="workspace-section-label">Generated Caption</div>', unsafe_allow_html=True)
-                    st.code(generated_single_line, language=None)
+                    st.code(generated or "(none)", language=None)
 
                     st.text_input(
                         "Speaker Name",
