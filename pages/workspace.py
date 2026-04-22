@@ -657,7 +657,6 @@ def _delete_workspace_row(row_number: int) -> None:
         f"workspace_top_{row_number}",
         f"workspace_context_{row_number}",
         f"workspace_transcript_warning_{row_number}",
-        f"workspace_delete_confirm_{row_number}",
     ]
     for key in keys_to_clear:
         st.session_state.pop(key, None)
@@ -949,38 +948,17 @@ if active_tab == "Edit":
                             ):
                                 _queue_workspace_action(row_num, "download")
                                 _rerun_workspace("Edit")
-                            confirm_key = f"workspace_delete_confirm_{row_num}"
-                            if st.session_state.get(confirm_key):
-                                st.warning("Delete this row from the Google Sheet?")
-                                confirm_cols = st.columns(2)
-                                with confirm_cols[0]:
-                                    if st.button(
-                                        "Confirm delete",
-                                        key=f"workspace_confirm_delete_{row_num}",
-                                        type="primary",
-                                        width="stretch",
-                                    ):
-                                        try:
-                                            _delete_workspace_row(row_num)
-                                        except Exception as e:
-                                            st.session_state["workspace_error"] = f"Row {row_num}: could not delete row - {e}"
-                                        else:
-                                            st.session_state["workspace_success"] = f"Row {row_num}: deleted from the sheet."
-                                        _rerun_workspace("Edit")
-                                with confirm_cols[1]:
-                                    if st.button(
-                                        "Cancel",
-                                        key=f"workspace_cancel_delete_{row_num}",
-                                        width="stretch",
-                                    ):
-                                        st.session_state.pop(confirm_key, None)
-                                        _rerun_workspace("Edit")
-                            elif st.button(
+                            if st.button(
                                 "Delete row",
                                 key=f"workspace_menu_delete_{row_num}",
                                 width="stretch",
                             ):
-                                st.session_state[confirm_key] = True
+                                try:
+                                    _delete_workspace_row(row_num)
+                                except Exception as e:
+                                    st.session_state["workspace_error"] = f"Row {row_num}: could not delete row - {e}"
+                                else:
+                                    st.session_state["workspace_success"] = f"Row {row_num}: deleted from the sheet."
                                 _rerun_workspace("Edit")
 
                     st.markdown('<div class="workspace-section-label">Generated Caption</div>', unsafe_allow_html=True)
