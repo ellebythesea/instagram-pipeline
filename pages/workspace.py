@@ -7,6 +7,7 @@ import sys
 import time
 from urllib.parse import parse_qs, urlparse
 import html
+import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -41,6 +42,7 @@ ORG_HASHTAG_MAP = {
 }
 
 EDITABLE_STATUSES = {"ingested", "done"}
+TRANSCRIPT_SIZE_WARNING_BYTES = 100 * 1024 * 1024
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 get_all_rows = sheet_ops.get_all_rows
@@ -87,6 +89,55 @@ def _is_reel_url(url: str) -> bool:
     return "/reel/" in lowered or "/reels/" in lowered
 
 
+def _format_bytes(num_bytes: int) -> str:
+    value = float(num_bytes)
+    units = ["B", "KB", "MB", "GB"]
+    unit = units[0]
+    for unit in units:
+        if value < 1024 or unit == units[-1]:
+            break
+        value /= 1024
+    return f"{value:.1f} {unit}"
+
+
+def _get_remote_file_size(url: str) -> int:
+    try:
+        response = requests.head(url, allow_redirects=True, timeout=20)
+        response.raise_for_status()
+        content_length = response.headers.get("Content-Length") or response.headers.get("content-length")
+        if content_length:
+            return int(content_length)
+    except Exception:
+        pass
+
+    response = requests.get(url, allow_redirects=True, timeout=20, stream=True)
+    response.raise_for_status()
+    content_length = response.headers.get("Content-Length") or response.headers.get("content-length")
+    if content_length:
+        return int(content_length)
+    raise ValueError("Could not determine reel file size.")
+
+
+def _check_reel_transcript_risk(row: dict) -> dict | None:
+    url = row.get("Instagram URL", "").strip()
+    if not _is_reel_url(url):
+        return None
+
+    preview = process_reel_url(url, include_transcript=False)
+    media_urls = preview.get("media_urls") or []
+    if not media_urls:
+        raise ValueError("Could not find the reel video URL for size check.")
+
+    size_bytes = _get_remote_file_size(media_urls[0])
+    if size_bytes <= TRANSCRIPT_SIZE_WARNING_BYTES:
+        return None
+
+    return {
+        "size_bytes": size_bytes,
+        "threshold_bytes": TRANSCRIPT_SIZE_WARNING_BYTES,
+    }
+
+
 def _check_password() -> bool:
     if not APP_PASSWORD:
         return True
@@ -114,6 +165,12 @@ def _normalize_home_links(links: list[str]) -> list[str]:
     return filled + [""]
 
 
+def _remove_home_link(index: int) -> None:
+    links = st.session_state.get("workspace_home_links", [""])
+    next_links = [link for i, link in enumerate(links) if i != index]
+    st.session_state["workspace_home_links"] = _normalize_home_links(next_links or [""])
+
+
 def _action_label(mode: str) -> str:
     return {
         "Add to sheet": "Add",
@@ -129,6 +186,30 @@ def _mode_uses_org_hashtag(mode: str) -> bool:
 
 def _clean_home_links() -> list[str]:
     return [link.strip() for link in st.session_state.get("workspace_home_links", []) if link.strip()]
+
+
+def _is_editable_row(row: dict) -> bool:
+    if not row.get("Instagram URL", "").strip():
+        return False
+
+    status = row.get("Status", "").strip().lower()
+    if status in EDITABLE_STATUSES:
+        return True
+
+    # Some rows may already be effectively ingested even if the status field
+    # is not one of the editor-specific values yet.
+    return any(
+        (row.get(field, "") or "").strip()
+        for field in [
+            "Source Username",
+            "Media Type",
+            "Media Drive Link",
+            "Thumbnail Drive Link",
+            "Original Caption",
+            "Transcript",
+            "Generated Caption",
+        ]
+    )
 
 
 def _fetch_post_data(url: str) -> dict:
@@ -686,6 +767,9 @@ home_tab, edit_tab, data_tab = st.tabs(["Home", "Edit", "Data"])
 
 with home_tab:
     st.markdown('<div class="workspace-shell">', unsafe_allow_html=True)
+    home_success = st.session_state.pop("workspace_home_success", "")
+    if home_success:
+        st.success(home_success)
 
     mode_help = {
         "Generate headline": "Pull the Instagram caption, then return three headline options plus a footered caption.",
@@ -695,13 +779,26 @@ with home_tab:
 
     links = _normalize_home_links(_ensure_home_links())
     for idx, link in enumerate(list(links)):
-        links[idx] = st.text_input(
-            "Instagram Link" if idx == 0 else f"Instagram Link {idx + 1}",
-            value=link,
-            placeholder="https://www.instagram.com/p/... or /reel/...",
-            key=f"workspace_home_link_{idx}",
-            label_visibility="visible" if idx == 0 else "collapsed",
-        )
+        link_cols = st.columns([12, 1], vertical_alignment="bottom")
+        with link_cols[0]:
+            links[idx] = st.text_input(
+                "Instagram Link" if idx == 0 else f"Instagram Link {idx + 1}",
+                value=link,
+                placeholder="https://www.instagram.com/p/... or /reel/...",
+                key=f"workspace_home_link_{idx}",
+                label_visibility="visible" if idx == 0 else "collapsed",
+            )
+        with link_cols[1]:
+            can_remove = len([item for item in links if (item or "").strip()]) > 0 or idx < len(links) - 1
+            if st.button(
+                "✕",
+                key=f"workspace_remove_home_link_{idx}",
+                help="Remove this link row",
+                disabled=not can_remove,
+                use_container_width=True,
+            ):
+                _remove_home_link(idx)
+                st.rerun()
     st.session_state["workspace_home_links"] = links
 
     mode = st.selectbox("Action", MODE_OPTIONS, index=0, key="workspace_home_mode")
@@ -738,7 +835,7 @@ with home_tab:
                 except Exception as e:
                     st.error(f"Could not add links to sheet: {e}")
                 else:
-                    st.success(f"Added {len(links_to_process)} link(s) to the sheet.")
+                    st.session_state["workspace_home_success"] = f"Added {len(links_to_process)} link(s) to the sheet."
                     st.session_state["workspace_home_links"] = [""]
                     st.rerun()
             else:
@@ -798,8 +895,7 @@ with edit_tab:
         editor_rows = _run_with_sheet_quota_countdown(
             lambda: [
                 r for r in get_all_rows(GOOGLE_SHEET_ID)
-                if r.get("Instagram URL", "").strip()
-                and r.get("Status", "").strip().lower() in EDITABLE_STATUSES
+                if _is_editable_row(r)
             ],
             "Loading editor rows paused:",
         )
@@ -901,6 +997,15 @@ with edit_tab:
                     disabled=not url,
                     use_container_width=True,
                 ):
+                    if primary_action == "transcript":
+                        try:
+                            warning = _check_reel_transcript_risk(row)
+                        except Exception as e:
+                            st.session_state["workspace_error"] = f"Row {row_num}: could not check reel size - {e}"
+                            st.rerun()
+                        if warning:
+                            st.session_state[f"workspace_transcript_warning_{row_num}"] = warning
+                            st.rerun()
                     _queue_workspace_action(row_num, primary_action)
                     st.rerun()
             with button_cols[1]:
@@ -986,6 +1091,35 @@ with edit_tab:
                     height=90,
                     placeholder="Add context for posts that need more source detail.",
                 )
+
+            transcript_warning = st.session_state.get(f"workspace_transcript_warning_{row_num}")
+            if transcript_warning:
+                size_label = _format_bytes(transcript_warning["size_bytes"])
+                threshold_label = _format_bytes(transcript_warning["threshold_bytes"])
+                st.warning(
+                    f"This reel is {size_label}, which is over the {threshold_label} transcript warning limit. "
+                    "Transcription may cost more than usual."
+                )
+                warning_cols = st.columns(2)
+                with warning_cols[0]:
+                    if st.button(
+                        "Transcribe anyway",
+                        key=f"workspace_warning_transcribe_{row_num}",
+                        type="primary",
+                        use_container_width=True,
+                    ):
+                        st.session_state.pop(f"workspace_transcript_warning_{row_num}", None)
+                        _queue_workspace_action(row_num, "transcript")
+                        st.rerun()
+                with warning_cols[1]:
+                    if st.button(
+                        "Download media",
+                        key=f"workspace_warning_download_{row_num}",
+                        use_container_width=True,
+                    ):
+                        st.session_state.pop(f"workspace_transcript_warning_{row_num}", None)
+                        _queue_workspace_action(row_num, "download")
+                        st.rerun()
 
         st.markdown('<div class="workspace-section-label">Content</div>', unsafe_allow_html=True)
         text_tabs = st.tabs(["Caption", "Original caption", "Transcript"])
@@ -1111,4 +1245,5 @@ with data_tab:
                             )
                 progress.progress((i + 1) / len(pending))
             st.success(f"Done. Ingested {len(pending)} row(s).")
+            st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
