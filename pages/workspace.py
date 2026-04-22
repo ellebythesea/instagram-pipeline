@@ -591,6 +591,12 @@ def _queue_workspace_action(row_number: int, action: str) -> None:
     queue.append({"row_number": row_number, "action": action})
 
 
+def _rerun_workspace(tab: str | None = None) -> None:
+    if tab:
+        st.session_state["workspace_active_tab"] = tab
+    st.rerun()
+
+
 def _mark_workspace_action_complete(row_number: int, action: str) -> None:
     completed = st.session_state.setdefault("workspace_action_completed", {})
     completed[f"{row_number}:{action}"] = True
@@ -618,7 +624,7 @@ def _process_next_workspace_action() -> None:
     if not row:
         st.session_state["workspace_error"] = f"Row {row_number}: row not found in sheet."
         if queue:
-            st.rerun()
+            _rerun_workspace("Edit")
         return
 
     try:
@@ -640,7 +646,7 @@ def _process_next_workspace_action() -> None:
     except Exception as e:
         st.session_state["workspace_error"] = f"Row {row_number}: {e}"
 
-    st.rerun()
+    _rerun_workspace("Edit")
 
 
 def _delete_workspace_row(row_number: int) -> None:
@@ -852,6 +858,10 @@ if active_tab == "Actions":
             if item.get("thumbnail_link"):
                 st.write(f"Thumbnail: {item['thumbnail_link']}")
 if active_tab == "Edit":
+    edit_header_cols = st.columns([1, 0.18], vertical_alignment="center")
+    with edit_header_cols[1]:
+        if st.button("Refresh", key="workspace_edit_refresh", width="stretch"):
+            _rerun_workspace("Edit")
     try:
         editor_rows = _run_with_sheet_quota_countdown(
             lambda: [
@@ -916,12 +926,12 @@ if active_tab == "Edit":
                                         warning = _check_reel_transcript_risk(row)
                                     except Exception as e:
                                         st.session_state["workspace_error"] = f"Row {row_num}: could not check reel size - {e}"
-                                        st.rerun()
+                                        _rerun_workspace("Edit")
                                     if warning:
                                         st.session_state[f"workspace_transcript_warning_{row_num}"] = warning
-                                        st.rerun()
+                                        _rerun_workspace("Edit")
                                 _queue_workspace_action(row_num, primary_action)
-                                st.rerun()
+                                _rerun_workspace("Edit")
                             if st.button(
                                 "Download media",
                                 key=f"workspace_menu_download_{row_num}",
@@ -929,7 +939,7 @@ if active_tab == "Edit":
                                 width="stretch",
                             ):
                                 _queue_workspace_action(row_num, "download")
-                                st.rerun()
+                                _rerun_workspace("Edit")
                             confirm_key = f"workspace_delete_confirm_{row_num}"
                             if st.session_state.get(confirm_key):
                                 st.warning("Delete this row from the Google Sheet?")
@@ -947,7 +957,7 @@ if active_tab == "Edit":
                                             st.session_state["workspace_error"] = f"Row {row_num}: could not delete row - {e}"
                                         else:
                                             st.session_state["workspace_success"] = f"Row {row_num}: deleted from the sheet."
-                                        st.rerun()
+                                        _rerun_workspace("Edit")
                                 with confirm_cols[1]:
                                     if st.button(
                                         "Cancel",
@@ -955,14 +965,14 @@ if active_tab == "Edit":
                                         width="stretch",
                                     ):
                                         st.session_state.pop(confirm_key, None)
-                                        st.rerun()
+                                        _rerun_workspace("Edit")
                             elif st.button(
                                 "Delete row",
                                 key=f"workspace_menu_delete_{row_num}",
                                 width="stretch",
                             ):
                                 st.session_state[confirm_key] = True
-                                st.rerun()
+                                _rerun_workspace("Edit")
 
                     st.markdown('<div class="workspace-section-label">Generated Caption</div>', unsafe_allow_html=True)
                     st.code(generated or "(none)", language=None)
@@ -991,7 +1001,7 @@ if active_tab == "Edit":
                                 "",
                             )
                             st.session_state["workspace_success"] = f"Row {row_num}: metadata updated."
-                            st.rerun()
+                            _rerun_workspace("Edit")
 
                     if url:
                         st.link_button("Open in Instagram", url, width="stretch")
@@ -1014,7 +1024,7 @@ if active_tab == "Edit":
                             ):
                                 st.session_state.pop(f"workspace_transcript_warning_{row_num}", None)
                                 _queue_workspace_action(row_num, "transcript")
-                                st.rerun()
+                                _rerun_workspace("Edit")
                         with warning_cols[1]:
                             if st.button(
                                 "Download media",
@@ -1023,7 +1033,7 @@ if active_tab == "Edit":
                             ):
                                 st.session_state.pop(f"workspace_transcript_warning_{row_num}", None)
                                 _queue_workspace_action(row_num, "download")
-                                st.rerun()
+                                _rerun_workspace("Edit")
 
                     st.markdown('<div class="workspace-section-label workspace-content-tabs">Content</div>', unsafe_allow_html=True)
                     _copy_tabs(row_num, generated, original_caption, transcript)
@@ -1097,8 +1107,7 @@ if active_tab == "Edit":
                 progress.progress((i + 1) / len(ingested_rows))
 
             st.session_state["workspace_success"] = f"Generated captions for {len(ingested_rows)} row(s)."
-            st.session_state["workspace_active_tab"] = "Edit"
-            st.rerun()
+            _rerun_workspace("Edit")
 
         queue = st.session_state.get("workspace_action_queue", [])
         if queue:
@@ -1189,4 +1198,4 @@ if active_tab == "Data":
                             )
                 progress.progress((i + 1) / len(pending))
             st.success(f"Done. Ingested {len(pending)} row(s).")
-            st.rerun()
+            _rerun_workspace("Data")
