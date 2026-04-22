@@ -843,8 +843,11 @@ st.markdown(
     }
     div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stHorizontalBlock"],
     div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: stretch !important;
         gap: 1rem;
-        flex-wrap: nowrap;
+        flex-wrap: nowrap !important;
     }
     div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:first-child {
         flex: 0 0 42% !important;
@@ -875,13 +878,17 @@ st.markdown(
         white-space: nowrap;
     }
     div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:first-child {
+        min-width: 0 !important;
         flex: 0 0 58% !important;
         width: 58% !important;
+        max-width: 58% !important;
     }
     div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:nth-child(2),
     div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:nth-child(3) {
+        min-width: 0 !important;
         flex: 0 0 21% !important;
         width: 21% !important;
+        max-width: 21% !important;
     }
     .workspace-content-tabs [data-baseweb="tab-list"] {
         gap: 0.5rem;
@@ -916,13 +923,17 @@ st.markdown(
             width: 56% !important;
         }
         div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:first-child {
+            min-width: 0 !important;
             flex: 0 0 58% !important;
             width: 58% !important;
+            max-width: 58% !important;
         }
         div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:nth-child(2),
         div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:nth-child(3) {
+            min-width: 0 !important;
             flex: 0 0 21% !important;
             width: 21% !important;
+            max-width: 21% !important;
         }
     }
     div[data-testid="stVerticalBlock"]:has(> div.workspace-generate-anchor) {
