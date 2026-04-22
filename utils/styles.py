@@ -151,6 +151,14 @@ div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) .stButt
     min-height: 3rem;
     border-radius: 14px;
 }
+div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) div[data-testid="stPopover"] > button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+    min-width: 2.75rem;
+}
 div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="column"] {
     min-width: 0;
 }

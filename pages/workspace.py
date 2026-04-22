@@ -919,7 +919,7 @@ if active_tab == "Edit":
                     with title_col:
                         st.markdown(f"#### @{username}" if username else f"#### Row {row_num}")
                     with menu_col:
-                        with st.popover("⋯", use_container_width=True):
+                        with st.popover("\u200b", use_container_width=True):
                             primary_action = "transcript" if _is_reel_url(url) else "image_text"
                             primary_help = "Fetch transcript and regenerate caption." if _is_reel_url(url) else "Extract text from images and regenerate caption."
                             if st.button(
