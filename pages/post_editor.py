@@ -237,6 +237,11 @@ st.markdown(
         margin-bottom: 1rem;
         background: rgba(255, 255, 255, 0.85);
     }
+    .editor-row [data-testid="stCodeBlock"] pre {
+        max-height: 3.1rem;
+        overflow: hidden;
+        white-space: pre-wrap;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -269,19 +274,19 @@ for row in rows:
         orig = row.get("Original Caption", "")
         if orig and not _looks_like_drive_link(orig):
             st.caption("Original Caption")
-            st.code(orig.replace("\n", " ").strip(), language=None)
+            st.code(orig, language=None)
         elif orig:
             st.caption("Original caption for this row looks misaligned. Re-ingest the row to refresh it.")
 
         generated = row.get("Generated Caption", "").strip()
         if generated:
             st.caption("Generated Caption")
-            st.code(generated.replace("\n", " ").strip(), language=None)
+            st.code(generated, language=None)
 
         transcript = row.get("Transcript", "")
         if transcript:
             st.caption("Transcript")
-            st.code(transcript.replace("\n", " ").strip(), language=None)
+            st.code(transcript, language=None)
 
     # --- Right: editable metadata + generated caption ---
     with right:
