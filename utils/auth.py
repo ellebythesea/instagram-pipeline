@@ -13,9 +13,12 @@ COOKIE_NAME = "instagram_pipeline_auth"
 SESSION_KEY = "authenticated"
 
 
-@st.cache_resource
 def _cookie_manager() -> stx.CookieManager:
-    return stx.CookieManager()
+    manager = st.session_state.get("_cookie_manager_instance")
+    if manager is None:
+        manager = stx.CookieManager()
+        st.session_state["_cookie_manager_instance"] = manager
+    return manager
 
 
 def _cookie_value() -> str:
