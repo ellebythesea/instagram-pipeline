@@ -903,13 +903,13 @@ st.markdown(
 
 active_tab = st.radio(
     "Workspace section",
-    ["Home", "Edit", "Data"],
+    ["Data", "Edit", "Actions"],
     horizontal=True,
     key="workspace_active_tab",
     label_visibility="collapsed",
 )
 
-if active_tab == "Home":
+if active_tab == "Actions":
     home_success = st.session_state.pop("workspace_home_success", "")
     if home_success:
         st.success(home_success)
@@ -1030,7 +1030,7 @@ if active_tab == "Edit":
         editor_rows = []
 
     if not editor_rows:
-        st.info("No rows yet. Add a link on Home or process new rows on Data.")
+        st.info("No rows yet. Add a link on Actions or process new rows on Data.")
     else:
         st.caption("Rows stay here until you delete them from the sheet.")
         for row in editor_rows:
