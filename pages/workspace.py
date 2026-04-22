@@ -361,14 +361,73 @@ def _copy_block(label: str, value: str, key: str, empty_text: str = "(none)") ->
     st.html(component_html)
 
 
+def _single_line_copy_row(value: str, key: str, empty_text: str = "(none)") -> None:
+    display_text = (value or empty_text).replace("\n", " ").strip()
+    clipboard_text = json.dumps(value or "")
+    component_html = f"""
+    <div id="{html.escape(key)}" style="margin-top:0.25rem;">
+      <div style="
+        display:flex;
+        align-items:center;
+        gap:0.5rem;
+      ">
+        <input
+          type="text"
+          readonly
+          value="{html.escape(display_text)}"
+          style="
+            flex:1;
+            min-width:0;
+            height:2.75rem;
+            border:1px solid rgba(15,23,42,0.08);
+            border-radius:14px;
+            background:#f8fafc;
+            padding:0 0.85rem;
+            font-family:ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size:0.88rem;
+            line-height:1;
+            color:#0f172a;
+          "
+        />
+        <button
+          onclick='navigator.clipboard.writeText({clipboard_text})'
+          title="Copy caption"
+          style="
+            flex:0 0 2.75rem;
+            width:2.75rem;
+            height:2.75rem;
+            border:1px solid rgba(15,23,42,0.14);
+            border-radius:14px;
+            background:white;
+            color:#0f172a;
+            font-size:1rem;
+            font-weight:700;
+            cursor:pointer;
+          "
+        >⧉</button>
+      </div>
+    </div>
+    """
+    st.html(component_html)
+
+
 def _copy_tabs(row_num: int, generated: str, original_caption: str, transcript: str) -> None:
     text_tabs = st.tabs(["Caption", "Original caption", "Transcript"])
     with text_tabs[0]:
-        _copy_block("caption", generated, f"caption_block_{row_num}")
+        st.markdown(
+            f'<div class="workspace-plain-copy-text">{html.escape(generated or "(none)")}</div>',
+            unsafe_allow_html=True,
+        )
     with text_tabs[1]:
-        _copy_block("original caption", original_caption, f"original_block_{row_num}")
+        st.markdown(
+            f'<div class="workspace-plain-copy-text">{html.escape(original_caption or "(none)")}</div>',
+            unsafe_allow_html=True,
+        )
     with text_tabs[2]:
-        _copy_block("transcript", transcript, f"transcript_block_{row_num}")
+        st.markdown(
+            f'<div class="workspace-plain-copy-text">{html.escape(transcript or "(none)")}</div>',
+            unsafe_allow_html=True,
+        )
 
 
 def _icon_copy_button(label: str, value: str) -> None:
@@ -863,6 +922,14 @@ st.markdown(
     .workspace-content-tabs [data-baseweb="tab"] {
         white-space: nowrap;
     }
+    .workspace-plain-copy-text {
+        font-size: 10px;
+        line-height: 1.45;
+        color: #64748b;
+        white-space: pre-wrap;
+        margin-top: 0.15rem;
+        padding-right: 0.25rem;
+    }
     @media (max-width: 640px) {
         .workspace-edit-card {
             padding: 1rem;
@@ -1064,7 +1131,7 @@ if active_tab == "Edit":
                     st.link_button("Open in Instagram", url, width="stretch")
 
                 st.markdown('<div class="workspace-section-label">Generated Caption</div>', unsafe_allow_html=True)
-                _copy_block("caption", generated, f"generated_caption_{row_num}")
+                _single_line_copy_row(generated, f"generated_caption_{row_num}")
 
                 st.text_input(
                     "Speaker Name",
