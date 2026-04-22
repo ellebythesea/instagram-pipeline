@@ -871,6 +871,18 @@ st.markdown(
         line-height: 1.1rem;
         font-size: 0.86rem;
     }
+    div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) .stButton > button {
+        white-space: nowrap;
+    }
+    div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:first-child {
+        flex: 0 0 58% !important;
+        width: 58% !important;
+    }
+    div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:nth-child(2),
+    div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:nth-child(3) {
+        flex: 0 0 21% !important;
+        width: 21% !important;
+    }
     .workspace-content-tabs [data-baseweb="tab-list"] {
         gap: 0.5rem;
         flex-wrap: nowrap;
@@ -903,9 +915,14 @@ st.markdown(
             flex: 0 0 56% !important;
             width: 56% !important;
         }
-        div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"] {
-            flex: 1 1 0 !important;
-            width: 50% !important;
+        div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:first-child {
+            flex: 0 0 58% !important;
+            width: 58% !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:nth-child(2),
+        div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:nth-child(3) {
+            flex: 0 0 21% !important;
+            width: 21% !important;
         }
     }
     div[data-testid="stVerticalBlock"]:has(> div.workspace-generate-anchor) {
@@ -1090,8 +1107,6 @@ if active_tab == "Edit":
                         unsafe_allow_html=True,
                     )
                     st.markdown(f"#### @{username}" if username else f"#### Row {row_num}")
-                    if url:
-                        st.link_button("Open in Instagram", url, width="stretch")
 
                     st.markdown('<div class="workspace-section-label">Generated Caption</div>', unsafe_allow_html=True)
                     st.code(generated or "(none)", language=None)
@@ -1125,8 +1140,11 @@ if active_tab == "Edit":
                     action_container = st.container()
                     with action_container:
                         st.markdown('<div class="workspace-action-anchor"></div>', unsafe_allow_html=True)
-                        action_cols = st.columns(2)
+                        action_cols = st.columns([2.8, 1, 1])
                         with action_cols[0]:
+                            if url:
+                                st.link_button("Open in Instagram", url, width="stretch")
+                        with action_cols[1]:
                             primary_action = "transcript" if _is_reel_url(url) else "image_text"
                             primary_help = "Re-run with transcript" if _is_reel_url(url) else "Get context from text in images"
                             if st.button(
@@ -1147,7 +1165,7 @@ if active_tab == "Edit":
                                         st.rerun()
                                 _queue_workspace_action(row_num, primary_action)
                                 st.rerun()
-                        with action_cols[1]:
+                        with action_cols[2]:
                             if st.button(
                                 "⬇️",
                                 key=f"workspace_download_action_{row_num}",
