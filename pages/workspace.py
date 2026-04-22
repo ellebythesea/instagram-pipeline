@@ -329,8 +329,8 @@ def _copy_block(label: str, value: str, key: str, empty_text: str = "(none)") ->
     component_html = f"""
     <div style="margin-top:0.25rem;">
       <div style="
-        min-height: 3.5rem;
-        max-height: 5.2rem;
+        min-height: 5.5rem;
+        max-height: 8rem;
         overflow: hidden;
         white-space: pre-wrap;
         border: 1px solid rgba(15,23,42,0.08);
@@ -354,13 +354,12 @@ def _copy_block(label: str, value: str, key: str, empty_text: str = "(none)") ->
           padding: 0.55rem 0.8rem;
           font-size: 0.92rem;
           font-weight: 600;
-          cursor: pointer;
+        cursor: pointer;
         "
       >Copy {escaped_label}</button>
     </div>
     """
-    iframe_src = "data:text/html;charset=utf-8," + quote(component_html)
-    st.iframe(iframe_src, height=118, width="stretch")
+    st.html(component_html)
 
 
 def _copy_tabs(row_num: int, generated: str, original_caption: str, transcript: str) -> None:
@@ -393,8 +392,7 @@ def _icon_copy_button(label: str, value: str) -> None:
       "
     >💬</button>
     """
-    iframe_src = "data:text/html;charset=utf-8," + quote(button_html)
-    st.iframe(iframe_src, height=58, width="stretch")
+    st.html(button_html)
 
 
 def _move_selected_row(editor_rows: list[dict], step: int) -> None:
