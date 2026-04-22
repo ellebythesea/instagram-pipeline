@@ -759,9 +759,7 @@ active_tab = st.radio(
 )
 
 if active_tab == "Actions":
-    home_success = st.session_state.pop("workspace_home_success", "")
-    if home_success:
-        st.success(home_success)
+    home_notice = st.session_state.pop("workspace_home_notice", "")
 
     mode_help = {
         "Generate headline": "Pull the Instagram caption, then return three headline options plus a footered caption.",
@@ -801,9 +799,9 @@ if active_tab == "Actions":
             except Exception as e:
                 st.error(f"Could not add links to sheet: {e}")
             else:
-                st.session_state["workspace_home_success"] = f"Added {len(links_to_process)} link(s) to the sheet."
+                st.session_state["workspace_home_notice"] = f"Added {len(links_to_process)} link(s) to the sheet."
                 st.session_state["workspace_home_links"] = [""]
-                st.rerun()
+                _rerun_workspace("Actions")
         else:
             with st.spinner(f"{mode} in progress..."):
                 try:
@@ -816,7 +814,9 @@ if active_tab == "Actions":
                         "required_hashtag": tag_value,
                         "items": results,
                     }
-                    st.success(f"{mode} finished for {len(results)} link(s).")
+                    st.session_state["workspace_home_notice"] = f"{mode} finished for {len(results)} link(s)."
+                    st.session_state["workspace_home_links"] = [""]
+                    _rerun_workspace("Actions")
 
     mode = st.selectbox(
         "Action",
@@ -864,6 +864,8 @@ if active_tab == "Actions":
                 st.write(f"Media link(s): {item['media_link']}")
             if item.get("thumbnail_link"):
                 st.write(f"Thumbnail: {item['thumbnail_link']}")
+    if home_notice:
+        st.caption(home_notice)
 if active_tab == "Edit":
     edit_header_cols = st.columns([1, 0.18], vertical_alignment="center")
     with edit_header_cols[1]:
