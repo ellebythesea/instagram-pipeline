@@ -5,7 +5,7 @@ import re
 import shutil
 import sys
 import time
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 import html
 import requests
 
@@ -14,7 +14,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import openai
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 
 from config import APP_PASSWORD, GOOGLE_SHEET_ID, OPENAI_API_KEY
 from ingest_helpers import upload_media_bundle, upload_thumbnail_only
@@ -344,7 +343,18 @@ def _copy_block(label: str, value: str, key: str, empty_text: str = "(none)") ->
       >Copy {escaped_label}</button>
     </div>
     """
-    components.html(component_html, height=130, scrolling=False)
+    iframe_src = "data:text/html;charset=utf-8," + quote(component_html)
+    st.iframe(iframe_src, height=130, width="stretch")
+
+
+def _copy_tabs(row_num: int, generated: str, original_caption: str, transcript: str) -> None:
+    text_tabs = st.tabs(["Caption", "Original caption", "Transcript"])
+    with text_tabs[0]:
+        _copy_block("caption", generated, f"caption_block_{row_num}")
+    with text_tabs[1]:
+        _copy_block("original caption", original_caption, f"original_block_{row_num}")
+    with text_tabs[2]:
+        _copy_block("transcript", transcript, f"transcript_block_{row_num}")
 
 
 def _move_selected_row(editor_rows: list[dict], step: int) -> None:
@@ -793,9 +803,15 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-home_tab, edit_tab, data_tab = st.tabs(["Home", "Edit", "Data"])
+active_tab = st.radio(
+    "Workspace section",
+    ["Home", "Edit", "Data"],
+    horizontal=True,
+    key="workspace_active_tab",
+    label_visibility="collapsed",
+)
 
-with home_tab:
+if active_tab == "Home":
     st.markdown('<div class="workspace-shell">', unsafe_allow_html=True)
     home_success = st.session_state.pop("workspace_home_success", "")
     if home_success:
@@ -825,7 +841,7 @@ with home_tab:
                 key=f"workspace_remove_home_link_{idx}",
                 help="Remove this link row",
                 disabled=not can_remove,
-                use_container_width=True,
+                width="stretch",
             ):
                 _remove_home_link(idx)
                 st.rerun()
@@ -847,11 +863,11 @@ with home_tab:
 
     secondary_cols = st.columns(2)
     with secondary_cols[0]:
-        if st.button("+ Add another", use_container_width=True):
+        if st.button("+ Add another", width="stretch"):
             st.session_state["workspace_home_links"] = st.session_state["workspace_home_links"] + [""]
             st.rerun()
     with secondary_cols[1]:
-        if st.button(_action_label(mode), type="primary", use_container_width=True):
+        if st.button(_action_label(mode), type="primary", width="stretch"):
             links_to_process = _clean_home_links()
             if not links_to_process:
                 st.warning("Enter at least one Instagram link.")
@@ -918,8 +934,7 @@ with home_tab:
             st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown('</div>', unsafe_allow_html=True)
-
-with edit_tab:
+if active_tab == "Edit":
     st.markdown('<div class="workspace-shell">', unsafe_allow_html=True)
     try:
         editor_rows = _run_with_sheet_quota_countdown(
@@ -968,7 +983,7 @@ with edit_tab:
                 )
                 st.subheader(f"@{username}" if username else f"Row {row_num}")
                 if url:
-                    st.link_button("Open in Instagram", url, use_container_width=True)
+                    st.link_button("Open in Instagram", url, width="stretch")
 
                 action_cols = st.columns(3)
                 with action_cols[0]:
@@ -979,7 +994,7 @@ with edit_tab:
                         key=f"workspace_primary_action_{row_num}",
                         help=primary_help,
                         disabled=not url,
-                        use_container_width=True,
+                        width="stretch",
                     ):
                         if primary_action == "transcript":
                             try:
@@ -998,7 +1013,7 @@ with edit_tab:
                         key=f"workspace_download_action_{row_num}",
                         help="Download media to Drive",
                         disabled=not url,
-                        use_container_width=True,
+                        width="stretch",
                     ):
                         _queue_workspace_action(row_num, "download")
                         st.rerun()
@@ -1007,7 +1022,7 @@ with edit_tab:
                         "Update",
                         key=f"workspace_update_{row_num}",
                         type="primary",
-                        use_container_width=True,
+                        width="stretch",
                     ):
                         current_context = st.session_state.get(f"workspace_context_{row_num}", caption_context).strip()
                         current_top = st.session_state.get(f"workspace_top_{row_num}", top_comment).strip()
@@ -1070,7 +1085,7 @@ with edit_tab:
                             "Transcribe anyway",
                             key=f"workspace_warning_transcribe_{row_num}",
                             type="primary",
-                            use_container_width=True,
+                            width="stretch",
                         ):
                             st.session_state.pop(f"workspace_transcript_warning_{row_num}", None)
                             _queue_workspace_action(row_num, "transcript")
@@ -1079,20 +1094,14 @@ with edit_tab:
                         if st.button(
                             "Download media",
                             key=f"workspace_warning_download_{row_num}",
-                            use_container_width=True,
+                            width="stretch",
                         ):
                             st.session_state.pop(f"workspace_transcript_warning_{row_num}", None)
                             _queue_workspace_action(row_num, "download")
                             st.rerun()
 
-                st.markdown('<div class="workspace-section-label">Generated Caption</div>', unsafe_allow_html=True)
-                _copy_block("caption", generated, f"caption_block_{row_num}")
-
-                st.markdown('<div class="workspace-section-label">Original Caption</div>', unsafe_allow_html=True)
-                _copy_block("original caption", original_caption, f"original_block_{row_num}")
-
-                st.markdown('<div class="workspace-section-label">Transcript</div>', unsafe_allow_html=True)
-                _copy_block("transcript", transcript, f"transcript_block_{row_num}")
+                st.markdown('<div class="workspace-section-label">Content</div>', unsafe_allow_html=True)
+                _copy_tabs(row_num, generated, original_caption, transcript)
 
             st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1110,7 +1119,7 @@ with edit_tab:
                 generate_btn = st.button(
                     "Generate captions",
                     type="primary",
-                    use_container_width=True,
+                    width="stretch",
                     disabled=not ingested_rows,
                     key="workspace_generate_captions",
                 )
@@ -1163,6 +1172,7 @@ with edit_tab:
                 progress.progress((i + 1) / len(ingested_rows))
 
             st.session_state["workspace_success"] = f"Generated captions for {len(ingested_rows)} row(s)."
+            st.session_state["workspace_active_tab"] = "Edit"
             st.rerun()
 
         queue = st.session_state.get("workspace_action_queue", [])
@@ -1173,7 +1183,7 @@ with edit_tab:
             )
     st.markdown('</div>', unsafe_allow_html=True)
 
-with data_tab:
+if active_tab == "Data":
     st.markdown('<div class="workspace-shell">', unsafe_allow_html=True)
     st.caption("Data view for the Google Sheet plus batch ingest.")
 
@@ -1202,7 +1212,7 @@ with data_tab:
         )
         st.dataframe(
             df,
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             column_config={
                 "Instagram URL": st.column_config.LinkColumn("Instagram URL"),
@@ -1212,7 +1222,7 @@ with data_tab:
     else:
         st.info("No rows in sheet yet.")
 
-    if st.button("Process new rows", type="primary", use_container_width=True, key="workspace_process_rows"):
+    if st.button("Process new rows", type="primary", width="stretch", key="workspace_process_rows"):
         try:
             pending = _run_with_sheet_quota_countdown(
                 lambda: get_pending_rows(GOOGLE_SHEET_ID),
