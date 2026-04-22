@@ -1011,10 +1011,6 @@ if active_tab == "Actions":
                     }
                     st.success(f"{mode} finished for {len(results)} link(s).")
 
-    if st.button("+ Add another", width="stretch"):
-        st.session_state["workspace_home_links"] = st.session_state["workspace_home_links"] + [""]
-        st.rerun()
-
     mode = st.selectbox(
         "Action",
         MODE_OPTIONS,
