@@ -9,3 +9,4 @@ gspread>=5.0.0
 google-auth>=2.0.0
 google-auth-oauthlib>=1.2.0
 google-api-python-client>=2.0.0
+extra-streamlit-components>=0.1.80

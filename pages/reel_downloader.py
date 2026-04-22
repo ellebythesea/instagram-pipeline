@@ -9,26 +9,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import streamlit as st
 
-from config import APP_PASSWORD, GOOGLE_SHEET_ID
+from config import GOOGLE_SHEET_ID
 from ingest_helpers import upload_media_bundle
 from post_scraper import process_url as process_post_url
 from reel_scraper import process_url as process_reel_url
 from sheets import get_all_rows, update_ingest_result
-
-
-def _check_password() -> bool:
-    if not APP_PASSWORD:
-        return True
-    if st.session_state.get("authenticated"):
-        return True
-    pwd = st.text_input("Password", type="password")
-    if pwd:
-        if pwd == APP_PASSWORD:
-            st.session_state["authenticated"] = True
-            st.rerun()
-        else:
-            st.error("Incorrect password.")
-    return False
+from utils.auth import require_auth
+from utils.styles import inject as inject_styles
 
 
 def _normalize_url(url: str) -> str:
@@ -41,10 +28,11 @@ def _is_reel_url(url: str) -> bool:
 
 
 st.set_page_config(page_title="Media downloader", page_icon="🎞️", layout="centered")
+inject_styles()
 st.title("Media downloader")
 st.caption("Paste one Instagram URL. Reels, single-photo posts, and carousels upload to Drive, then each item can be downloaded individually.")
 
-if not _check_password():
+if not require_auth():
     st.stop()
 
 with st.form("media_download_form"):

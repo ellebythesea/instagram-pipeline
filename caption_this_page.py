@@ -2,31 +2,18 @@
 
 import streamlit as st
 
-from config import APP_PASSWORD
 from caption import generate_caption
-
-
-def check_password() -> bool:
-    if not APP_PASSWORD:
-        return True
-    if st.session_state.get("authenticated"):
-        return True
-    pwd = st.text_input("Password", type="password")
-    if pwd:
-        if pwd == APP_PASSWORD:
-            st.session_state["authenticated"] = True
-            st.rerun()
-        else:
-            st.error("Incorrect password.")
-    return False
+from utils.auth import require_auth
+from utils.styles import inject as inject_styles
 
 
 st.set_page_config(page_title="Caption this", page_icon="📸", layout="centered")
+inject_styles()
 
 st.title("Caption this")
 st.caption("Paste a reel or post link, enter the speaker's name, and get a ready-to-post caption.")
 
-if not check_password():
+if not require_auth():
     st.stop()
 
 with st.form("caption_form"):

@@ -8,22 +8,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import openai
 import streamlit as st
 
-from config import APP_PASSWORD, OPENAI_API_KEY
-
-
-def _check_password() -> bool:
-    if not APP_PASSWORD:
-        return True
-    if st.session_state.get("authenticated"):
-        return True
-    pwd = st.text_input("Password", type="password")
-    if pwd:
-        if pwd == APP_PASSWORD:
-            st.session_state["authenticated"] = True
-            st.rerun()
-        else:
-            st.error("Incorrect password.")
-    return False
+from config import OPENAI_API_KEY
+from utils.auth import require_auth
+from utils.styles import inject as inject_styles
 
 
 def _fetch_post_data(url: str) -> dict:
@@ -105,10 +92,11 @@ def _build_footered_caption(caption_body: str, username: str) -> str:
 
 
 st.set_page_config(page_title="Headlines", page_icon="🗞️", layout="centered")
+inject_styles()
 st.title("Headlines")
 st.caption("Paste an Instagram URL and get three salacious headlines plus a caption based only on the post caption.")
 
-if not _check_password():
+if not require_auth():
     st.stop()
 
 with st.form("headline_form"):

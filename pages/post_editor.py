@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import openai
 import streamlit as st
 
-from config import APP_PASSWORD, GOOGLE_SHEET_ID, OPENAI_API_KEY
+from config import GOOGLE_SHEET_ID, OPENAI_API_KEY
 from ingest_helpers import upload_media_bundle
 from pipeline_caption import generate_row_caption
 from post_scraper import process_url as process_post_url
@@ -23,6 +23,8 @@ from sheets import (
     update_metadata,
     update_transcript,
 )
+from utils.auth import require_auth
+from utils.styles import inject as inject_styles
 
 PRESET_HASHTAGS = {
     "Good Influence": "#usapolitics",
@@ -31,21 +33,6 @@ PRESET_HASHTAGS = {
 
 EDITABLE_STATUSES = {"ingested", "done"}
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
-
-
-def _check_password() -> bool:
-    if not APP_PASSWORD:
-        return True
-    if st.session_state.get("authenticated"):
-        return True
-    pwd = st.text_input("Password", type="password")
-    if pwd:
-        if pwd == APP_PASSWORD:
-            st.session_state["authenticated"] = True
-            st.rerun()
-        else:
-            st.error("Incorrect password.")
-    return False
 
 
 def _drive_image_url(drive_link: str) -> str:
@@ -180,9 +167,10 @@ def _redo_caption_from_image_text(row: dict) -> None:
 # ---------------------------------------------------------------------------
 
 st.set_page_config(page_title="Post Editor", page_icon="✏️", layout="wide")
+inject_styles("post_editor")
 st.title("Post Editor")
 
-if not _check_password():
+if not require_auth():
     st.stop()
 
 try:
@@ -199,59 +187,6 @@ rows = [
 if not rows:
     st.info("No ingested posts yet. Run **Process New Rows** on the Pipeline Dashboard first.")
     st.stop()
-
-st.markdown(
-    """
-    <style>
-    .stApp [data-testid="stAppViewContainer"] {
-        padding-bottom: 9rem;
-    }
-    div[data-testid="stVerticalBlock"]:has(> div.sticky-generate-anchor) {
-        position: fixed;
-        right: 1.25rem;
-        bottom: 1.25rem;
-        width: min(460px, calc(100vw - 2.5rem));
-        z-index: 999;
-        background: rgba(255, 255, 255, 0.96);
-        border: 1px solid rgba(0, 0, 0, 0.08);
-        border-radius: 18px;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
-        padding: 0.9rem 1rem;
-        backdrop-filter: blur(10px);
-    }
-    .sticky-generate-anchor {
-        display: none;
-    }
-    @media (max-width: 640px) {
-        div[data-testid="stVerticalBlock"]:has(> div.sticky-generate-anchor) {
-            right: 0.75rem;
-            left: 0.75rem;
-            width: auto;
-            bottom: 0.75rem;
-        }
-    }
-    .editor-row {
-        border: 1px solid rgba(0, 0, 0, 0.08);
-        border-radius: 18px;
-        padding: 1rem 1rem 0.5rem;
-        margin-bottom: 1rem;
-        background: rgba(255, 255, 255, 0.85);
-    }
-    .editor-row [data-testid="stCodeBlock"] {
-        max-height: 3.1rem;
-        overflow: hidden;
-        margin-bottom: 0.5rem;
-    }
-    .editor-row [data-testid="stCodeBlock"] pre {
-        max-height: 3.1rem;
-        overflow: hidden;
-        white-space: pre-wrap;
-        margin: 0;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
 
 for row in rows:
     row_num = row["row_number"]

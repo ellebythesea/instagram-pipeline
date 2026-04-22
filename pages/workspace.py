@@ -16,12 +16,14 @@ import openai
 import pandas as pd
 import streamlit as st
 
-from config import APP_PASSWORD, GOOGLE_SHEET_ID, OPENAI_API_KEY
+from config import GOOGLE_SHEET_ID, OPENAI_API_KEY
 from ingest_helpers import upload_media_bundle, upload_thumbnail_only
 from pipeline_caption import generate_row_caption
 from post_scraper import process_url as process_post_url
 from reel_scraper import process_url as process_reel_url
 import sheets as sheet_ops
+from utils.auth import require_auth
+from utils.styles import inject as inject_styles
 
 MODE_OPTIONS = [
     "Add to sheet",
@@ -136,21 +138,6 @@ def _check_reel_transcript_risk(row: dict) -> dict | None:
         "size_bytes": size_bytes,
         "threshold_bytes": TRANSCRIPT_SIZE_WARNING_BYTES,
     }
-
-
-def _check_password() -> bool:
-    if not APP_PASSWORD:
-        return True
-    if st.session_state.get("authenticated"):
-        return True
-    pwd = st.text_input("Password", type="password")
-    if pwd:
-        if pwd == APP_PASSWORD:
-            st.session_state["authenticated"] = True
-            st.rerun()
-        else:
-            st.error("Incorrect password.")
-    return False
 
 
 def _ensure_home_links() -> list[str]:
@@ -723,9 +710,10 @@ def _run_home_mode(mode: str, urls: list[str], org_hashtag: str) -> tuple[str, l
 
 
 st.set_page_config(page_title="Workspace", page_icon="🏠", layout="wide")
+inject_styles("workspace")
 st.title("Workspace")
 
-if not _check_password():
+if not require_auth():
     st.stop()
 
 _process_next_workspace_action()
@@ -736,232 +724,6 @@ if success_message:
     st.success(success_message)
 if error_message:
     st.error(error_message)
-
-st.markdown(
-    """
-    <style>
-    .workspace-shell {
-        max-width: 1120px;
-    }
-    section[data-testid="stSidebar"] {
-        display: none;
-    }
-    [data-testid="collapsedControl"] {
-        display: none;
-    }
-    .workspace-note {
-        padding: 0.85rem 1rem;
-        border: 1px solid rgba(15, 23, 42, 0.08);
-        border-radius: 14px;
-        background: rgba(248, 250, 252, 0.9);
-        margin-bottom: 1rem;
-    }
-    .workspace-home-card {
-        border: 1px solid rgba(15, 23, 42, 0.12);
-        border-radius: 24px;
-        padding: 1.25rem;
-        background: #fff;
-        box-shadow: 0 12px 32px rgba(15, 23, 42, 0.06);
-        margin-bottom: 1rem;
-    }
-    .workspace-results-card {
-        border: 1px solid rgba(15, 23, 42, 0.12);
-        border-radius: 20px;
-        padding: 1rem;
-        background: #fff;
-        margin-top: 1rem;
-    }
-    div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) {
-        border: 1px solid rgba(15, 23, 42, 0.12);
-        border-radius: 24px;
-        padding: 1.25rem;
-        background: #fff;
-        margin-bottom: 2.25rem;
-        box-shadow: 0 12px 32px rgba(15, 23, 42, 0.06);
-    }
-    .stApp [data-testid="stAppViewContainer"] {
-        padding-bottom: 9rem;
-    }
-    .workspace-row-tabs [role="radiogroup"] {
-        gap: 0.45rem;
-        overflow-x: auto;
-        white-space: nowrap;
-        padding-bottom: 0.25rem;
-    }
-    .workspace-row-tabs [role="radiogroup"] label {
-        border: 1px solid rgba(15, 23, 42, 0.12);
-        border-radius: 999px;
-        padding: 0.2rem 0.75rem;
-        background: #fff;
-    }
-    .workspace-row-tabs [role="radiogroup"] label:has(input:checked) {
-        background: #111827;
-        color: white;
-        border-color: #111827;
-    }
-    .workspace-row-summary {
-        display: flex;
-        gap: 0.65rem;
-        flex-wrap: wrap;
-        margin: 0.15rem 0 0.85rem;
-    }
-    .workspace-chip {
-        border: 1px solid rgba(15, 23, 42, 0.12);
-        border-radius: 999px;
-        padding: 0.25rem 0.7rem;
-        font-size: 0.85rem;
-        color: #334155;
-        background: #fff;
-    }
-    .workspace-home-card .stButton > button {
-        min-height: 3.15rem;
-        border-radius: 14px;
-    }
-    .workspace-status-line {
-        color: #64748b;
-        font-size: 0.92rem;
-        margin-bottom: 0.2rem;
-    }
-    .workspace-section-label {
-        font-size: 0.8rem;
-        font-weight: 700;
-        letter-spacing: 0.03em;
-        text-transform: uppercase;
-        color: #64748b;
-        margin: 0.2rem 0 0.55rem;
-    }
-    .workspace-action-note {
-        font-size: 0.92rem;
-        color: #475569;
-    }
-    div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) .stButton > button {
-        min-height: 3rem;
-        border-radius: 14px;
-    }
-    div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="column"] {
-        min-width: 0 !important;
-    }
-    div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stHorizontalBlock"] {
-        display: flex !important;
-        flex-direction: row !important;
-        align-items: stretch !important;
-        gap: 1rem;
-        flex-wrap: nowrap !important;
-    }
-    div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] {
-        display: grid !important;
-        grid-template-columns: minmax(0, 1fr) 4rem 4rem !important;
-        align-items: stretch !important;
-        column-gap: 0.75rem !important;
-        row-gap: 0 !important;
-    }
-    div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:first-child {
-        flex: 0 0 42% !important;
-        width: 42% !important;
-    }
-    div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:last-child {
-        flex: 0 0 58% !important;
-        width: 58% !important;
-    }
-    div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stCodeBlock"] {
-        margin: 0.2rem 0 0.35rem;
-        min-height: 2.1rem !important;
-        max-height: 2.1rem !important;
-        overflow: hidden !important;
-    }
-    div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stCodeBlock"] pre {
-        min-height: 2.1rem;
-        max-height: 2.1rem;
-        overflow: hidden;
-        white-space: nowrap !important;
-        text-overflow: ellipsis;
-        line-height: 1.1rem;
-        padding: 0.45rem 2.75rem 0.45rem 0.7rem;
-        border-radius: 12px;
-    }
-    div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stCodeBlock"] code {
-        line-height: 1.1rem;
-        font-size: 0.86rem;
-        white-space: nowrap !important;
-        overflow: hidden !important;
-        text-overflow: ellipsis !important;
-        display: block !important;
-    }
-    div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) .stButton > button {
-        white-space: nowrap;
-    }
-    div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"] {
-        min-width: 0 !important;
-        width: auto !important;
-        max-width: none !important;
-    }
-    div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:first-child {
-        grid-column: 1;
-    }
-    div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:nth-child(2) {
-        grid-column: 2;
-    }
-    div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:nth-child(3) {
-        grid-column: 3;
-    }
-    .workspace-content-tabs [data-baseweb="tab-list"] {
-        gap: 0.5rem;
-        flex-wrap: nowrap;
-        overflow-x: auto;
-    }
-    .workspace-content-tabs [data-baseweb="tab"] {
-        white-space: nowrap;
-    }
-    .workspace-plain-copy-text {
-        font-size: 10px;
-        line-height: 1.45;
-        color: #64748b;
-        white-space: pre-wrap;
-        margin-top: 0.15rem;
-        padding-right: 0.25rem;
-    }
-    .workspace-edit-main-anchor,
-    .workspace-action-anchor {
-        display: none;
-    }
-    @media (max-width: 640px) {
-        div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) {
-            padding: 1rem;
-        }
-        div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:first-child {
-            flex: 0 0 44% !important;
-            width: 44% !important;
-        }
-        div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:last-child {
-            flex: 0 0 56% !important;
-            width: 56% !important;
-        }
-        div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] {
-            display: grid !important;
-            grid-template-columns: minmax(0, 1fr) 4rem 4rem !important;
-            column-gap: 0.75rem !important;
-        }
-    }
-    div[data-testid="stVerticalBlock"]:has(> div.workspace-generate-anchor) {
-        position: fixed;
-        right: 1rem;
-        bottom: 1rem;
-        width: min(420px, calc(100vw - 2rem));
-        z-index: 999;
-        background: rgba(255, 255, 255, 0.96);
-        border: 1px solid rgba(15, 23, 42, 0.12);
-        border-radius: 18px;
-        box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
-        padding: 0.9rem 1rem;
-        backdrop-filter: blur(10px);
-    }
-    .workspace-generate-anchor {
-        display: none;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
 
 active_tab = st.radio(
     "Workspace section",

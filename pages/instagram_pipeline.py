@@ -10,7 +10,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import streamlit as st
 
 from config import (
-    APP_PASSWORD,
     GOOGLE_SHEET_ID,
 )
 from ingest_helpers import upload_media_bundle, upload_thumbnail_only
@@ -24,25 +23,8 @@ from sheets import (
     update_ingest_result,
     update_transcript,
 )
-
-# ---------------------------------------------------------------------------
-# Auth
-# ---------------------------------------------------------------------------
-
-def _check_password() -> bool:
-    if not APP_PASSWORD:
-        return True
-    if st.session_state.get("authenticated"):
-        return True
-    pwd = st.text_input("Password", type="password")
-    if pwd:
-        if pwd == APP_PASSWORD:
-            st.session_state["authenticated"] = True
-            st.rerun()
-        else:
-            st.error("Incorrect password.")
-    return False
-
+from utils.auth import require_auth
+from utils.styles import inject as inject_styles
 
 def _ingest_row(row: dict) -> dict:
     """Process one row through ingest and return sheet fields."""
@@ -239,9 +221,10 @@ def _process_next_queued_action() -> None:
 # ---------------------------------------------------------------------------
 
 st.set_page_config(page_title="Instagram Pipeline", page_icon="📋", layout="wide")
+inject_styles()
 st.title("Instagram Pipeline")
 
-if not _check_password():
+if not require_auth():
     st.stop()
 
 _process_next_queued_action()
