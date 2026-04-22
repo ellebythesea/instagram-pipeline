@@ -20,17 +20,7 @@ from ingest_helpers import upload_media_bundle, upload_thumbnail_only
 from pipeline_caption import generate_row_caption
 from post_scraper import process_url as process_post_url
 from reel_scraper import process_url as process_reel_url
-from sheets import (
-    append_link_rows,
-    get_all_rows,
-    get_pending_rows,
-    update_caption,
-    update_caption_context,
-    update_ingest_result,
-    update_metadata,
-    update_status,
-    update_transcript,
-)
+import sheets as sheet_ops
 
 MODE_OPTIONS = [
     "Add to sheet",
@@ -52,6 +42,44 @@ ORG_HASHTAG_MAP = {
 
 EDITABLE_STATUSES = {"ingested", "done"}
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
+
+get_all_rows = sheet_ops.get_all_rows
+get_pending_rows = sheet_ops.get_pending_rows
+update_caption = sheet_ops.update_caption
+update_caption_context = sheet_ops.update_caption_context
+update_ingest_result = sheet_ops.update_ingest_result
+update_metadata = sheet_ops.update_metadata
+update_transcript = sheet_ops.update_transcript
+
+
+def append_link_rows(sheet_id: str, urls: list[str], required_hashtags: str = "") -> None:
+    if hasattr(sheet_ops, "append_link_rows"):
+        sheet_ops.append_link_rows(sheet_id, urls, required_hashtags)
+        return
+
+    cleaned_urls = [url.strip() for url in urls if url.strip()]
+    if not cleaned_urls:
+        return
+
+    ws = sheet_ops._worksheet(sheet_id)
+    rows = []
+    for url in cleaned_urls:
+        row = [""] * len(sheet_ops._EXPECTED_HEADERS)
+        row[0] = url
+        row[11] = required_hashtags.strip()
+        rows.append(row)
+    sheet_ops._with_backoff(ws.append_rows, rows, value_input_option="USER_ENTERED")
+    sheet_ops._invalidate_rows_cache(sheet_id)
+
+
+def update_status(sheet_id: str, row_number: int, status: str) -> None:
+    if hasattr(sheet_ops, "update_status"):
+        sheet_ops.update_status(sheet_id, row_number, status)
+        return
+
+    ws = sheet_ops._worksheet(sheet_id)
+    sheet_ops._with_backoff(ws.update, f"N{row_number}", [[status]])
+    sheet_ops._invalidate_rows_cache(sheet_id)
 
 
 def _is_reel_url(url: str) -> bool:
