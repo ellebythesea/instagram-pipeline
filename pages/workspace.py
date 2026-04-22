@@ -774,7 +774,10 @@ if active_tab == "Actions":
             key=f"workspace_home_link_{idx}",
             label_visibility="visible" if idx == 0 else "collapsed",
         )
-    st.session_state["workspace_home_links"] = links
+    normalized_links = _normalize_home_links(links)
+    st.session_state["workspace_home_links"] = normalized_links
+    if normalized_links != links:
+        _rerun_workspace("Actions")
 
     mode = st.session_state.get("workspace_home_mode", MODE_OPTIONS[0])
     org_hashtag = st.session_state.get("workspace_org_hashtag", "")
