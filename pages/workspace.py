@@ -584,8 +584,7 @@ def _process_next_workspace_action() -> None:
     except Exception as e:
         st.session_state["workspace_error"] = f"Row {row_number}: {e}"
 
-    if queue:
-        st.rerun()
+    st.rerun()
 
 
 def _run_home_mode(mode: str, urls: list[str], org_hashtag: str) -> tuple[str, list[dict]]:
