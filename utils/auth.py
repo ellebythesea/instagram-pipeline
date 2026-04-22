@@ -34,16 +34,6 @@ def _set_auth_cookie() -> None:
     )
 
 
-def clear_auth_cookie() -> None:
-    _cookie_manager().delete(COOKIE_NAME)
-
-
-def logout() -> None:
-    st.session_state.pop(SESSION_KEY, None)
-    clear_auth_cookie()
-    st.rerun()
-
-
 def require_auth() -> bool:
     if not APP_PASSWORD:
         st.session_state[SESSION_KEY] = True
