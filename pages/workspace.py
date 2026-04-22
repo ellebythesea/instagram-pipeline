@@ -5,6 +5,7 @@ import re
 import shutil
 import sys
 import time
+import json
 from urllib.parse import parse_qs, quote, urlparse
 import html
 import requests
@@ -324,14 +325,12 @@ def _drive_view_url(drive_link: str) -> str:
 
 def _copy_block(label: str, value: str, key: str, empty_text: str = "(none)") -> None:
     display_text = value or empty_text
-    escaped_text = html.escape(value or "")
     escaped_label = html.escape(label)
+    clipboard_text = json.dumps(value or "")
     component_html = f"""
-    <div style="margin-top:0.25rem;">
+    <div style="margin-top:0.25rem;" id="{html.escape(key)}">
       <div style="
-        min-height: 5.5rem;
-        max-height: 8rem;
-        overflow: hidden;
+        min-height: 3.25rem;
         white-space: pre-wrap;
         border: 1px solid rgba(15,23,42,0.08);
         border-radius: 16px;
@@ -343,7 +342,7 @@ def _copy_block(label: str, value: str, key: str, empty_text: str = "(none)") ->
         color: #0f172a;
       ">{html.escape(display_text)}</div>
       <button
-        onclick='navigator.clipboard.writeText({escaped_text!r})'
+        onclick='navigator.clipboard.writeText({clipboard_text})'
         style="
           width: 100%;
           margin-top: 0.5rem;
@@ -373,12 +372,34 @@ def _copy_tabs(row_num: int, generated: str, original_caption: str, transcript: 
 
 
 def _icon_copy_button(label: str, value: str) -> None:
-    escaped_text = html.escape(value or "")
     escaped_label = html.escape(label)
+    clipboard_text = json.dumps(value or "")
     button_html = f"""
     <button
-      onclick='navigator.clipboard.writeText({escaped_text!r})'
+      onclick='navigator.clipboard.writeText({clipboard_text})'
       title='Copy {escaped_label}'
+      style="
+        width: 100%;
+        min-height: 3rem;
+        border: 1px solid rgba(15,23,42,0.14);
+        border-radius: 14px;
+        background: white;
+        color: #0f172a;
+        font-size: 1.15rem;
+        font-weight: 700;
+        cursor: pointer;
+      "
+    >💬</button>
+    """
+    st.html(button_html)
+
+
+def _copy_caption_button(value: str) -> None:
+    clipboard_text = json.dumps(value or "")
+    button_html = f"""
+    <button
+      onclick='navigator.clipboard.writeText({clipboard_text})'
+      title='Copy caption'
       style="
         width: 100%;
         min-height: 3rem;
@@ -746,7 +767,7 @@ st.markdown(
         border-radius: 24px;
         padding: 1.25rem;
         background: #fff;
-        margin-bottom: 1.75rem;
+        margin-bottom: 2.25rem;
         box-shadow: 0 12px 32px rgba(15, 23, 42, 0.06);
     }
     .stApp [data-testid="stAppViewContainer"] {
@@ -808,15 +829,55 @@ st.markdown(
         min-height: 3rem;
         border-radius: 14px;
     }
-    .workspace-inline-placeholder {
-        min-height: 3rem;
+    .workspace-edit-card [data-testid="column"] {
+        min-width: 0 !important;
     }
-    .workspace-edit-card [data-testid="stHorizontalBlock"] {
+    .workspace-edit-main [data-testid="stHorizontalBlock"],
+    .workspace-action-row [data-testid="stHorizontalBlock"] {
         gap: 1rem;
+        flex-wrap: nowrap;
+    }
+    .workspace-edit-main [data-testid="stHorizontalBlock"] > [data-testid="column"]:first-child {
+        flex: 0 0 42% !important;
+        width: 42% !important;
+    }
+    .workspace-edit-main [data-testid="stHorizontalBlock"] > [data-testid="column"]:last-child {
+        flex: 0 0 58% !important;
+        width: 58% !important;
+    }
+    .workspace-edit-card [data-testid="stCodeBlock"] {
+        margin: 0.2rem 0 0.5rem;
+    }
+    .workspace-edit-card [data-testid="stCodeBlock"] pre {
+        min-height: 2.75rem;
+        max-height: none;
+        overflow: visible;
+        white-space: pre-wrap;
+        padding-right: 2.75rem;
+    }
+    .workspace-content-tabs [data-baseweb="tab-list"] {
+        gap: 0.5rem;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+    }
+    .workspace-content-tabs [data-baseweb="tab"] {
+        white-space: nowrap;
     }
     @media (max-width: 640px) {
-        .workspace-edit-card [data-testid="column"] {
-            min-width: 0 !important;
+        .workspace-edit-card {
+            padding: 1rem;
+        }
+        .workspace-edit-main [data-testid="stHorizontalBlock"] > [data-testid="column"]:first-child {
+            flex: 0 0 44% !important;
+            width: 44% !important;
+        }
+        .workspace-edit-main [data-testid="stHorizontalBlock"] > [data-testid="column"]:last-child {
+            flex: 0 0 56% !important;
+            width: 56% !important;
+        }
+        .workspace-action-row [data-testid="stHorizontalBlock"] > [data-testid="column"] {
+            flex: 1 1 0 !important;
+            width: 50% !important;
         }
     }
     div[data-testid="stVerticalBlock"]:has(> div.workspace-generate-anchor) {
@@ -861,33 +922,63 @@ if active_tab == "Home":
 
     links = _normalize_home_links(_ensure_home_links())
     for idx, link in enumerate(list(links)):
-        link_cols = st.columns([12, 1], vertical_alignment="bottom")
-        with link_cols[0]:
-            links[idx] = st.text_input(
-                "Instagram Link" if idx == 0 else f"Instagram Link {idx + 1}",
-                value=link,
-                placeholder="https://www.instagram.com/p/... or /reel/...",
-                key=f"workspace_home_link_{idx}",
-                label_visibility="visible" if idx == 0 else "collapsed",
-            )
-        with link_cols[1]:
-            can_remove = len([item for item in links if (item or "").strip()]) > 0 or idx < len(links) - 1
-            if st.button(
-                "✕",
-                key=f"workspace_remove_home_link_{idx}",
-                help="Remove this link row",
-                disabled=not can_remove,
-                width="stretch",
-            ):
-                _remove_home_link(idx)
-                st.rerun()
+        links[idx] = st.text_input(
+            "Instagram Link" if idx == 0 else f"Instagram Link {idx + 1}",
+            value=link,
+            placeholder="https://www.instagram.com/p/... or /reel/...",
+            key=f"workspace_home_link_{idx}",
+            label_visibility="visible" if idx == 0 else "collapsed",
+        )
     st.session_state["workspace_home_links"] = links
 
-    mode = st.selectbox("Action", MODE_OPTIONS, index=0, key="workspace_home_mode")
+    mode = st.session_state.get("workspace_home_mode", MODE_OPTIONS[0])
+    org_hashtag = st.session_state.get("workspace_org_hashtag", "")
+    selected_hashtag = ORG_HASHTAG_MAP.get(org_hashtag, "")
+
+    if st.button(_action_label(mode), type="primary", width="stretch"):
+        links_to_process = _clean_home_links()
+        if not links_to_process:
+            st.warning("Enter at least one Instagram link.")
+        elif mode == "Add to sheet":
+            try:
+                append_link_rows(
+                    GOOGLE_SHEET_ID,
+                    links_to_process,
+                    selected_hashtag,
+                )
+            except Exception as e:
+                st.error(f"Could not add links to sheet: {e}")
+            else:
+                st.session_state["workspace_home_success"] = f"Added {len(links_to_process)} link(s) to the sheet."
+                st.session_state["workspace_home_links"] = [""]
+                st.rerun()
+        else:
+            with st.spinner(f"{mode} in progress..."):
+                try:
+                    tag_value, results = _run_home_mode(mode, links_to_process, org_hashtag)
+                except Exception as e:
+                    st.error(f"{mode} failed: {e}")
+                else:
+                    st.session_state["workspace_home_results"] = {
+                        "mode": mode,
+                        "required_hashtag": tag_value,
+                        "items": results,
+                    }
+                    st.success(f"{mode} finished for {len(results)} link(s).")
+
+    if st.button("+ Add another", width="stretch"):
+        st.session_state["workspace_home_links"] = st.session_state["workspace_home_links"] + [""]
+        st.rerun()
+
+    mode = st.selectbox(
+        "Action",
+        MODE_OPTIONS,
+        index=MODE_OPTIONS.index(mode) if mode in MODE_OPTIONS else 0,
+        key="workspace_home_mode",
+    )
     if mode in mode_help:
         st.caption(mode_help.get(mode, ""))
 
-    org_hashtag = st.session_state.get("workspace_org_hashtag", "")
     if _mode_uses_org_hashtag(mode):
         org_hashtag = st.selectbox(
             "Apply organization hashtag",
@@ -895,44 +986,7 @@ if active_tab == "Home":
             index=ORG_HASHTAG_OPTIONS.index(org_hashtag) if org_hashtag in ORG_HASHTAG_OPTIONS else 0,
             key="workspace_org_hashtag",
         )
-    selected_hashtag = ORG_HASHTAG_MAP.get(org_hashtag, "")
-
-    secondary_cols = st.columns(2)
-    with secondary_cols[0]:
-        if st.button("+ Add another", width="stretch"):
-            st.session_state["workspace_home_links"] = st.session_state["workspace_home_links"] + [""]
-            st.rerun()
-    with secondary_cols[1]:
-        if st.button(_action_label(mode), type="primary", width="stretch"):
-            links_to_process = _clean_home_links()
-            if not links_to_process:
-                st.warning("Enter at least one Instagram link.")
-            elif mode == "Add to sheet":
-                try:
-                    append_link_rows(
-                        GOOGLE_SHEET_ID,
-                        links_to_process,
-                        selected_hashtag,
-                    )
-                except Exception as e:
-                    st.error(f"Could not add links to sheet: {e}")
-                else:
-                    st.session_state["workspace_home_success"] = f"Added {len(links_to_process)} link(s) to the sheet."
-                    st.session_state["workspace_home_links"] = [""]
-                    st.rerun()
-            else:
-                with st.spinner(f"{mode} in progress..."):
-                    try:
-                        tag_value, results = _run_home_mode(mode, links_to_process, org_hashtag)
-                    except Exception as e:
-                        st.error(f"{mode} failed: {e}")
-                    else:
-                        st.session_state["workspace_home_results"] = {
-                            "mode": mode,
-                            "required_hashtag": tag_value,
-                            "items": results,
-                        }
-                        st.success(f"{mode} finished for {len(results)} link(s).")
+        selected_hashtag = ORG_HASHTAG_MAP.get(org_hashtag, "")
     home_results = st.session_state.get("workspace_home_results")
     if home_results and home_results.get("mode") == "Generate headline":
         for idx, item in enumerate(home_results.get("items", []), start=1):
@@ -987,16 +1041,11 @@ if active_tab == "Edit":
             generated = (row.get("Generated Caption") or "").strip()
             original_caption = (row.get("Original Caption") or "").strip()
             transcript = (row.get("Transcript") or "").strip()
-            caption_context = row.get("Caption Context", "")
-            top_comment = row.get("Top Comment", "")
             speaker_name = row.get("Speaker Name", "")
-            required_hashtags = row.get("Required Hashtags", "")
             status = (row.get("Status") or "").strip()
-            show_hashtags = st.session_state.get(f"workspace_show_hashtags_{row_num}", bool(required_hashtags))
-            show_top = st.session_state.get(f"workspace_show_top_{row_num}", bool(top_comment))
-            show_context = st.session_state.get(f"workspace_show_context_{row_num}", bool(caption_context))
 
-            top_left, top_right = st.columns([0.68, 1.32], vertical_alignment="top")
+            st.markdown('<div class="workspace-edit-card workspace-edit-main">', unsafe_allow_html=True)
+            top_left, top_right = st.columns([0.9, 1.1], vertical_alignment="top")
             with top_left:
                 thumb_link = (row.get("Thumbnail Drive Link") or "").strip()
                 if thumb_link:
@@ -1010,14 +1059,42 @@ if active_tab == "Edit":
                     f'<div class="workspace-status-line">Row {row_num} · {media_type or "pending"} · {status or "blank"}</div>',
                     unsafe_allow_html=True,
                 )
-                st.subheader(f"@{username}" if username else f"Row {row_num}")
+                st.markdown(f"#### @{username}" if username else f"#### Row {row_num}")
                 if url:
                     st.link_button("Open in Instagram", url, width="stretch")
 
-                action_cols = st.columns(3)
+                st.markdown('<div class="workspace-section-label">Generated Caption</div>', unsafe_allow_html=True)
+                _copy_block("caption", generated, f"generated_caption_{row_num}")
+
+                st.text_input(
+                    "Speaker Name",
+                    value=speaker_name,
+                    key=f"workspace_speaker_{row_num}",
+                    placeholder="Enter name",
+                )
+                if st.session_state.get(f"workspace_speaker_{row_num}", speaker_name).strip() != (speaker_name or "").strip():
+                    if st.button(
+                        "Update",
+                        key=f"workspace_update_{row_num}",
+                        type="primary",
+                        width="stretch",
+                    ):
+                        current_speaker = st.session_state.get(f"workspace_speaker_{row_num}", speaker_name).strip()
+                        update_metadata(
+                            GOOGLE_SHEET_ID,
+                            row_num,
+                            row.get("Caption Context", ""),
+                            current_speaker,
+                            row.get("Required Hashtags", ""),
+                            row.get("Top Comment", ""),
+                            "",
+                        )
+                        st.session_state["workspace_success"] = f"Row {row_num}: metadata updated."
+                        st.rerun()
+
+                st.markdown('<div class="workspace-action-row">', unsafe_allow_html=True)
+                action_cols = st.columns(2)
                 with action_cols[0]:
-                    _icon_copy_button("caption", generated)
-                with action_cols[1]:
                     primary_action = "transcript" if _is_reel_url(url) else "image_text"
                     primary_help = "Re-run with transcript" if _is_reel_url(url) else "Get context from text in images"
                     if st.button(
@@ -1038,7 +1115,7 @@ if active_tab == "Edit":
                                 st.rerun()
                         _queue_workspace_action(row_num, primary_action)
                         st.rerun()
-                with action_cols[2]:
+                with action_cols[1]:
                     if st.button(
                         "⬇️",
                         key=f"workspace_download_action_{row_num}",
@@ -1048,76 +1125,7 @@ if active_tab == "Edit":
                     ):
                         _queue_workspace_action(row_num, "download")
                         st.rerun()
-
-                st.text_input(
-                    "Speaker Name",
-                    value=speaker_name,
-                    key=f"workspace_speaker_{row_num}",
-                    placeholder="Enter name",
-                )
-
-                add_cols = st.columns([0.7, 1, 1, 1])
-                with add_cols[0]:
-                    st.markdown("**Add**")
-                with add_cols[1]:
-                    if st.button("#", key=f"workspace_toggle_hashtags_{row_num}", help="Toggle required hashtags", width="stretch"):
-                        st.session_state[f"workspace_show_hashtags_{row_num}"] = not show_hashtags
-                        st.rerun()
-                with add_cols[2]:
-                    if st.button("🔗", key=f"workspace_toggle_top_{row_num}", help="Toggle hashtag link / top comment", width="stretch"):
-                        st.session_state[f"workspace_show_top_{row_num}"] = not show_top
-                        st.rerun()
-                with add_cols[3]:
-                    if st.button("💡", key=f"workspace_toggle_context_{row_num}", help="Toggle context", width="stretch"):
-                        st.session_state[f"workspace_show_context_{row_num}"] = not show_context
-                        st.rerun()
-
-                if show_hashtags:
-                    st.text_input(
-                        "Required Hashtags",
-                        value=required_hashtags,
-                        key=f"workspace_hashtags_{row_num}",
-                        placeholder="#tag1 #tag2",
-                    )
-                if show_top:
-                    st.text_area(
-                        "Hashtag Link / Top Comment",
-                        value=top_comment,
-                        key=f"workspace_top_{row_num}",
-                        height=68,
-                        placeholder="Prepended above the generated caption.",
-                    )
-                if show_context:
-                    st.text_area(
-                        "Context",
-                        value=caption_context,
-                        key=f"workspace_context_{row_num}",
-                        height=90,
-                        placeholder="Add context for posts that need more source detail.",
-                    )
-
-                if _row_is_dirty(row):
-                    if st.button(
-                        "Update",
-                        key=f"workspace_update_{row_num}",
-                        type="primary",
-                        width="stretch",
-                    ):
-                        current_context = st.session_state.get(f"workspace_context_{row_num}", caption_context).strip()
-                        current_top = st.session_state.get(f"workspace_top_{row_num}", top_comment).strip()
-                        current_speaker = st.session_state.get(f"workspace_speaker_{row_num}", speaker_name).strip()
-                        current_hashtags = st.session_state.get(f"workspace_hashtags_{row_num}", required_hashtags).strip()
-                        update_metadata(
-                            GOOGLE_SHEET_ID,
-                            row_num,
-                            current_context,
-                            current_speaker,
-                            current_hashtags,
-                            current_top,
-                            "",
-                        )
-                        st.session_state["workspace_success"] = f"Row {row_num}: metadata updated."
-                        st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
 
                 transcript_warning = st.session_state.get(f"workspace_transcript_warning_{row_num}")
                 if transcript_warning:
@@ -1148,8 +1156,9 @@ if active_tab == "Edit":
                             _queue_workspace_action(row_num, "download")
                             st.rerun()
 
-                st.markdown('<div class="workspace-section-label">Content</div>', unsafe_allow_html=True)
+                st.markdown('<div class="workspace-section-label workspace-content-tabs">Content</div>', unsafe_allow_html=True)
                 _copy_tabs(row_num, generated, original_caption, transcript)
+            st.markdown('</div>', unsafe_allow_html=True)
 
             st.divider()
 
