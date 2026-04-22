@@ -187,6 +187,22 @@ def _clean_home_links() -> list[str]:
     return [link.strip() for link in st.session_state.get("workspace_home_links", []) if link.strip()]
 
 
+def _row_is_dirty(row: dict) -> bool:
+    row_num = row["row_number"]
+    return any(
+        [
+            st.session_state.get(f"workspace_speaker_{row_num}", row.get("Speaker Name", "")).strip()
+            != (row.get("Speaker Name", "") or "").strip(),
+            st.session_state.get(f"workspace_hashtags_{row_num}", row.get("Required Hashtags", "")).strip()
+            != (row.get("Required Hashtags", "") or "").strip(),
+            st.session_state.get(f"workspace_top_{row_num}", row.get("Top Comment", "")).strip()
+            != (row.get("Top Comment", "") or "").strip(),
+            st.session_state.get(f"workspace_context_{row_num}", row.get("Caption Context", "")).strip()
+            != (row.get("Caption Context", "") or "").strip(),
+        ]
+    )
+
+
 def _is_editable_row(row: dict) -> bool:
     if not row.get("Instagram URL", "").strip():
         return False
@@ -314,8 +330,8 @@ def _copy_block(label: str, value: str, key: str, empty_text: str = "(none)") ->
     <div style="margin-top:0.25rem;">
       <div style="
         min-height: 3.5rem;
-        max-height: 6.5rem;
-        overflow: auto;
+        max-height: 5.2rem;
+        overflow: hidden;
         white-space: pre-wrap;
         border: 1px solid rgba(15,23,42,0.08);
         border-radius: 16px;
@@ -344,7 +360,7 @@ def _copy_block(label: str, value: str, key: str, empty_text: str = "(none)") ->
     </div>
     """
     iframe_src = "data:text/html;charset=utf-8," + quote(component_html)
-    st.iframe(iframe_src, height=130, width="stretch")
+    st.iframe(iframe_src, height=118, width="stretch")
 
 
 def _copy_tabs(row_num: int, generated: str, original_caption: str, transcript: str) -> None:
@@ -355,6 +371,30 @@ def _copy_tabs(row_num: int, generated: str, original_caption: str, transcript: 
         _copy_block("original caption", original_caption, f"original_block_{row_num}")
     with text_tabs[2]:
         _copy_block("transcript", transcript, f"transcript_block_{row_num}")
+
+
+def _icon_copy_button(label: str, value: str) -> None:
+    escaped_text = html.escape(value or "")
+    escaped_label = html.escape(label)
+    button_html = f"""
+    <button
+      onclick='navigator.clipboard.writeText({escaped_text!r})'
+      title='Copy {escaped_label}'
+      style="
+        width: 100%;
+        min-height: 3rem;
+        border: 1px solid rgba(15,23,42,0.14);
+        border-radius: 14px;
+        background: white;
+        color: #0f172a;
+        font-size: 1.15rem;
+        font-weight: 700;
+        cursor: pointer;
+      "
+    >💬</button>
+    """
+    iframe_src = "data:text/html;charset=utf-8," + quote(button_html)
+    st.iframe(iframe_src, height=58, width="stretch")
 
 
 def _move_selected_row(editor_rows: list[dict], step: int) -> None:
@@ -708,7 +748,7 @@ st.markdown(
         border-radius: 24px;
         padding: 1.25rem;
         background: #fff;
-        margin-bottom: 1rem;
+        margin-bottom: 1.75rem;
         box-shadow: 0 12px 32px rgba(15, 23, 42, 0.06);
     }
     .stApp [data-testid="stAppViewContainer"] {
@@ -770,13 +810,13 @@ st.markdown(
         min-height: 3rem;
         border-radius: 14px;
     }
+    .workspace-inline-placeholder {
+        min-height: 3rem;
+    }
     .workspace-edit-card [data-testid="stHorizontalBlock"] {
         gap: 1rem;
     }
     @media (max-width: 640px) {
-        .workspace-edit-card [data-testid="stHorizontalBlock"] {
-            flex-wrap: nowrap;
-        }
         .workspace-edit-card [data-testid="column"] {
             min-width: 0 !important;
         }
@@ -954,6 +994,9 @@ if active_tab == "Edit":
             speaker_name = row.get("Speaker Name", "")
             required_hashtags = row.get("Required Hashtags", "")
             status = (row.get("Status") or "").strip()
+            show_hashtags = st.session_state.get(f"workspace_show_hashtags_{row_num}", bool(required_hashtags))
+            show_top = st.session_state.get(f"workspace_show_top_{row_num}", bool(top_comment))
+            show_context = st.session_state.get(f"workspace_show_context_{row_num}", bool(caption_context))
 
             top_left, top_right = st.columns([0.68, 1.32], vertical_alignment="top")
             with top_left:
@@ -975,6 +1018,8 @@ if active_tab == "Edit":
 
                 action_cols = st.columns(3)
                 with action_cols[0]:
+                    _icon_copy_button("caption", generated)
+                with action_cols[1]:
                     primary_action = "transcript" if _is_reel_url(url) else "image_text"
                     primary_help = "Re-run with transcript" if _is_reel_url(url) else "Get context from text in images"
                     if st.button(
@@ -995,7 +1040,7 @@ if active_tab == "Edit":
                                 st.rerun()
                         _queue_workspace_action(row_num, primary_action)
                         st.rerun()
-                with action_cols[1]:
+                with action_cols[2]:
                     if st.button(
                         "⬇️",
                         key=f"workspace_download_action_{row_num}",
@@ -1005,7 +1050,55 @@ if active_tab == "Edit":
                     ):
                         _queue_workspace_action(row_num, "download")
                         st.rerun()
-                with action_cols[2]:
+
+                st.text_input(
+                    "Speaker Name",
+                    value=speaker_name,
+                    key=f"workspace_speaker_{row_num}",
+                    placeholder="Enter name",
+                )
+
+                add_cols = st.columns([0.7, 1, 1, 1])
+                with add_cols[0]:
+                    st.markdown("**Add**")
+                with add_cols[1]:
+                    if st.button("#", key=f"workspace_toggle_hashtags_{row_num}", help="Toggle required hashtags", width="stretch"):
+                        st.session_state[f"workspace_show_hashtags_{row_num}"] = not show_hashtags
+                        st.rerun()
+                with add_cols[2]:
+                    if st.button("🔗", key=f"workspace_toggle_top_{row_num}", help="Toggle hashtag link / top comment", width="stretch"):
+                        st.session_state[f"workspace_show_top_{row_num}"] = not show_top
+                        st.rerun()
+                with add_cols[3]:
+                    if st.button("💡", key=f"workspace_toggle_context_{row_num}", help="Toggle context", width="stretch"):
+                        st.session_state[f"workspace_show_context_{row_num}"] = not show_context
+                        st.rerun()
+
+                if show_hashtags:
+                    st.text_input(
+                        "Required Hashtags",
+                        value=required_hashtags,
+                        key=f"workspace_hashtags_{row_num}",
+                        placeholder="#tag1 #tag2",
+                    )
+                if show_top:
+                    st.text_area(
+                        "Hashtag Link / Top Comment",
+                        value=top_comment,
+                        key=f"workspace_top_{row_num}",
+                        height=68,
+                        placeholder="Prepended above the generated caption.",
+                    )
+                if show_context:
+                    st.text_area(
+                        "Context",
+                        value=caption_context,
+                        key=f"workspace_context_{row_num}",
+                        height=90,
+                        placeholder="Add context for posts that need more source detail.",
+                    )
+
+                if _row_is_dirty(row):
                     if st.button(
                         "Update",
                         key=f"workspace_update_{row_num}",
@@ -1027,37 +1120,6 @@ if active_tab == "Edit":
                         )
                         st.session_state["workspace_success"] = f"Row {row_num}: metadata updated."
                         st.rerun()
-
-                info_cols = st.columns([1.1, 1])
-                with info_cols[0]:
-                    st.text_input(
-                        "Speaker Name",
-                        value=speaker_name,
-                        key=f"workspace_speaker_{row_num}",
-                        placeholder="Enter name",
-                    )
-                with info_cols[1]:
-                    st.text_input(
-                        "Required Hashtags",
-                        value=required_hashtags,
-                        key=f"workspace_hashtags_{row_num}",
-                        placeholder="#tag1 #tag2",
-                    )
-
-                st.text_area(
-                    "Hashtag Link / Top Comment",
-                    value=top_comment,
-                    key=f"workspace_top_{row_num}",
-                    height=68,
-                    placeholder="Prepended above the generated caption.",
-                )
-                st.text_area(
-                    "Context",
-                    value=caption_context,
-                    key=f"workspace_context_{row_num}",
-                    height=90,
-                    placeholder="Add context for posts that need more source detail.",
-                )
 
                 transcript_warning = st.session_state.get(f"workspace_transcript_warning_{row_num}")
                 if transcript_warning:
@@ -1090,6 +1152,8 @@ if active_tab == "Edit":
 
                 st.markdown('<div class="workspace-section-label">Content</div>', unsafe_allow_html=True)
                 _copy_tabs(row_num, generated, original_caption, transcript)
+
+            st.divider()
 
         ingested_rows = [r for r in editor_rows if (r.get("Status", "").strip().lower() == "ingested")]
         sticky_container = st.container()
