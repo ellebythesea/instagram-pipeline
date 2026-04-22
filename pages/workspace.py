@@ -593,7 +593,7 @@ def _queue_workspace_action(row_number: int, action: str) -> None:
 
 def _rerun_workspace(tab: str | None = None) -> None:
     if tab:
-        st.session_state["workspace_active_tab"] = tab
+        st.session_state["_workspace_pending_tab"] = tab
     st.rerun()
 
 
@@ -745,6 +745,10 @@ if success_message:
     st.success(success_message)
 if error_message:
     st.error(error_message)
+
+pending_tab = st.session_state.pop("_workspace_pending_tab", None)
+if pending_tab:
+    st.session_state["workspace_active_tab"] = pending_tab
 
 active_tab = st.radio(
     "Workspace section",
