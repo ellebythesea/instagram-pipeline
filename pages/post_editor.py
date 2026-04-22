@@ -324,57 +324,58 @@ for row in rows:
             key=f"top_{row_num}",
         )
 
-        action_cols = st.columns(3)
-        with action_cols[0]:
-            rerun_disabled = "/reel/" not in url.lower() and "/reels/" not in url.lower()
-            if st.button(
-                "🎙️",
-                key=f"post_editor_transcript_{row_num}",
-                help="Re-run with transcript",
-                disabled=rerun_disabled,
-                use_container_width=True,
-            ):
-                with st.spinner(f"Refreshing row {row_num} with transcript..."):
-                    try:
-                        _rerun_with_transcript(row)
-                    except Exception as e:
-                        st.error(f"Row {row_num}: {e}")
-                    else:
-                        st.success(f"Row {row_num}: transcript caption rerun complete.")
-                        st.rerun()
-        with action_cols[1]:
-            if st.button(
-                "⬇️",
-                key=f"post_editor_download_{row_num}",
-                help="Download media to Drive",
-                use_container_width=True,
-            ):
-                with st.spinner(f"Uploading row {row_num} media to Drive..."):
-                    try:
-                        _download_media_to_drive(row)
-                    except Exception as e:
-                        st.error(f"Row {row_num}: {e}")
-                    else:
-                        st.success(f"Row {row_num}: media uploaded to Drive.")
-                        st.rerun()
-        with action_cols[2]:
-            image_redo_disabled = (media_type or "").strip().lower() != "photo"
-            if st.button(
-                "🖼️",
-                key=f"post_editor_image_text_{row_num}",
-                help="Re-do caption from image text",
-                disabled=image_redo_disabled,
-                use_container_width=True,
-            ):
-                with st.spinner(f"Extracting image text for row {row_num}..."):
-                    try:
-                        _redo_caption_from_image_text(row)
-                    except Exception as e:
-                        st.error(f"Row {row_num}: {e}")
-                    else:
-                        st.success(f"Row {row_num}: caption regenerated from image text.")
-                        st.rerun()
     st.markdown("</div>", unsafe_allow_html=True)
+
+    action_cols = st.columns(3)
+    with action_cols[0]:
+        rerun_disabled = "/reel/" not in url.lower() and "/reels/" not in url.lower()
+        if st.button(
+            "🎙️",
+            key=f"post_editor_transcript_{row_num}",
+            help="Re-run with transcript",
+            disabled=rerun_disabled,
+            use_container_width=True,
+        ):
+            with st.spinner(f"Refreshing row {row_num} with transcript..."):
+                try:
+                    _rerun_with_transcript(row)
+                except Exception as e:
+                    st.error(f"Row {row_num}: {e}")
+                else:
+                    st.success(f"Row {row_num}: transcript caption rerun complete.")
+                    st.rerun()
+    with action_cols[1]:
+        if st.button(
+            "⬇️",
+            key=f"post_editor_download_{row_num}",
+            help="Download media to Drive",
+            use_container_width=True,
+        ):
+            with st.spinner(f"Uploading row {row_num} media to Drive..."):
+                try:
+                    _download_media_to_drive(row)
+                except Exception as e:
+                    st.error(f"Row {row_num}: {e}")
+                else:
+                    st.success(f"Row {row_num}: media uploaded to Drive.")
+                    st.rerun()
+    with action_cols[2]:
+        image_redo_disabled = (media_type or "").strip().lower() != "photo"
+        if st.button(
+            "🖼️",
+            key=f"post_editor_image_text_{row_num}",
+            help="Re-do caption from image text",
+            disabled=image_redo_disabled,
+            use_container_width=True,
+        ):
+            with st.spinner(f"Extracting image text for row {row_num}..."):
+                try:
+                    _redo_caption_from_image_text(row)
+                except Exception as e:
+                    st.error(f"Row {row_num}: {e}")
+                else:
+                    st.success(f"Row {row_num}: caption regenerated from image text.")
+                    st.rerun()
 
 ingested_rows = [r for r in rows if r.get("Status", "").strip().lower() == "ingested"]
 
