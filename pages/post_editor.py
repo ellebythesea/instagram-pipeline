@@ -280,7 +280,8 @@ for row in rows:
 
         transcript = row.get("Transcript", "")
         if transcript:
-            st.code(transcript, language=None)
+            st.caption("Transcript")
+            st.code(transcript.replace("\n", " ").strip(), language=None)
 
     # --- Right: editable metadata + generated caption ---
     with right:
