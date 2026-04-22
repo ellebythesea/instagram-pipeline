@@ -238,3 +238,10 @@ def update_metadata(
     )
     _with_backoff(ws.update, f"O{row_number}", [[caption_context]])
     _invalidate_rows_cache(sheet_id)
+
+
+def delete_row(sheet_id: str, row_number: int) -> None:
+    """Delete a single sheet row by absolute row number."""
+    ws = _worksheet(sheet_id)
+    _with_backoff(ws.delete_rows, row_number)
+    _invalidate_rows_cache(sheet_id)

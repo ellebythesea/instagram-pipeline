@@ -54,6 +54,7 @@ update_caption_context = sheet_ops.update_caption_context
 update_ingest_result = sheet_ops.update_ingest_result
 update_metadata = sheet_ops.update_metadata
 update_transcript = sheet_ops.update_transcript
+delete_sheet_row = sheet_ops.delete_row
 
 
 def append_link_rows(sheet_id: str, urls: list[str], required_hashtags: str = "") -> None:
@@ -642,6 +643,20 @@ def _process_next_workspace_action() -> None:
     st.rerun()
 
 
+def _delete_workspace_row(row_number: int) -> None:
+    delete_sheet_row(GOOGLE_SHEET_ID, row_number)
+    keys_to_clear = [
+        f"workspace_speaker_{row_number}",
+        f"workspace_hashtags_{row_number}",
+        f"workspace_top_{row_number}",
+        f"workspace_context_{row_number}",
+        f"workspace_transcript_warning_{row_number}",
+        f"workspace_delete_confirm_{row_number}",
+    ]
+    for key in keys_to_clear:
+        st.session_state.pop(key, None)
+
+
 def _run_home_mode(mode: str, urls: list[str], org_hashtag: str) -> tuple[str, list[dict]]:
     results = []
     tag_value = ORG_HASHTAG_MAP.get(org_hashtag, "")
@@ -877,12 +892,78 @@ if active_tab == "Edit":
                         st.info("Thumbnail will appear here after ingest.")
 
                 with top_right:
+                    menu_label = "Photo run" if not _is_reel_url(url) else "Transcribe"
+                    title_col, menu_col = st.columns([12, 1], vertical_alignment="center")
                     generated_single_line = " ".join((generated or "(none)").splitlines()).strip() or "(none)"
                     st.markdown(
                         f'<div class="workspace-status-line">Row {row_num} · {media_type or "pending"} · {status or "blank"}</div>',
                         unsafe_allow_html=True,
                     )
-                    st.markdown(f"#### @{username}" if username else f"#### Row {row_num}")
+                    with title_col:
+                        st.markdown(f"#### @{username}" if username else f"#### Row {row_num}")
+                    with menu_col:
+                        with st.popover("⋯", use_container_width=True):
+                            primary_action = "transcript" if _is_reel_url(url) else "image_text"
+                            primary_help = "Fetch transcript and regenerate caption." if _is_reel_url(url) else "Extract text from images and regenerate caption."
+                            if st.button(
+                                menu_label,
+                                key=f"workspace_menu_primary_{row_num}",
+                                disabled=not url,
+                                width="stretch",
+                                help=primary_help,
+                            ):
+                                if primary_action == "transcript":
+                                    try:
+                                        warning = _check_reel_transcript_risk(row)
+                                    except Exception as e:
+                                        st.session_state["workspace_error"] = f"Row {row_num}: could not check reel size - {e}"
+                                        st.rerun()
+                                    if warning:
+                                        st.session_state[f"workspace_transcript_warning_{row_num}"] = warning
+                                        st.rerun()
+                                _queue_workspace_action(row_num, primary_action)
+                                st.rerun()
+                            if st.button(
+                                "Download media",
+                                key=f"workspace_menu_download_{row_num}",
+                                disabled=not url,
+                                width="stretch",
+                            ):
+                                _queue_workspace_action(row_num, "download")
+                                st.rerun()
+                            confirm_key = f"workspace_delete_confirm_{row_num}"
+                            if st.session_state.get(confirm_key):
+                                st.warning("Delete this row from the Google Sheet?")
+                                confirm_cols = st.columns(2)
+                                with confirm_cols[0]:
+                                    if st.button(
+                                        "Confirm delete",
+                                        key=f"workspace_confirm_delete_{row_num}",
+                                        type="primary",
+                                        width="stretch",
+                                    ):
+                                        try:
+                                            _delete_workspace_row(row_num)
+                                        except Exception as e:
+                                            st.session_state["workspace_error"] = f"Row {row_num}: could not delete row - {e}"
+                                        else:
+                                            st.session_state["workspace_success"] = f"Row {row_num}: deleted from the sheet."
+                                        st.rerun()
+                                with confirm_cols[1]:
+                                    if st.button(
+                                        "Cancel",
+                                        key=f"workspace_cancel_delete_{row_num}",
+                                        width="stretch",
+                                    ):
+                                        st.session_state.pop(confirm_key, None)
+                                        st.rerun()
+                            elif st.button(
+                                "Delete row",
+                                key=f"workspace_menu_delete_{row_num}",
+                                width="stretch",
+                            ):
+                                st.session_state[confirm_key] = True
+                                st.rerun()
 
                     st.markdown('<div class="workspace-section-label">Generated Caption</div>', unsafe_allow_html=True)
                     st.code(generated_single_line, language=None)
@@ -913,44 +994,8 @@ if active_tab == "Edit":
                             st.session_state["workspace_success"] = f"Row {row_num}: metadata updated."
                             st.rerun()
 
-                    action_container = st.container()
-                    with action_container:
-                        st.markdown('<div class="workspace-action-anchor"></div>', unsafe_allow_html=True)
-                        action_cols = st.columns([2.8, 1, 1])
-                        with action_cols[0]:
-                            if url:
-                                st.link_button("Open in Instagram", url, width="stretch")
-                        with action_cols[1]:
-                            primary_action = "transcript" if _is_reel_url(url) else "image_text"
-                            primary_help = "Re-run with transcript" if _is_reel_url(url) else "Get context from text in images"
-                            if st.button(
-                                "🎙️" if _is_reel_url(url) else "🖼️",
-                                key=f"workspace_primary_action_{row_num}",
-                                help=primary_help,
-                                disabled=not url,
-                                width="stretch",
-                            ):
-                                if primary_action == "transcript":
-                                    try:
-                                        warning = _check_reel_transcript_risk(row)
-                                    except Exception as e:
-                                        st.session_state["workspace_error"] = f"Row {row_num}: could not check reel size - {e}"
-                                        st.rerun()
-                                    if warning:
-                                        st.session_state[f"workspace_transcript_warning_{row_num}"] = warning
-                                        st.rerun()
-                                _queue_workspace_action(row_num, primary_action)
-                                st.rerun()
-                        with action_cols[2]:
-                            if st.button(
-                                "⬇️",
-                                key=f"workspace_download_action_{row_num}",
-                                help="Download media to Drive",
-                                disabled=not url,
-                                width="stretch",
-                            ):
-                                _queue_workspace_action(row_num, "download")
-                                st.rerun()
+                    if url:
+                        st.link_button("Open in Instagram", url, width="stretch")
 
                     transcript_warning = st.session_state.get(f"workspace_transcript_warning_{row_num}")
                     if transcript_warning:
