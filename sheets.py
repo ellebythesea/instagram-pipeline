@@ -143,6 +143,23 @@ def get_ingested_rows(sheet_id: str) -> list[dict]:
     ]
 
 
+def append_link_rows(sheet_id: str, urls: list[str], required_hashtags: str = "") -> None:
+    """Append new rows with Instagram URL and optional required hashtags."""
+    cleaned_urls = [url.strip() for url in urls if url.strip()]
+    if not cleaned_urls:
+        return
+
+    ws = _worksheet(sheet_id)
+    rows = []
+    for url in cleaned_urls:
+        row = [""] * len(_EXPECTED_HEADERS)
+        row[0] = url
+        row[11] = required_hashtags.strip()
+        rows.append(row)
+    _with_backoff(ws.append_rows, rows, value_input_option="USER_ENTERED")
+    _invalidate_rows_cache(sheet_id)
+
+
 def update_ingest_result(
     sheet_id: str,
     row_number: int,
@@ -178,6 +195,13 @@ def update_caption(sheet_id: str, row_number: int, caption: str, status: str) ->
     """Write generated caption to col C and status to col N."""
     ws = _worksheet(sheet_id)
     _with_backoff(ws.update, f"C{row_number}", [[caption]])
+    _with_backoff(ws.update, f"N{row_number}", [[status]])
+    _invalidate_rows_cache(sheet_id)
+
+
+def update_status(sheet_id: str, row_number: int, status: str) -> None:
+    """Write status to col N for a single row."""
+    ws = _worksheet(sheet_id)
     _with_backoff(ws.update, f"N{row_number}", [[status]])
     _invalidate_rows_cache(sheet_id)
 

@@ -6,6 +6,161 @@ The GitHub repo is: https://github.com/ellebythesea/instagram-pipeline.git
 
 ---
 
+## Unified UI Redesign Plan (2026-04-21)
+
+This section is the current target UI and should be treated as the active redesign direction for the app shell.
+
+### Branch Recommendation
+
+Do this work on a branch, not directly on `main`.
+
+Recommended branch name:
+
+`ui/unified-home-edit-data`
+
+Reason:
+
+- this is a structural redesign, not a small polish pass
+- it changes navigation, page responsibilities, and action flows
+- we will likely want to compare the new UX against the current one before merging
+- rollback is easier with a branch, even though commits can also be reverted later
+
+### Goal
+
+Move the app toward a 3-tab experience:
+
+- `Home`
+- `Edit`
+- `Data`
+
+while keeping the existing pipeline logic and sheet integration underneath.
+
+### Home Tab
+
+Purpose:
+
+- single entry point for one or many Instagram links
+- action mode determines what happens for every entered link
+
+Core layout:
+
+- Instagram link input row
+- primary mode dropdown, defaulting to `Add to sheet`
+- organization hashtag dropdown that applies to all queued links
+- secondary button: `+ Add another`
+- primary bottom button:
+  - `Add` when mode is `Add to sheet`
+  - `Generate` when mode is `Generate headline`
+  - `Caption` when mode is `Caption this`
+  - `Download` when mode is `Download media`
+
+Behavior:
+
+- user can queue multiple Instagram links before running the action
+- the selected mode applies to all queued links
+- the selected organization hashtag / preset applies to all queued links
+- changing the mode should change the page controls and button label to match the selected action
+
+### Edit Tab
+
+Purpose:
+
+- row-by-row editing and completion workflow
+- this becomes the main working surface for captions and media actions
+
+Top area:
+
+- horizontal, scrollable row selector
+- each row shows its sheet row number
+- rows marked complete show a checkmark state
+- there is a `Done` action with enabled and disabled states
+
+Row detail layout:
+
+- image on the left
+- on the right:
+  - username
+  - large `Open in Instagram` button
+  - action buttons row
+
+Action buttons:
+
+- if reel:
+  - transcribe button
+  - download media button
+  - done button
+- if photo/carousel:
+  - image text / photo context button
+  - download media button
+  - done button
+
+Metadata area:
+
+- speaker name field
+- optional add-on fields triggered by icon buttons
+- `Add Hashtag Link` actually maps to the current top comment field
+- light bulb maps to context
+
+Content tabs under metadata:
+
+- `Caption`
+- `Original Caption`
+- `Transcript`
+
+Content display:
+
+- each tab shows a few lines of text
+- large copy button beneath the visible text area
+
+### Data Tab
+
+Purpose:
+
+- regular table view of the Google Sheet backed data
+- processing actions stay here, not edit actions
+
+Layout:
+
+- plain data table with row, Instagram URL, username, and other key columns
+- `Process new rows` button stays here
+
+### Behavior Rules
+
+- rows should remain visible in `Edit` until they are deleted from the sheet
+- generated captions should have a clear `done` state
+- reel transcript fetch should remain on-demand, not automatic in batch ingest
+- image OCR should remain available for photo/carousel rows
+- media download/upload helpers should remain reusable from both `Home` and `Edit`
+
+### Implementation Strategy
+
+Suggested order:
+
+1. Create a unified app shell with `Home`, `Edit`, and `Data` tabs.
+2. Move current pipeline table and `Process New Rows` into `Data`.
+3. Refactor current `Post editor` into the new `Edit` tab structure.
+4. Move single-link actions from separate pages into `Home`.
+5. Reuse existing business logic first; do not rewrite ingest / caption / sheet logic unless required.
+6. After the shell works, do a visual pass for mobile hit areas, spacing, and tab behavior.
+
+### Keep / Reuse
+
+- existing sheet schema
+- existing ingest logic
+- existing on-demand transcript rerun logic
+- existing OCR-from-image-text logic
+- existing headline generation logic
+- existing media downloader logic where possible
+
+### Defer Until After Shell Works
+
+- visual polish beyond layout parity
+- icon/state animation polish
+- collapsing or removing legacy standalone pages
+- deeper sheet schema changes
+
+---
+
 ## What This App Does
 
 A Streamlit app that processes Instagram posts into formatted social media captions. Two streams:
