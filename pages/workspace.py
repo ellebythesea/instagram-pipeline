@@ -812,7 +812,6 @@ active_tab = st.radio(
 )
 
 if active_tab == "Home":
-    st.markdown('<div class="workspace-shell">', unsafe_allow_html=True)
     home_success = st.session_state.pop("workspace_home_success", "")
     if home_success:
         st.success(home_success)
@@ -900,7 +899,6 @@ if active_tab == "Home":
     home_results = st.session_state.get("workspace_home_results")
     if home_results and home_results.get("mode") == "Generate headline":
         for idx, item in enumerate(home_results.get("items", []), start=1):
-            st.markdown('<div class="workspace-results-card">', unsafe_allow_html=True)
             st.caption(f"Result {idx}")
             st.write(f"@{item.get('username') or 'unknown'}")
             st.markdown(f"[Open Instagram link ↗]({item['url']})")
@@ -910,20 +908,16 @@ if active_tab == "Home":
                     _copy_block(f"headline {tab_idx + 1}", headline, f"workspace_home_headline_{idx}_{tab_idx}")
             with headline_tabs[3]:
                 _copy_block("caption", item.get("caption", ""), f"workspace_home_caption_{idx}")
-            st.markdown('</div>', unsafe_allow_html=True)
 
     if home_results and home_results.get("mode") == "Caption this":
         for idx, item in enumerate(home_results.get("items", []), start=1):
-            st.markdown('<div class="workspace-results-card">', unsafe_allow_html=True)
             st.caption(f"Caption {idx}")
             st.write(f"@{item.get('username') or 'unknown'}")
             st.markdown(f"[Open Instagram link ↗]({item['url']})")
             _copy_block("caption", item.get("caption", ""), f"workspace_home_caption_only_{idx}")
-            st.markdown('</div>', unsafe_allow_html=True)
 
     if home_results and home_results.get("mode") == "Download media":
         for idx, item in enumerate(home_results.get("items", []), start=1):
-            st.markdown('<div class="workspace-results-card">', unsafe_allow_html=True)
             st.caption(f"Download {idx}")
             st.write(f"@{item.get('username') or 'unknown'} · {item.get('media_type') or 'unknown'}")
             st.markdown(f"[Open Instagram link ↗]({item['url']})")
@@ -931,11 +925,7 @@ if active_tab == "Home":
                 st.write(f"Media link(s): {item['media_link']}")
             if item.get("thumbnail_link"):
                 st.write(f"Thumbnail: {item['thumbnail_link']}")
-            st.markdown('</div>', unsafe_allow_html=True)
-
-    st.markdown('</div>', unsafe_allow_html=True)
 if active_tab == "Edit":
-    st.markdown('<div class="workspace-shell">', unsafe_allow_html=True)
     try:
         editor_rows = _run_with_sheet_quota_countdown(
             lambda: [
@@ -966,7 +956,6 @@ if active_tab == "Edit":
             required_hashtags = row.get("Required Hashtags", "")
             status = (row.get("Status") or "").strip()
 
-            st.markdown('<div class="workspace-edit-card">', unsafe_allow_html=True)
             top_left, top_right = st.columns([0.68, 1.32], vertical_alignment="top")
             with top_left:
                 thumb_link = (row.get("Thumbnail Drive Link") or "").strip()
@@ -1103,8 +1092,6 @@ if active_tab == "Edit":
                 st.markdown('<div class="workspace-section-label">Content</div>', unsafe_allow_html=True)
                 _copy_tabs(row_num, generated, original_caption, transcript)
 
-            st.markdown("</div>", unsafe_allow_html=True)
-
         ingested_rows = [r for r in editor_rows if (r.get("Status", "").strip().lower() == "ingested")]
         sticky_container = st.container()
         with sticky_container:
@@ -1181,10 +1168,8 @@ if active_tab == "Edit":
                 f'<div class="workspace-action-note">{len(queue)} queued action(s) waiting to run.</div>',
                 unsafe_allow_html=True,
             )
-    st.markdown('</div>', unsafe_allow_html=True)
 
 if active_tab == "Data":
-    st.markdown('<div class="workspace-shell">', unsafe_allow_html=True)
     st.caption("Data view for the Google Sheet plus batch ingest.")
 
     try:
@@ -1267,4 +1252,3 @@ if active_tab == "Data":
                 progress.progress((i + 1) / len(pending))
             st.success(f"Done. Ingested {len(pending)} row(s).")
             st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
