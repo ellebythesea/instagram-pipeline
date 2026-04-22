@@ -771,7 +771,7 @@ st.markdown(
         background: #fff;
         margin-top: 1rem;
     }
-    .workspace-edit-card {
+    div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) {
         border: 1px solid rgba(15, 23, 42, 0.12);
         border-radius: 24px;
         padding: 1.25rem;
@@ -834,30 +834,30 @@ st.markdown(
         font-size: 0.92rem;
         color: #475569;
     }
-    .workspace-edit-card .stButton > button {
+    div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) .stButton > button {
         min-height: 3rem;
         border-radius: 14px;
     }
-    .workspace-edit-card [data-testid="column"] {
+    div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="column"] {
         min-width: 0 !important;
     }
-    .workspace-edit-main [data-testid="stHorizontalBlock"],
-    .workspace-action-row [data-testid="stHorizontalBlock"] {
+    div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stHorizontalBlock"],
+    div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] {
         gap: 1rem;
         flex-wrap: nowrap;
     }
-    .workspace-edit-main [data-testid="stHorizontalBlock"] > [data-testid="column"]:first-child {
+    div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:first-child {
         flex: 0 0 42% !important;
         width: 42% !important;
     }
-    .workspace-edit-main [data-testid="stHorizontalBlock"] > [data-testid="column"]:last-child {
+    div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:last-child {
         flex: 0 0 58% !important;
         width: 58% !important;
     }
-    .workspace-edit-card [data-testid="stCodeBlock"] {
+    div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stCodeBlock"] {
         margin: 0.2rem 0 0.35rem;
     }
-    .workspace-edit-card [data-testid="stCodeBlock"] pre {
+    div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stCodeBlock"] pre {
         min-height: 2.1rem;
         max-height: 2.1rem;
         overflow: hidden;
@@ -867,7 +867,7 @@ st.markdown(
         padding: 0.45rem 2.75rem 0.45rem 0.7rem;
         border-radius: 12px;
     }
-    .workspace-edit-card [data-testid="stCodeBlock"] code {
+    div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stCodeBlock"] code {
         line-height: 1.1rem;
         font-size: 0.86rem;
     }
@@ -887,19 +887,23 @@ st.markdown(
         margin-top: 0.15rem;
         padding-right: 0.25rem;
     }
+    .workspace-edit-main-anchor,
+    .workspace-action-anchor {
+        display: none;
+    }
     @media (max-width: 640px) {
-        .workspace-edit-card {
+        div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) {
             padding: 1rem;
         }
-        .workspace-edit-main [data-testid="stHorizontalBlock"] > [data-testid="column"]:first-child {
+        div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:first-child {
             flex: 0 0 44% !important;
             width: 44% !important;
         }
-        .workspace-edit-main [data-testid="stHorizontalBlock"] > [data-testid="column"]:last-child {
+        div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:last-child {
             flex: 0 0 56% !important;
             width: 56% !important;
         }
-        .workspace-action-row [data-testid="stHorizontalBlock"] > [data-testid="column"] {
+        div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"] {
             flex: 1 1 0 !important;
             width: 50% !important;
         }
@@ -1068,121 +1072,123 @@ if active_tab == "Edit":
             speaker_name = row.get("Speaker Name", "")
             status = (row.get("Status") or "").strip()
 
-            st.markdown('<div class="workspace-edit-card workspace-edit-main">', unsafe_allow_html=True)
-            top_left, top_right = st.columns([0.9, 1.1], vertical_alignment="top")
-            with top_left:
-                thumb_link = (row.get("Thumbnail Drive Link") or "").strip()
-                if thumb_link:
-                    image_url = _drive_image_url(thumb_link) or thumb_link
-                    st.image(image_url, width="stretch")
-                else:
-                    st.info("Thumbnail will appear here after ingest.")
+            row_container = st.container()
+            with row_container:
+                st.markdown('<div class="workspace-edit-main-anchor"></div>', unsafe_allow_html=True)
+                top_left, top_right = st.columns([0.9, 1.1], vertical_alignment="top")
+                with top_left:
+                    thumb_link = (row.get("Thumbnail Drive Link") or "").strip()
+                    if thumb_link:
+                        image_url = _drive_image_url(thumb_link) or thumb_link
+                        st.image(image_url, width="stretch")
+                    else:
+                        st.info("Thumbnail will appear here after ingest.")
 
-            with top_right:
-                st.markdown(
-                    f'<div class="workspace-status-line">Row {row_num} · {media_type or "pending"} · {status or "blank"}</div>',
-                    unsafe_allow_html=True,
-                )
-                st.markdown(f"#### @{username}" if username else f"#### Row {row_num}")
-                if url:
-                    st.link_button("Open in Instagram", url, width="stretch")
-
-                st.markdown('<div class="workspace-section-label">Generated Caption</div>', unsafe_allow_html=True)
-                st.code(generated or "(none)", language=None)
-
-                st.text_input(
-                    "Speaker Name",
-                    value=speaker_name,
-                    key=f"workspace_speaker_{row_num}",
-                    placeholder="Enter name",
-                )
-                if st.session_state.get(f"workspace_speaker_{row_num}", speaker_name).strip() != (speaker_name or "").strip():
-                    if st.button(
-                        "Update",
-                        key=f"workspace_update_{row_num}",
-                        type="primary",
-                        width="stretch",
-                    ):
-                        current_speaker = st.session_state.get(f"workspace_speaker_{row_num}", speaker_name).strip()
-                        update_metadata(
-                            GOOGLE_SHEET_ID,
-                            row_num,
-                            row.get("Caption Context", ""),
-                            current_speaker,
-                            row.get("Required Hashtags", ""),
-                            row.get("Top Comment", ""),
-                            "",
-                        )
-                        st.session_state["workspace_success"] = f"Row {row_num}: metadata updated."
-                        st.rerun()
-
-                st.markdown('<div class="workspace-action-row">', unsafe_allow_html=True)
-                action_cols = st.columns(2)
-                with action_cols[0]:
-                    primary_action = "transcript" if _is_reel_url(url) else "image_text"
-                    primary_help = "Re-run with transcript" if _is_reel_url(url) else "Get context from text in images"
-                    if st.button(
-                        "🎙️" if _is_reel_url(url) else "🖼️",
-                        key=f"workspace_primary_action_{row_num}",
-                        help=primary_help,
-                        disabled=not url,
-                        width="stretch",
-                    ):
-                        if primary_action == "transcript":
-                            try:
-                                warning = _check_reel_transcript_risk(row)
-                            except Exception as e:
-                                st.session_state["workspace_error"] = f"Row {row_num}: could not check reel size - {e}"
-                                st.rerun()
-                            if warning:
-                                st.session_state[f"workspace_transcript_warning_{row_num}"] = warning
-                                st.rerun()
-                        _queue_workspace_action(row_num, primary_action)
-                        st.rerun()
-                with action_cols[1]:
-                    if st.button(
-                        "⬇️",
-                        key=f"workspace_download_action_{row_num}",
-                        help="Download media to Drive",
-                        disabled=not url,
-                        width="stretch",
-                    ):
-                        _queue_workspace_action(row_num, "download")
-                        st.rerun()
-                st.markdown('</div>', unsafe_allow_html=True)
-
-                transcript_warning = st.session_state.get(f"workspace_transcript_warning_{row_num}")
-                if transcript_warning:
-                    size_label = _format_bytes(transcript_warning["size_bytes"])
-                    threshold_label = _format_bytes(transcript_warning["threshold_bytes"])
-                    st.warning(
-                        f"This reel is {size_label}, which is over the {threshold_label} transcript warning limit. "
-                        "Transcription may cost more than usual."
+                with top_right:
+                    st.markdown(
+                        f'<div class="workspace-status-line">Row {row_num} · {media_type or "pending"} · {status or "blank"}</div>',
+                        unsafe_allow_html=True,
                     )
-                    warning_cols = st.columns(2)
-                    with warning_cols[0]:
+                    st.markdown(f"#### @{username}" if username else f"#### Row {row_num}")
+                    if url:
+                        st.link_button("Open in Instagram", url, width="stretch")
+
+                    st.markdown('<div class="workspace-section-label">Generated Caption</div>', unsafe_allow_html=True)
+                    st.code(generated or "(none)", language=None)
+
+                    st.text_input(
+                        "Speaker Name",
+                        value=speaker_name,
+                        key=f"workspace_speaker_{row_num}",
+                        placeholder="Enter name",
+                    )
+                    if st.session_state.get(f"workspace_speaker_{row_num}", speaker_name).strip() != (speaker_name or "").strip():
                         if st.button(
-                            "Transcribe anyway",
-                            key=f"workspace_warning_transcribe_{row_num}",
+                            "Update",
+                            key=f"workspace_update_{row_num}",
                             type="primary",
                             width="stretch",
                         ):
-                            st.session_state.pop(f"workspace_transcript_warning_{row_num}", None)
-                            _queue_workspace_action(row_num, "transcript")
-                            st.rerun()
-                    with warning_cols[1]:
-                        if st.button(
-                            "Download media",
-                            key=f"workspace_warning_download_{row_num}",
-                            width="stretch",
-                        ):
-                            st.session_state.pop(f"workspace_transcript_warning_{row_num}", None)
-                            _queue_workspace_action(row_num, "download")
+                            current_speaker = st.session_state.get(f"workspace_speaker_{row_num}", speaker_name).strip()
+                            update_metadata(
+                                GOOGLE_SHEET_ID,
+                                row_num,
+                                row.get("Caption Context", ""),
+                                current_speaker,
+                                row.get("Required Hashtags", ""),
+                                row.get("Top Comment", ""),
+                                "",
+                            )
+                            st.session_state["workspace_success"] = f"Row {row_num}: metadata updated."
                             st.rerun()
 
-                st.markdown('<div class="workspace-section-label workspace-content-tabs">Content</div>', unsafe_allow_html=True)
-                _copy_tabs(row_num, generated, original_caption, transcript)
-            st.markdown('</div>', unsafe_allow_html=True)
+                    action_container = st.container()
+                    with action_container:
+                        st.markdown('<div class="workspace-action-anchor"></div>', unsafe_allow_html=True)
+                        action_cols = st.columns(2)
+                        with action_cols[0]:
+                            primary_action = "transcript" if _is_reel_url(url) else "image_text"
+                            primary_help = "Re-run with transcript" if _is_reel_url(url) else "Get context from text in images"
+                            if st.button(
+                                "🎙️" if _is_reel_url(url) else "🖼️",
+                                key=f"workspace_primary_action_{row_num}",
+                                help=primary_help,
+                                disabled=not url,
+                                width="stretch",
+                            ):
+                                if primary_action == "transcript":
+                                    try:
+                                        warning = _check_reel_transcript_risk(row)
+                                    except Exception as e:
+                                        st.session_state["workspace_error"] = f"Row {row_num}: could not check reel size - {e}"
+                                        st.rerun()
+                                    if warning:
+                                        st.session_state[f"workspace_transcript_warning_{row_num}"] = warning
+                                        st.rerun()
+                                _queue_workspace_action(row_num, primary_action)
+                                st.rerun()
+                        with action_cols[1]:
+                            if st.button(
+                                "⬇️",
+                                key=f"workspace_download_action_{row_num}",
+                                help="Download media to Drive",
+                                disabled=not url,
+                                width="stretch",
+                            ):
+                                _queue_workspace_action(row_num, "download")
+                                st.rerun()
+
+                    transcript_warning = st.session_state.get(f"workspace_transcript_warning_{row_num}")
+                    if transcript_warning:
+                        size_label = _format_bytes(transcript_warning["size_bytes"])
+                        threshold_label = _format_bytes(transcript_warning["threshold_bytes"])
+                        st.warning(
+                            f"This reel is {size_label}, which is over the {threshold_label} transcript warning limit. "
+                            "Transcription may cost more than usual."
+                        )
+                        warning_cols = st.columns(2)
+                        with warning_cols[0]:
+                            if st.button(
+                                "Transcribe anyway",
+                                key=f"workspace_warning_transcribe_{row_num}",
+                                type="primary",
+                                width="stretch",
+                            ):
+                                st.session_state.pop(f"workspace_transcript_warning_{row_num}", None)
+                                _queue_workspace_action(row_num, "transcript")
+                                st.rerun()
+                        with warning_cols[1]:
+                            if st.button(
+                                "Download media",
+                                key=f"workspace_warning_download_{row_num}",
+                                width="stretch",
+                            ):
+                                st.session_state.pop(f"workspace_transcript_warning_{row_num}", None)
+                                _queue_workspace_action(row_num, "download")
+                                st.rerun()
+
+                    st.markdown('<div class="workspace-section-label workspace-content-tabs">Content</div>', unsafe_allow_html=True)
+                    _copy_tabs(row_num, generated, original_caption, transcript)
 
             st.divider()
 
