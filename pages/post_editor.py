@@ -166,9 +166,11 @@ def _redo_caption_from_image_text(row: dict) -> None:
     extracted_text = _extract_image_text(row)
     row_num = row["row_number"]
     update_caption_context(GOOGLE_SHEET_ID, row_num, extracted_text)
+    update_transcript(GOOGLE_SHEET_ID, row_num, extracted_text)
 
     updated_row = dict(row)
     updated_row["Caption Context"] = extracted_text
+    updated_row["Transcript"] = extracted_text
     caption = generate_row_caption(updated_row)
     update_caption(GOOGLE_SHEET_ID, row_num, caption, "done")
 
