@@ -855,15 +855,21 @@ st.markdown(
         width: 58% !important;
     }
     .workspace-edit-card [data-testid="stCodeBlock"] {
-        margin: 0.2rem 0 0.5rem;
+        margin: 0.2rem 0 0.35rem;
     }
     .workspace-edit-card [data-testid="stCodeBlock"] pre {
-        min-height: 2.75rem;
-        max-height: 2.75rem;
+        min-height: 2.1rem;
+        max-height: 2.1rem;
         overflow: hidden;
         white-space: pre;
         text-overflow: ellipsis;
-        padding-right: 2.75rem;
+        line-height: 1.1rem;
+        padding: 0.45rem 2.75rem 0.45rem 0.7rem;
+        border-radius: 12px;
+    }
+    .workspace-edit-card [data-testid="stCodeBlock"] code {
+        line-height: 1.1rem;
+        font-size: 0.86rem;
     }
     .workspace-content-tabs [data-baseweb="tab-list"] {
         gap: 0.5rem;
