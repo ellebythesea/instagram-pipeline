@@ -793,8 +793,8 @@ if active_tab == "Actions":
         "Download media": "Download the media and upload it to Drive without adding a row first.",
     }
     link_area = st.container()
-    button_area = st.container()
     settings_area = st.container()
+    button_area = st.container()
     results_area = st.container()
 
     mode = st.session_state.get("workspace_home_mode", MODE_OPTIONS[0])
