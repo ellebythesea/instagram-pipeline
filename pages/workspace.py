@@ -142,10 +142,21 @@ def _check_reel_transcript_risk(row: dict) -> dict | None:
 
 
 def _ensure_home_links() -> list[str]:
+    if st.session_state.pop("_workspace_reset_home_links", False):
+        for key in list(st.session_state.keys()):
+            if key.startswith("workspace_home_link_"):
+                st.session_state.pop(key, None)
+        st.session_state["workspace_home_links"] = [""]
+
     links = st.session_state.setdefault("workspace_home_links", [""])
     if not links:
         links.append("")
     return links
+
+
+def _reset_home_links_on_next_render() -> None:
+    st.session_state["_workspace_reset_home_links"] = True
+    st.session_state["workspace_home_links"] = [""]
 
 
 def _normalize_home_links(links: list[str]) -> list[str]:
@@ -781,106 +792,115 @@ if active_tab == "Actions":
         "Caption this": "Generate a caption directly from the Instagram caption using the selected hashtag preset.",
         "Download media": "Download the media and upload it to Drive without adding a row first.",
     }
-
-    links = _normalize_home_links(_ensure_home_links())
-    for idx, link in enumerate(list(links)):
-        links[idx] = st.text_input(
-            "Instagram Link" if idx == 0 else f"Instagram Link {idx + 1}",
-            value=link,
-            placeholder="https://www.instagram.com/p/... or /reel/...",
-            key=f"workspace_home_link_{idx}",
-            label_visibility="visible" if idx == 0 else "collapsed",
-        )
-    normalized_links = _normalize_home_links(links)
-    st.session_state["workspace_home_links"] = normalized_links
-    if normalized_links != links:
-        _rerun_workspace("Actions")
+    link_area = st.container()
+    button_area = st.container()
+    settings_area = st.container()
+    results_area = st.container()
 
     mode = st.session_state.get("workspace_home_mode", MODE_OPTIONS[0])
     org_hashtag = st.session_state.get("workspace_org_hashtag", "")
-    selected_hashtag = ORG_HASHTAG_MAP.get(org_hashtag, "")
-
-    if st.button(_action_label(mode), type="primary", width="stretch"):
-        links_to_process = _clean_home_links()
-        if not links_to_process:
-            st.warning("Enter at least one Instagram link.")
-        elif mode == "Add to sheet":
-            try:
-                append_link_rows(
-                    GOOGLE_SHEET_ID,
-                    links_to_process,
-                    selected_hashtag,
-                )
-            except Exception as e:
-                st.error(f"Could not add links to sheet: {e}")
-            else:
-                st.session_state["workspace_home_notice"] = f"Added {len(links_to_process)} link(s) to the sheet."
-                st.session_state["workspace_home_links"] = [""]
-                _rerun_workspace("Actions")
-        else:
-            with st.spinner(f"{mode} in progress..."):
-                try:
-                    tag_value, results = _run_home_mode(mode, links_to_process, org_hashtag)
-                except Exception as e:
-                    st.error(f"{mode} failed: {e}")
-                else:
-                    st.session_state["workspace_home_results"] = {
-                        "mode": mode,
-                        "required_hashtag": tag_value,
-                        "items": results,
-                    }
-                    st.session_state["workspace_home_notice"] = f"{mode} finished for {len(results)} link(s)."
-                    st.session_state["workspace_home_links"] = [""]
-                    _rerun_workspace("Actions")
-
-    mode = st.selectbox(
-        "Action",
-        MODE_OPTIONS,
-        index=MODE_OPTIONS.index(mode) if mode in MODE_OPTIONS else 0,
-        key="workspace_home_mode",
-    )
-    if mode in mode_help:
-        st.caption(mode_help.get(mode, ""))
-
-    if _mode_uses_org_hashtag(mode):
-        org_hashtag = st.selectbox(
-            "Apply organization hashtag",
-            ORG_HASHTAG_OPTIONS,
-            index=ORG_HASHTAG_OPTIONS.index(org_hashtag) if org_hashtag in ORG_HASHTAG_OPTIONS else 0,
-            key="workspace_org_hashtag",
+    with settings_area:
+        mode = st.selectbox(
+            "Action",
+            MODE_OPTIONS,
+            index=MODE_OPTIONS.index(mode) if mode in MODE_OPTIONS else 0,
+            key="workspace_home_mode",
         )
-        selected_hashtag = ORG_HASHTAG_MAP.get(org_hashtag, "")
-    home_results = st.session_state.get("workspace_home_results")
-    if home_results and home_results.get("mode") == "Generate headline":
-        for idx, item in enumerate(home_results.get("items", []), start=1):
-            st.caption(f"Result {idx}")
-            st.write(f"@{item.get('username') or 'unknown'}")
-            st.markdown(f"[Open Instagram link ↗]({item['url']})")
-            headline_tabs = st.tabs(["Headline 1", "Headline 2", "Headline 3", "Caption"])
-            for tab_idx, headline in enumerate(item.get("headlines", [])[:3]):
-                with headline_tabs[tab_idx]:
-                    _copy_block(f"headline {tab_idx + 1}", headline, f"workspace_home_headline_{idx}_{tab_idx}")
-            with headline_tabs[3]:
-                _copy_block("caption", item.get("caption", ""), f"workspace_home_caption_{idx}")
+        if mode in mode_help:
+            st.caption(mode_help.get(mode, ""))
 
-    if home_results and home_results.get("mode") == "Caption this":
-        for idx, item in enumerate(home_results.get("items", []), start=1):
-            st.caption(f"Caption {idx}")
-            st.write(f"@{item.get('username') or 'unknown'}")
-            st.markdown(f"[Open Instagram link ↗]({item['url']})")
-            _copy_block("caption", item.get("caption", ""), f"workspace_home_caption_only_{idx}")
+        if _mode_uses_org_hashtag(mode):
+            org_hashtag = st.selectbox(
+                "Apply organization hashtag",
+                ORG_HASHTAG_OPTIONS,
+                index=ORG_HASHTAG_OPTIONS.index(org_hashtag) if org_hashtag in ORG_HASHTAG_OPTIONS else 0,
+                key="workspace_org_hashtag",
+            )
+            selected_hashtag = ORG_HASHTAG_MAP.get(org_hashtag, "")
+        else:
+            selected_hashtag = ""
 
-    if home_results and home_results.get("mode") == "Download media":
-        for idx, item in enumerate(home_results.get("items", []), start=1):
-            st.caption(f"Download {idx}")
-            st.write(f"@{item.get('username') or 'unknown'} · {item.get('media_type') or 'unknown'}")
-            st.markdown(f"[Open Instagram link ↗]({item['url']})")
-            if item.get("media_link"):
-                st.write(f"Media link(s): {item['media_link']}")
-            if item.get("thumbnail_link"):
-                st.write(f"Thumbnail: {item['thumbnail_link']}")
-    if home_notice:
-        st.caption(home_notice)
+    with link_area:
+        links = _normalize_home_links(_ensure_home_links())
+        for idx, link in enumerate(list(links)):
+            links[idx] = st.text_input(
+                "Instagram Link" if idx == 0 else f"Instagram Link {idx + 1}",
+                value=link,
+                placeholder="https://www.instagram.com/p/... or /reel/...",
+                key=f"workspace_home_link_{idx}",
+                label_visibility="visible" if idx == 0 else "collapsed",
+            )
+        normalized_links = _normalize_home_links(links)
+        st.session_state["workspace_home_links"] = normalized_links
+        if normalized_links != links:
+            _rerun_workspace("Actions")
+
+    with button_area:
+        if st.button(_action_label(mode), type="primary", width="stretch"):
+            links_to_process = _clean_home_links()
+            if not links_to_process:
+                st.warning("Enter at least one Instagram link.")
+            elif mode == "Add to sheet":
+                try:
+                    append_link_rows(
+                        GOOGLE_SHEET_ID,
+                        links_to_process,
+                        selected_hashtag,
+                    )
+                except Exception as e:
+                    st.error(f"Could not add links to sheet: {e}")
+                else:
+                    st.session_state["workspace_home_notice"] = f"Added {len(links_to_process)} link(s) to the sheet."
+                    _reset_home_links_on_next_render()
+                    _rerun_workspace("Actions")
+            else:
+                with st.spinner(f"{mode} in progress..."):
+                    try:
+                        tag_value, results = _run_home_mode(mode, links_to_process, org_hashtag)
+                    except Exception as e:
+                        st.error(f"{mode} failed: {e}")
+                    else:
+                        st.session_state["workspace_home_results"] = {
+                            "mode": mode,
+                            "required_hashtag": tag_value,
+                            "items": results,
+                        }
+                        st.session_state["workspace_home_notice"] = f"{mode} finished for {len(results)} link(s)."
+                        _reset_home_links_on_next_render()
+                        _rerun_workspace("Actions")
+
+    with results_area:
+        home_results = st.session_state.get("workspace_home_results")
+        if home_results and home_results.get("mode") == "Generate headline":
+            for idx, item in enumerate(home_results.get("items", []), start=1):
+                st.caption(f"Result {idx}")
+                st.write(f"@{item.get('username') or 'unknown'}")
+                st.markdown(f"[Open Instagram link ↗]({item['url']})")
+                headline_tabs = st.tabs(["Headline 1", "Headline 2", "Headline 3", "Caption"])
+                for tab_idx, headline in enumerate(item.get("headlines", [])[:3]):
+                    with headline_tabs[tab_idx]:
+                        _copy_block(f"headline {tab_idx + 1}", headline, f"workspace_home_headline_{idx}_{tab_idx}")
+                with headline_tabs[3]:
+                    _copy_block("caption", item.get("caption", ""), f"workspace_home_caption_{idx}")
+
+        if home_results and home_results.get("mode") == "Caption this":
+            for idx, item in enumerate(home_results.get("items", []), start=1):
+                st.caption(f"Caption {idx}")
+                st.write(f"@{item.get('username') or 'unknown'}")
+                st.markdown(f"[Open Instagram link ↗]({item['url']})")
+                _copy_block("caption", item.get("caption", ""), f"workspace_home_caption_only_{idx}")
+
+        if home_results and home_results.get("mode") == "Download media":
+            for idx, item in enumerate(home_results.get("items", []), start=1):
+                st.caption(f"Download {idx}")
+                st.write(f"@{item.get('username') or 'unknown'} · {item.get('media_type') or 'unknown'}")
+                st.markdown(f"[Open Instagram link ↗]({item['url']})")
+                if item.get("media_link"):
+                    st.write(f"Media link(s): {item['media_link']}")
+                if item.get("thumbnail_link"):
+                    st.write(f"Thumbnail: {item['thumbnail_link']}")
+        if home_notice:
+            st.caption(home_notice)
 if active_tab == "Edit":
     edit_header_cols = st.columns([1, 0.18], vertical_alignment="center")
     with edit_header_cols[1]:
