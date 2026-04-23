@@ -5,6 +5,7 @@ import os
 import tempfile
 import zipfile
 import mimetypes
+from urllib.parse import urlparse
 
 import requests
 
@@ -25,10 +26,29 @@ def make_filename(post_id: str, post_date: str, ext: str, index: int = 0) -> str
     return f"{post_date}_{post_id}{suffix}{ext}"
 
 
+def _ext_from_url(url: str, fallback: str) -> str:
+    path = urlparse(url).path or ""
+    ext = os.path.splitext(path)[1].lower()
+    return ext or fallback
+
+
+def _media_ext(data: dict, media_url: str, index: int) -> str:
+    media_extensions = data.get("media_extensions") or []
+    if index < len(media_extensions):
+        ext = str(media_extensions[index] or "").strip().lower()
+        if ext:
+            return ext if ext.startswith(".") else f".{ext}"
+
+    media_kinds = data.get("media_kinds") or []
+    if index < len(media_kinds):
+        return ".mp4" if media_kinds[index] == "video" else ".jpg"
+
+    return _ext_from_url(media_url, ".mp4" if data["media_type"] == "reel" else ".jpg")
+
+
 def upload_media_bundle(data: dict) -> dict:
     """Download media locally, upload to Drive, and return Drive links."""
     tmp_dir = tempfile.mkdtemp(prefix="ig_")
-    ext = ".mp4" if data["media_type"] == "reel" else ".jpg"
     post_id = data["post_id"]
     post_date = data["post_date"]
     screenshots_folder_id = get_or_create_subfolder(
@@ -39,6 +59,7 @@ def upload_media_bundle(data: dict) -> dict:
     media_links = []
     media_paths = []
     for i, media_url in enumerate(data["media_urls"]):
+        ext = _media_ext(data, media_url, i)
         filename = make_filename(post_id, post_date, ext, index=i)
         local_path = os.path.join(tmp_dir, filename)
         download_file(media_url, local_path)
@@ -69,12 +90,12 @@ def upload_media_bundle(data: dict) -> dict:
 def download_media_bundle(data: dict) -> dict:
     """Download media locally, upload thumbnail to Drive, and return local file paths."""
     tmp_dir = tempfile.mkdtemp(prefix="ig_")
-    ext = ".mp4" if data["media_type"] == "reel" else ".jpg"
     post_id = data["post_id"]
     post_date = data["post_date"]
 
     media_paths = []
     for i, media_url in enumerate(data["media_urls"]):
+        ext = _media_ext(data, media_url, i)
         filename = make_filename(post_id, post_date, ext, index=i)
         local_path = os.path.join(tmp_dir, filename)
         download_file(media_url, local_path)

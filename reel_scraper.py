@@ -7,6 +7,7 @@ Check your actor's input schema in the Apify console if this fails.
 
 import re
 from datetime import date, datetime, timezone
+from urllib.parse import urlparse
 
 from apify_client import ApifyClient
 
@@ -16,6 +17,15 @@ from config import APIFY_API_TOKEN, APIFY_REEL_ACTOR_ID
 def _extract_post_id(url: str) -> str:
     m = re.search(r"/(?:reel|reels|p)/([A-Za-z0-9_-]+)/?", url)
     return m.group(1) if m else "unknown"
+
+
+def _ext_from_url(url: str, fallback: str) -> str:
+    path = urlparse(url).path or ""
+    match = re.search(r"(\.[a-zA-Z0-9]{2,5})$", path)
+    if not match:
+        return fallback
+    ext = match.group(1).lower()
+    return ext if ext.startswith(".") else f".{ext}"
 
 
 def process_url(url: str, include_transcript: bool = False) -> dict:
@@ -118,6 +128,8 @@ def process_url(url: str, include_transcript: bool = False) -> dict:
         "username": username,
         "media_type": "reel",
         "media_urls": [video_url],
+        "media_kinds": ["video"],
+        "media_extensions": [_ext_from_url(video_url, ".mp4")],
         "thumbnail_url": thumbnail_url,
         "original_caption": original_caption,
         "transcript": transcript,

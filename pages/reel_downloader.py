@@ -113,8 +113,11 @@ if submitted:
         for i, media_path in enumerate(media_paths):
             image_col, action_col = st.columns([1, 2])
             with image_col:
-                if data["media_type"] == "photo":
+                mime_type = mimetypes.guess_type(media_path)[0] or ""
+                if mime_type.startswith("image/"):
                     st.image(media_path, width=150)
+                elif mime_type.startswith("video/"):
+                    st.video(media_path)
                 elif preview_path and os.path.exists(preview_path):
                     st.image(preview_path, width=150)
                 else:

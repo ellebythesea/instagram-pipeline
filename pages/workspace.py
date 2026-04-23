@@ -549,11 +549,27 @@ def _extract_image_text(row: dict) -> str:
     if not links:
         raise ValueError("This row does not have image media links in Drive yet.")
 
+    url = (row.get("Instagram URL") or "").strip()
+    image_indexes = list(range(len(links)))
+    if url:
+        try:
+            latest = process_post_url(url)
+            media_kinds = latest.get("media_kinds") or []
+            filtered_indexes = [i for i, kind in enumerate(media_kinds[: len(links)]) if kind == "image"]
+            if filtered_indexes:
+                image_indexes = filtered_indexes
+        except Exception:
+            pass
+
+    image_links = [links[i] for i in image_indexes if i < len(links)]
+    if not image_links:
+        raise ValueError("This row does not have any image slides available for OCR.")
+
     content = [{
         "type": "text",
         "text": "Extract all readable text from these images. Return plain text only, in reading order. No labels or commentary.",
     }]
-    for link in links[:10]:
+    for link in image_links[:10]:
         view_url = _drive_view_url(link)
         if view_url:
             content.append({"type": "image_url", "image_url": {"url": view_url}})
