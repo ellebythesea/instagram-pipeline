@@ -334,11 +334,11 @@ def _is_https_url(value: str) -> bool:
 
 
 def _build_link_cta(word: str, link: str) -> str:
-    return f"Comment {word.strip().lower()} (on instagram) and we will DM you the link to {link.strip()}"
+    return f"Comment {word.strip().upper()} (on instagram) and we will DM you the link to {link.strip()}"
 
 
-def _lowercase_session_value(key: str) -> None:
-    st.session_state[key] = (st.session_state.get(key, "") or "").lower()
+def _uppercase_session_value(key: str) -> None:
+    st.session_state[key] = (st.session_state.get(key, "") or "").upper()
 
 
 def _copy_block(label: str, value: str, key: str, empty_text: str = "(none)") -> None:
@@ -1036,7 +1036,7 @@ if active_tab == "Edit":
                                     "Word",
                                     key=word_key,
                                     placeholder="act",
-                                    on_change=_lowercase_session_value,
+                                    on_change=_uppercase_session_value,
                                     args=(word_key,),
                                 )
                                 st.text_input(
@@ -1045,7 +1045,7 @@ if active_tab == "Edit":
                                     placeholder="https://example.com",
                                 )
                                 if st.button("Add", key=f"workspace_link_add_{row_num}", type="primary", width="stretch"):
-                                    word = st.session_state.get(word_key, "").strip().lower()
+                                    word = st.session_state.get(word_key, "").strip().upper()
                                     full_link = st.session_state.get(link_key, "").strip()
                                     if not word:
                                         st.session_state["workspace_error"] = f"Row {row_num}: enter a word."
