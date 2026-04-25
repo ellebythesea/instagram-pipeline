@@ -1067,18 +1067,24 @@ if active_tab == "Edit":
                                         top_comment,
                                         "",
                                     )
+                                    updated_row = dict(row)
+                                    updated_row["Caption Context"] = current_context
+                                    updated_row["Speaker Name"] = current_speaker
+                                    updated_row["Required Hashtags"] = current_hashtags
+                                    updated_row["Top Comment"] = top_comment
+                                    caption = generate_row_caption(updated_row)
+                                    current_status = (row.get("Status") or "").strip() or "done"
+                                    update_caption(GOOGLE_SHEET_ID, row_num, caption, current_status)
                                     st.session_state[f"workspace_top_{row_num}"] = top_comment
                                     st.session_state[link_editor_key] = False
                                     st.session_state.pop(word_key, None)
                                     st.session_state.pop(link_key, None)
-                                    st.session_state["workspace_success"] = f"Row {row_num}: link CTA saved."
+                                    st.session_state["workspace_success"] = f"Row {row_num}: link CTA saved to generated caption."
                                     _rerun_workspace("Edit")
                             else:
                                 if st.button("Add link", key=f"workspace_link_open_{row_num}", width="stretch"):
                                     st.session_state[link_editor_key] = True
                                     _rerun_workspace("Edit")
-                                if current_top_comment:
-                                    st.caption(current_top_comment)
                             if st.button(
                                 "Delete row",
                                 key=f"workspace_menu_delete_{row_num}",
