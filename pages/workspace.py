@@ -322,6 +322,15 @@ def _drive_view_url(drive_link: str) -> str:
     return ""
 
 
+def _is_https_url(value: str) -> bool:
+    parsed = urlparse((value or "").strip())
+    return parsed.scheme == "https" and bool(parsed.netloc)
+
+
+def _build_link_cta(word: str, link: str) -> str:
+    return f"Comment {word.strip().lower()} (on instagram) and we will DM you the link to {link.strip()}"
+
+
 def _copy_block(label: str, value: str, key: str, empty_text: str = "(none)") -> None:
     display_text = value or empty_text
     escaped_label = html.escape(label)
@@ -690,6 +699,9 @@ def _delete_workspace_row(row_number: int) -> None:
         f"workspace_context_{row_number}",
         f"workspace_transcript_warning_{row_number}",
         f"workspace_transcribe_{row_number}",
+        f"workspace_link_editor_open_{row_number}",
+        f"workspace_link_word_{row_number}",
+        f"workspace_link_url_{row_number}",
     ]
     for key in keys_to_clear:
         st.session_state.pop(key, None)
@@ -1015,6 +1027,70 @@ if active_tab == "Edit":
                             value=bool(st.session_state.get(f"workspace_transcribe_{row_num}", False)),
                             key=f"workspace_transcribe_{row_num}",
                         )
+                    current_top_comment = st.session_state.get(f"workspace_top_{row_num}", row.get("Top Comment", "")).strip()
+                    link_editor_key = f"workspace_link_editor_open_{row_num}"
+                    if st.session_state.get(link_editor_key, False):
+                        header_col, close_col = st.columns([12, 1], vertical_alignment="center")
+                        with header_col:
+                            st.markdown('<div class="workspace-section-label">Add Link</div>', unsafe_allow_html=True)
+                        with close_col:
+                            if st.button("X", key=f"workspace_link_cancel_{row_num}", width="stretch"):
+                                st.session_state[link_editor_key] = False
+                                st.session_state.pop(f"workspace_link_word_{row_num}", None)
+                                st.session_state.pop(f"workspace_link_url_{row_num}", None)
+                                _rerun_workspace("Edit")
+
+                        word_key = f"workspace_link_word_{row_num}"
+                        link_key = f"workspace_link_url_{row_num}"
+                        word_value = st.text_input(
+                            "Word",
+                            key=word_key,
+                            placeholder="act",
+                        )
+                        normalized_word = word_value.lower()
+                        if normalized_word != word_value:
+                            st.session_state[word_key] = normalized_word
+                            _rerun_workspace("Edit")
+                        st.text_input(
+                            "Link",
+                            key=link_key,
+                            placeholder="https://example.com",
+                        )
+                        if st.button("Add", key=f"workspace_link_add_{row_num}", type="primary", width="stretch"):
+                            word = st.session_state.get(word_key, "").strip().lower()
+                            full_link = st.session_state.get(link_key, "").strip()
+                            if not word:
+                                st.session_state["workspace_error"] = f"Row {row_num}: enter a word."
+                                _rerun_workspace("Edit")
+                            if not _is_https_url(full_link):
+                                st.session_state["workspace_error"] = f"Row {row_num}: link must start with https://"
+                                _rerun_workspace("Edit")
+
+                            top_comment = _build_link_cta(word, full_link)
+                            current_context = st.session_state.get(f"workspace_context_{row_num}", row.get("Caption Context", "")).strip()
+                            current_speaker = st.session_state.get(f"workspace_speaker_{row_num}", speaker_name).strip()
+                            current_hashtags = st.session_state.get(f"workspace_hashtags_{row_num}", row.get("Required Hashtags", "")).strip()
+                            update_metadata(
+                                GOOGLE_SHEET_ID,
+                                row_num,
+                                current_context,
+                                current_speaker,
+                                current_hashtags,
+                                top_comment,
+                                "",
+                            )
+                            st.session_state[f"workspace_top_{row_num}"] = top_comment
+                            st.session_state[link_editor_key] = False
+                            st.session_state.pop(word_key, None)
+                            st.session_state.pop(link_key, None)
+                            st.session_state["workspace_success"] = f"Row {row_num}: link CTA saved."
+                            _rerun_workspace("Edit")
+                    else:
+                        if st.button("Add link", key=f"workspace_link_open_{row_num}", width="stretch"):
+                            st.session_state[link_editor_key] = True
+                            _rerun_workspace("Edit")
+                        if current_top_comment:
+                            st.caption(current_top_comment)
                     if st.session_state.get(f"workspace_speaker_{row_num}", speaker_name).strip() != (speaker_name or "").strip():
                         if st.button(
                             "Update",
