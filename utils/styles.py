@@ -188,11 +188,19 @@ div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-t
     margin: 0.2rem 0 0.35rem;
     min-height: 2.1rem;
     max-height: 2.1rem;
+    height: 2.1rem;
+    overflow: hidden;
+}
+div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stCodeBlock"] > div {
+    min-height: 2.1rem;
+    max-height: 2.1rem;
+    height: 2.1rem;
     overflow: hidden;
 }
 div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stCodeBlock"] pre {
     min-height: 2.1rem;
     max-height: 2.1rem;
+    height: 2.1rem;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
@@ -207,6 +215,13 @@ div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-t
     overflow: hidden;
     text-overflow: ellipsis;
     display: block;
+    max-height: 1.1rem;
+}
+div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stCodeBlock"] code span,
+div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stCodeBlock"] code div {
+    white-space: nowrap;
+    display: inline;
+    max-height: 1.1rem;
 }
 div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) .stButton > button {
     white-space: nowrap;
