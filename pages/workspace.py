@@ -337,6 +337,10 @@ def _build_link_cta(word: str, link: str) -> str:
     return f"Comment {word.strip().lower()} (on instagram) and we will DM you the link to {link.strip()}"
 
 
+def _lowercase_session_value(key: str) -> None:
+    st.session_state[key] = (st.session_state.get(key, "") or "").lower()
+
+
 def _copy_block(label: str, value: str, key: str, empty_text: str = "(none)") -> None:
     display_text = value or empty_text
     escaped_label = html.escape(label)
@@ -1028,15 +1032,13 @@ if active_tab == "Edit":
 
                                 word_key = f"workspace_link_word_{row_num}"
                                 link_key = f"workspace_link_url_{row_num}"
-                                word_value = st.text_input(
+                                st.text_input(
                                     "Word",
                                     key=word_key,
                                     placeholder="act",
+                                    on_change=_lowercase_session_value,
+                                    args=(word_key,),
                                 )
-                                normalized_word = word_value.lower()
-                                if normalized_word != word_value:
-                                    st.session_state[word_key] = normalized_word
-                                    _rerun_workspace("Edit")
                                 st.text_input(
                                     "Link",
                                     key=link_key,
