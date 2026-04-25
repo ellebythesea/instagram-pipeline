@@ -360,23 +360,22 @@ def _copy_block(label: str, value: str, key: str, empty_text: str = "(none)") ->
     st.html(component_html)
 
 
+def _tab_copy_preview(value: str) -> None:
+    st.code(value or "(none)", language=None)
+    st.markdown(
+        f'<div class="workspace-plain-copy-text">{html.escape(value or "(none)")}</div>',
+        unsafe_allow_html=True,
+    )
+
+
 def _copy_tabs(row_num: int, generated: str, original_caption: str, transcript: str) -> None:
     text_tabs = st.tabs(["Caption", "Original caption", "Transcript"])
     with text_tabs[0]:
-        st.markdown(
-            f'<div class="workspace-plain-copy-text">{html.escape(generated or "(none)")}</div>',
-            unsafe_allow_html=True,
-        )
+        _tab_copy_preview(generated)
     with text_tabs[1]:
-        st.markdown(
-            f'<div class="workspace-plain-copy-text">{html.escape(original_caption or "(none)")}</div>',
-            unsafe_allow_html=True,
-        )
+        _tab_copy_preview(original_caption)
     with text_tabs[2]:
-        st.markdown(
-            f'<div class="workspace-plain-copy-text">{html.escape(transcript or "(none)")}</div>',
-            unsafe_allow_html=True,
-        )
+        _tab_copy_preview(transcript)
 
 
 def _icon_copy_button(label: str, value: str) -> None:
@@ -500,6 +499,13 @@ def _ingest_row(row: dict) -> dict:
 
 
 def _rerun_with_transcript(row: dict) -> None:
+    updated_row = _fetch_row_with_transcript(row)
+    row_num = row["row_number"]
+    caption = generate_row_caption(updated_row)
+    update_caption(GOOGLE_SHEET_ID, row_num, caption, "done")
+
+
+def _fetch_row_with_transcript(row: dict) -> dict:
     url = row.get("Instagram URL", "").strip()
     if not _is_reel_url(url):
         raise ValueError("Transcript rerun is only available for reels.")
@@ -517,8 +523,7 @@ def _rerun_with_transcript(row: dict) -> None:
     updated_row["Source Username"] = refreshed.get("username") or updated_row.get("Source Username", "")
     updated_row["Original Caption"] = refreshed.get("original_caption") or updated_row.get("Original Caption", "")
     updated_row["Media Type"] = refreshed.get("media_type") or updated_row.get("Media Type", "")
-    caption = generate_row_caption(updated_row)
-    update_caption(GOOGLE_SHEET_ID, row_num, caption, "done")
+    return updated_row
 
 
 def _download_media_to_drive(row: dict) -> None:
@@ -684,6 +689,7 @@ def _delete_workspace_row(row_number: int) -> None:
         f"workspace_top_{row_number}",
         f"workspace_context_{row_number}",
         f"workspace_transcript_warning_{row_number}",
+        f"workspace_transcribe_{row_number}",
     ]
     for key in keys_to_clear:
         st.session_state.pop(key, None)
@@ -997,15 +1003,18 @@ if active_tab == "Edit":
                                     st.session_state["workspace_success"] = f"Row {row_num}: deleted from the sheet."
                                 _rerun_workspace("Edit")
 
-                    st.markdown('<div class="workspace-section-label">Generated Caption</div>', unsafe_allow_html=True)
-                    st.code(generated or "(none)", language=None)
-
                     st.text_input(
                         "Speaker Name",
                         value=speaker_name,
                         key=f"workspace_speaker_{row_num}",
                         placeholder="Enter name",
                     )
+                    if _is_reel_url(url):
+                        st.checkbox(
+                            "Check to transcribe",
+                            value=bool(st.session_state.get(f"workspace_transcribe_{row_num}", False)),
+                            key=f"workspace_transcribe_{row_num}",
+                        )
                     if st.session_state.get(f"workspace_speaker_{row_num}", speaker_name).strip() != (speaker_name or "").strip():
                         if st.button(
                             "Update",
@@ -1092,6 +1101,7 @@ if active_tab == "Edit":
                 current_top = st.session_state.get(f"workspace_top_{row_num}", row.get("Top Comment", "")).strip()
                 current_speaker = st.session_state.get(f"workspace_speaker_{row_num}", row.get("Speaker Name", "")).strip()
                 current_hashtags = st.session_state.get(f"workspace_hashtags_{row_num}", row.get("Required Hashtags", "")).strip()
+                should_transcribe = bool(st.session_state.get(f"workspace_transcribe_{row_num}", False))
                 row_for_caption = dict(row)
                 row_for_caption["Caption Context"] = current_context
                 row_for_caption["Top Comment"] = current_top
@@ -1100,6 +1110,8 @@ if active_tab == "Edit":
 
                 with st.status(f"Row {row_num}: {label}", expanded=False) as status_box:
                     try:
+                        if should_transcribe and _is_reel_url(url):
+                            row_for_caption = _fetch_row_with_transcript(row_for_caption)
                         update_metadata(
                             GOOGLE_SHEET_ID,
                             row_num,
@@ -1125,6 +1137,8 @@ if active_tab == "Edit":
                     if status_value.startswith("error"):
                         status_box.update(label=f"Row {row_num}: {status_value}", state="error")
                     else:
+                        if should_transcribe and _is_reel_url(url):
+                            st.session_state[f"workspace_transcribe_{row_num}"] = False
                         status_box.update(label=f"Row {row_num}: caption generated", state="complete")
 
                 progress.progress((i + 1) / len(ingested_rows))
