@@ -159,6 +159,12 @@ def _reset_home_links_on_next_render() -> None:
     st.session_state["workspace_home_links"] = [""]
 
 
+def _mark_transcribe_checkbox_for_reset(row_number: int) -> None:
+    pending = st.session_state.setdefault("workspace_transcribe_reset_rows", [])
+    if row_number not in pending:
+        pending.append(row_number)
+
+
 def _normalize_home_links(links: list[str]) -> list[str]:
     filled = [link for link in links if (link or "").strip()]
     return filled + [""]
@@ -692,6 +698,11 @@ def _process_next_workspace_action() -> None:
 
 def _delete_workspace_row(row_number: int) -> None:
     delete_sheet_row(GOOGLE_SHEET_ID, row_number)
+    pending_transcribe_resets = st.session_state.get("workspace_transcribe_reset_rows", [])
+    if pending_transcribe_resets:
+        st.session_state["workspace_transcribe_reset_rows"] = [
+            pending for pending in pending_transcribe_resets if pending != row_number
+        ]
     keys_to_clear = [
         f"workspace_speaker_{row_number}",
         f"workspace_hashtags_{row_number}",
@@ -1086,6 +1097,12 @@ if active_tab == "Edit":
                         placeholder="Enter name",
                     )
                     if _is_reel_url(url):
+                        pending_transcribe_resets = st.session_state.setdefault("workspace_transcribe_reset_rows", [])
+                        if row_num in pending_transcribe_resets:
+                            st.session_state.pop(f"workspace_transcribe_{row_num}", None)
+                            st.session_state["workspace_transcribe_reset_rows"] = [
+                                pending for pending in pending_transcribe_resets if pending != row_num
+                            ]
                         st.checkbox(
                             "Check to transcribe",
                             value=bool(st.session_state.get(f"workspace_transcribe_{row_num}", False)),
@@ -1214,7 +1231,7 @@ if active_tab == "Edit":
                         status_box.update(label=f"Row {row_num}: {status_value}", state="error")
                     else:
                         if should_transcribe and _is_reel_url(url):
-                            st.session_state[f"workspace_transcribe_{row_num}"] = False
+                            _mark_transcribe_checkbox_for_reset(row_num)
                         status_box.update(label=f"Row {row_num}: caption generated", state="complete")
 
                 progress.progress((i + 1) / len(ingested_rows))
