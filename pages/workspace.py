@@ -341,6 +341,35 @@ def _uppercase_session_value(key: str) -> None:
     st.session_state[key] = (st.session_state.get(key, "") or "").upper()
 
 
+def _apply_top_comment_to_caption(
+    row: dict,
+    row_num: int,
+    speaker_name: str,
+    top_comment: str,
+) -> None:
+    current_context = st.session_state.get(f"workspace_context_{row_num}", row.get("Caption Context", "")).strip()
+    current_speaker = st.session_state.get(f"workspace_speaker_{row_num}", speaker_name).strip()
+    current_hashtags = st.session_state.get(f"workspace_hashtags_{row_num}", row.get("Required Hashtags", "")).strip()
+    update_metadata(
+        GOOGLE_SHEET_ID,
+        row_num,
+        current_context,
+        current_speaker,
+        current_hashtags,
+        top_comment,
+        "",
+    )
+    updated_row = dict(row)
+    updated_row["Caption Context"] = current_context
+    updated_row["Speaker Name"] = current_speaker
+    updated_row["Required Hashtags"] = current_hashtags
+    updated_row["Top Comment"] = top_comment
+    caption = generate_row_caption(updated_row)
+    current_status = (row.get("Status") or "").strip() or "done"
+    update_caption(GOOGLE_SHEET_ID, row_num, caption, current_status)
+    st.session_state[f"workspace_top_{row_num}"] = top_comment
+
+
 def _copy_block(label: str, value: str, key: str, empty_text: str = "(none)") -> None:
     display_text = value or empty_text
     escaped_label = html.escape(label)
@@ -1019,6 +1048,16 @@ if active_tab == "Edit":
                             ):
                                 _queue_workspace_action(row_num, "download")
                                 _rerun_workspace("Edit")
+                            if st.button(
+                                "Add Watch",
+                                key=f"workspace_menu_watch_{row_num}",
+                                disabled=not url,
+                                width="stretch",
+                            ):
+                                top_comment = _build_link_cta("WATCH", url)
+                                _apply_top_comment_to_caption(row, row_num, speaker_name, top_comment)
+                                st.session_state["workspace_success"] = f"Row {row_num}: WATCH CTA added to generated caption."
+                                _rerun_workspace("Edit")
                             if st.session_state.get(link_editor_key, False):
                                 header_col, close_col = st.columns([12, 1], vertical_alignment="center")
                                 with header_col:
@@ -1055,27 +1094,7 @@ if active_tab == "Edit":
                                         _rerun_workspace("Edit")
 
                                     top_comment = _build_link_cta(word, full_link)
-                                    current_context = st.session_state.get(f"workspace_context_{row_num}", row.get("Caption Context", "")).strip()
-                                    current_speaker = st.session_state.get(f"workspace_speaker_{row_num}", speaker_name).strip()
-                                    current_hashtags = st.session_state.get(f"workspace_hashtags_{row_num}", row.get("Required Hashtags", "")).strip()
-                                    update_metadata(
-                                        GOOGLE_SHEET_ID,
-                                        row_num,
-                                        current_context,
-                                        current_speaker,
-                                        current_hashtags,
-                                        top_comment,
-                                        "",
-                                    )
-                                    updated_row = dict(row)
-                                    updated_row["Caption Context"] = current_context
-                                    updated_row["Speaker Name"] = current_speaker
-                                    updated_row["Required Hashtags"] = current_hashtags
-                                    updated_row["Top Comment"] = top_comment
-                                    caption = generate_row_caption(updated_row)
-                                    current_status = (row.get("Status") or "").strip() or "done"
-                                    update_caption(GOOGLE_SHEET_ID, row_num, caption, current_status)
-                                    st.session_state[f"workspace_top_{row_num}"] = top_comment
+                                    _apply_top_comment_to_caption(row, row_num, speaker_name, top_comment)
                                     st.session_state[link_editor_key] = False
                                     st.session_state.pop(word_key, None)
                                     st.session_state.pop(link_key, None)
