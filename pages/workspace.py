@@ -954,7 +954,7 @@ if active_tab == "Actions":
                     with headline_tabs[tab_idx]:
                         _copy_block(f"headline {tab_idx + 1}", headline, f"workspace_home_headline_{idx}_{tab_idx}")
                 with headline_tabs[3]:
-                    _copy_block("caption", item.get("caption", ""), f"workspace_home_caption_{idx}")
+                    st.code(item.get("caption", "") or "(none)", language=None)
 
         if home_results and home_results.get("mode") == "Caption this":
             for idx, item in enumerate(home_results.get("items", []), start=1):
