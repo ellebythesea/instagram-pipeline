@@ -23,6 +23,7 @@ from post_scraper import process_url as process_post_url
 from reel_scraper import process_url as process_reel_url
 import sheets as sheet_ops
 from utils.auth import require_auth
+from utils.error_labels import describe_error
 from utils.styles import inject as inject_styles
 
 MODE_OPTIONS = [
@@ -543,7 +544,7 @@ def _ingest_row(row: dict) -> dict:
             "thumbnail_link": "",
             "original_caption": "",
             "transcript": "",
-            "status": f"error: {e}",
+            "status": f"error: {describe_error(e)}",
         }
     finally:
         if tmp_dir:
@@ -728,7 +729,7 @@ def _process_next_workspace_action() -> None:
             raise ValueError(f"Unknown action: {action}")
         _mark_workspace_action_complete(row_number, action)
     except Exception as e:
-        st.session_state["workspace_error"] = f"Row {row_number}: {e}"
+        st.session_state["workspace_error"] = f"Row {row_number}: {describe_error(e)}"
 
     _rerun_workspace("Edit")
 
@@ -921,7 +922,7 @@ if active_tab == "Actions":
                         selected_hashtag,
                     )
                 except Exception as e:
-                    st.error(f"Could not add links to sheet: {e}")
+                    st.error(f"Could not add links to sheet: {describe_error(e)}")
                 else:
                     st.session_state["workspace_home_notice"] = f"Added {len(links_to_process)} link(s) to the sheet."
                     _reset_home_links_on_next_render()
@@ -931,7 +932,7 @@ if active_tab == "Actions":
                     try:
                         tag_value, results = _run_home_mode(mode, links_to_process, org_hashtag)
                     except Exception as e:
-                        st.error(f"{mode} failed: {e}")
+                        st.error(f"{mode} failed: {describe_error(e)}")
                     else:
                         st.session_state["workspace_home_results"] = {
                             "mode": mode,
@@ -988,7 +989,7 @@ if active_tab == "Edit":
             "Loading editor rows paused:",
         )
     except Exception as e:
-        st.error(f"Could not load edit rows: {e}")
+        st.error(f"Could not load edit rows: {describe_error(e)}")
         editor_rows = []
 
     if not editor_rows:
@@ -1044,7 +1045,7 @@ if active_tab == "Edit":
                                     try:
                                         warning = _check_reel_transcript_risk(row)
                                     except Exception as e:
-                                        st.session_state["workspace_error"] = f"Row {row_num}: could not check reel size - {e}"
+                                        st.session_state["workspace_error"] = f"Row {row_num}: could not check reel size - {describe_error(e)}"
                                         _rerun_workspace("Edit")
                                     if warning:
                                         st.session_state[f"workspace_transcript_warning_{row_num}"] = warning
@@ -1123,7 +1124,7 @@ if active_tab == "Edit":
                                 try:
                                     _delete_workspace_row(row_num)
                                 except Exception as e:
-                                    st.session_state["workspace_error"] = f"Row {row_num}: could not delete row - {e}"
+                                    st.session_state["workspace_error"] = f"Row {row_num}: could not delete row - {describe_error(e)}"
                                 else:
                                     st.session_state["workspace_success"] = f"Row {row_num}: deleted from the sheet."
                                 _rerun_workspace("Edit")
@@ -1256,12 +1257,12 @@ if active_tab == "Edit":
                         status_value = "done"
                     except Exception as e:
                         caption = ""
-                        status_value = f"error: caption - {e}"
+                        status_value = f"error: caption - {describe_error(e)}"
 
                     try:
                         update_caption(GOOGLE_SHEET_ID, row_num, caption, status_value)
                     except Exception as e:
-                        status_box.update(label=f"Row {row_num}: error writing to sheet - {e}", state="error")
+                        status_box.update(label=f"Row {row_num}: error writing to sheet - {describe_error(e)}", state="error")
                         progress.progress((i + 1) / len(ingested_rows))
                         continue
 
@@ -1293,7 +1294,7 @@ if active_tab == "Data":
             "Loading rows paused:",
         )
     except Exception as e:
-        st.error(f"Could not load sheet: {e}")
+        st.error(f"Could not load sheet: {describe_error(e)}")
         all_rows = []
 
     if all_rows:
@@ -1329,7 +1330,7 @@ if active_tab == "Data":
                 "Processing new rows paused:",
             )
         except Exception as e:
-            st.error(f"Could not read sheet: {e}")
+            st.error(f"Could not read sheet: {describe_error(e)}")
             pending = []
 
         if not pending:
@@ -1355,7 +1356,7 @@ if active_tab == "Data":
                             result["status"],
                         )
                     except Exception as e:
-                        status_box.update(label=f"Row {row_num}: error writing to sheet - {e}", state="error")
+                        status_box.update(label=f"Row {row_num}: error writing to sheet - {describe_error(e)}", state="error")
                     else:
                         if result["status"].startswith("error"):
                             status_box.update(label=f"Row {row_num}: {result['status']}", state="error")
