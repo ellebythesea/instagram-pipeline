@@ -166,8 +166,12 @@ def _mark_transcribe_checkbox_for_reset(row_number: int) -> None:
 
 
 def _normalize_home_links(links: list[str]) -> list[str]:
-    filled = [link for link in links if (link or "").strip()]
-    return filled + [""]
+    first = ""
+    for link in links:
+        if (link or "").strip():
+            first = link
+            break
+    return [first]
 
 
 def _remove_home_link(index: int) -> None:
@@ -884,21 +888,28 @@ if active_tab == "Actions":
 
     with link_area:
         links = _normalize_home_links(_ensure_home_links())
-        for idx, link in enumerate(list(links)):
-            links[idx] = st.text_input(
-                "Instagram Link" if idx == 0 else f"Instagram Link {idx + 1}",
-                value=link,
-                placeholder="https://www.instagram.com/p/... or /reel/...",
-                key=f"workspace_home_link_{idx}",
-                label_visibility="visible" if idx == 0 else "collapsed",
-            )
+        links[0] = st.text_input(
+            "Instagram Link",
+            value=links[0],
+            placeholder="https://www.instagram.com/p/... or /reel/...",
+            key="workspace_home_link_0",
+        )
         normalized_links = _normalize_home_links(links)
         st.session_state["workspace_home_links"] = normalized_links
         if normalized_links != links:
             _rerun_workspace("Actions")
 
     with button_area:
-        if st.button(_action_label(mode), type="primary", width="stretch"):
+        clear_col, action_col = st.columns([1, 3])
+        with clear_col:
+            if st.button("Clear", width="stretch", key="workspace_home_clear"):
+                st.session_state.pop("workspace_home_results", None)
+                st.session_state.pop("workspace_home_notice", None)
+                _reset_home_links_on_next_render()
+                _rerun_workspace("Actions")
+        with action_col:
+            submitted = st.button(_action_label(mode), type="primary", width="stretch")
+        if submitted:
             links_to_process = _clean_home_links()
             if not links_to_process:
                 st.warning("Enter at least one Instagram link.")
