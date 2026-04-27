@@ -346,6 +346,12 @@ def _uppercase_session_value(key: str) -> None:
     st.session_state[key] = (st.session_state.get(key, "") or "").upper()
 
 
+def _close_workspace_menu(row_number: int) -> None:
+    nonce_key = f"workspace_menu_nonce_{row_number}"
+    st.session_state[nonce_key] = st.session_state.get(nonce_key, 0) + 1
+    st.session_state[f"workspace_link_editor_open_{row_number}"] = False
+
+
 def _apply_top_comment_to_caption(
     row: dict,
     row_num: int,
@@ -1029,7 +1035,8 @@ if active_tab == "Edit":
                     with title_col:
                         st.markdown(f"#### @{username}" if username else f"#### Row {row_num}")
                     with menu_col:
-                        with st.popover("\u200b", use_container_width=True):
+                        menu_nonce = st.session_state.get(f"workspace_menu_nonce_{row_num}", 0)
+                        with st.popover("\u200b" * (menu_nonce + 1), use_container_width=True):
                             primary_action = "transcript" if _is_reel_url(url) else "image_text"
                             primary_help = "Fetch transcript and regenerate caption." if _is_reel_url(url) else "Extract text from images and regenerate caption."
                             current_top_comment = st.session_state.get(f"workspace_top_{row_num}", row.get("Top Comment", "")).strip()
@@ -1046,10 +1053,13 @@ if active_tab == "Edit":
                                         warning = _check_reel_transcript_risk(row)
                                     except Exception as e:
                                         st.session_state["workspace_error"] = f"Row {row_num}: could not check reel size - {describe_error(e)}"
+                                        _close_workspace_menu(row_num)
                                         _rerun_workspace("Edit")
                                     if warning:
                                         st.session_state[f"workspace_transcript_warning_{row_num}"] = warning
+                                        _close_workspace_menu(row_num)
                                         _rerun_workspace("Edit")
+                                _close_workspace_menu(row_num)
                                 _queue_workspace_action(row_num, primary_action)
                                 _rerun_workspace("Edit")
                             if st.button(
@@ -1058,6 +1068,7 @@ if active_tab == "Edit":
                                 disabled=not url,
                                 width="stretch",
                             ):
+                                _close_workspace_menu(row_num)
                                 _queue_workspace_action(row_num, "download")
                                 _rerun_workspace("Edit")
                             if st.button(
@@ -1068,6 +1079,7 @@ if active_tab == "Edit":
                             ):
                                 top_comment = _build_link_cta("WATCH", url)
                                 _apply_top_comment_to_caption(row, row_num, speaker_name, top_comment)
+                                _close_workspace_menu(row_num)
                                 st.session_state["workspace_success"] = f"Row {row_num}: WATCH CTA added to generated caption."
                                 _rerun_workspace("Edit")
                             if st.session_state.get(link_editor_key, False):
@@ -1076,7 +1088,7 @@ if active_tab == "Edit":
                                     st.markdown('<div class="workspace-section-label">Add Link</div>', unsafe_allow_html=True)
                                 with close_col:
                                     if st.button("X", key=f"workspace_link_cancel_{row_num}", width="stretch"):
-                                        st.session_state[link_editor_key] = False
+                                        _close_workspace_menu(row_num)
                                         st.session_state.pop(f"workspace_link_word_{row_num}", None)
                                         st.session_state.pop(f"workspace_link_url_{row_num}", None)
                                         _rerun_workspace("Edit")
@@ -1107,7 +1119,7 @@ if active_tab == "Edit":
 
                                     top_comment = _build_link_cta(word, full_link)
                                     _apply_top_comment_to_caption(row, row_num, speaker_name, top_comment)
-                                    st.session_state[link_editor_key] = False
+                                    _close_workspace_menu(row_num)
                                     st.session_state.pop(word_key, None)
                                     st.session_state.pop(link_key, None)
                                     st.session_state["workspace_success"] = f"Row {row_num}: link CTA saved to generated caption."
@@ -1127,6 +1139,7 @@ if active_tab == "Edit":
                                     st.session_state["workspace_error"] = f"Row {row_num}: could not delete row - {describe_error(e)}"
                                 else:
                                     st.session_state["workspace_success"] = f"Row {row_num}: deleted from the sheet."
+                                _close_workspace_menu(row_num)
                                 _rerun_workspace("Edit")
 
                     st.text_input(
