@@ -564,7 +564,7 @@ def _rerun_with_transcript(row: dict) -> None:
     update_caption(GOOGLE_SHEET_ID, row_num, caption, "done")
 
 
-def _fetch_row_with_transcript(row: dict) -> dict:
+def _fetch_row_with_transcript(row: dict, download_media: bool = False) -> dict:
     url = row.get("Instagram URL", "").strip()
     if not _is_reel_url(url):
         raise ValueError("Transcript rerun is only available for reels.")
@@ -577,21 +577,28 @@ def _fetch_row_with_transcript(row: dict) -> dict:
         if not transcript:
             raise ValueError("Apify did not return a transcript for this reel.")
 
-        uploaded = upload_media_bundle(refreshed)
-        tmp_dir = uploaded["tmp_dir"]
-        status_value = (row.get("Status") or "").strip() or "ingested"
-        update_ingest_result(
-            GOOGLE_SHEET_ID,
-            row_num,
-            refreshed.get("username") or row.get("Source Username", ""),
-            refreshed.get("media_type") or row.get("Media Type", ""),
-            refreshed.get("photo_count") or row.get("Photo Count", ""),
-            uploaded.get("media_link", "") or row.get("Media Drive Link", ""),
-            uploaded.get("thumbnail_link", "") or row.get("Thumbnail Drive Link", ""),
-            refreshed.get("original_caption") or row.get("Original Caption", ""),
-            transcript,
-            status_value,
-        )
+        if download_media:
+            uploaded = upload_media_bundle(refreshed)
+            tmp_dir = uploaded["tmp_dir"]
+            status_value = (row.get("Status") or "").strip() or "ingested"
+            update_ingest_result(
+                GOOGLE_SHEET_ID,
+                row_num,
+                refreshed.get("username") or row.get("Source Username", ""),
+                refreshed.get("media_type") or row.get("Media Type", ""),
+                refreshed.get("photo_count") or row.get("Photo Count", ""),
+                uploaded.get("media_link", "") or row.get("Media Drive Link", ""),
+                uploaded.get("thumbnail_link", "") or row.get("Thumbnail Drive Link", ""),
+                refreshed.get("original_caption") or row.get("Original Caption", ""),
+                transcript,
+                status_value,
+            )
+        else:
+            update_transcript(GOOGLE_SHEET_ID, row_num, transcript)
+            uploaded = {
+                "media_link": row.get("Media Drive Link", ""),
+                "thumbnail_link": row.get("Thumbnail Drive Link", ""),
+            }
 
         updated_row = dict(row)
         updated_row["Transcript"] = transcript
@@ -745,6 +752,12 @@ def _process_next_workspace_action() -> None:
             with st.spinner(f"Refreshing row {row_number} with transcript..."):
                 _rerun_with_transcript(row)
             st.session_state["workspace_success"] = f"Row {row_number}: transcript rerun complete."
+        elif action == "transcript_download":
+            with st.spinner(f"Refreshing row {row_number} with transcript and Drive upload..."):
+                updated_row = _fetch_row_with_transcript(row, download_media=True)
+                caption = generate_row_caption(updated_row)
+                update_caption(GOOGLE_SHEET_ID, row_number, caption, "done")
+            st.session_state["workspace_success"] = f"Row {row_number}: transcript rerun complete and media uploaded to Drive."
         elif action == "download":
             with st.spinner(f"Uploading row {row_number} media to Drive..."):
                 _download_media_to_drive(row)
@@ -1083,6 +1096,26 @@ if active_tab == "Edit":
                                         _rerun_workspace("Edit")
                                 _close_workspace_menu(row_num)
                                 _queue_workspace_action(row_num, primary_action)
+                                _rerun_workspace("Edit")
+                            if _is_reel_url(url) and st.button(
+                                "Transcribe and Download",
+                                key=f"workspace_menu_transcribe_download_{row_num}",
+                                disabled=not url,
+                                width="stretch",
+                                help="Fetch transcript, regenerate caption, and upload the reel media to Drive.",
+                            ):
+                                try:
+                                    warning = _check_reel_transcript_risk(row)
+                                except Exception as e:
+                                    st.session_state["workspace_error"] = f"Row {row_num}: could not check reel size - {describe_error(e)}"
+                                    _close_workspace_menu(row_num)
+                                    _rerun_workspace("Edit")
+                                if warning:
+                                    st.session_state[f"workspace_transcript_warning_{row_num}"] = warning
+                                    _close_workspace_menu(row_num)
+                                    _rerun_workspace("Edit")
+                                _close_workspace_menu(row_num)
+                                _queue_workspace_action(row_num, "transcript_download")
                                 _rerun_workspace("Edit")
                             if st.button(
                                 "Download media",
