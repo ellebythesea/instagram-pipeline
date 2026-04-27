@@ -569,20 +569,42 @@ def _fetch_row_with_transcript(row: dict) -> dict:
     if not _is_reel_url(url):
         raise ValueError("Transcript rerun is only available for reels.")
 
-    refreshed = process_reel_url(url, include_transcript=True)
-    transcript = (refreshed.get("transcript") or "").strip()
-    if not transcript:
-        raise ValueError("Apify did not return a transcript for this reel.")
-
     row_num = row["row_number"]
-    update_transcript(GOOGLE_SHEET_ID, row_num, transcript)
+    tmp_dir = None
+    try:
+        refreshed = process_reel_url(url, include_transcript=True)
+        transcript = (refreshed.get("transcript") or "").strip()
+        if not transcript:
+            raise ValueError("Apify did not return a transcript for this reel.")
 
-    updated_row = dict(row)
-    updated_row["Transcript"] = transcript
-    updated_row["Source Username"] = refreshed.get("username") or updated_row.get("Source Username", "")
-    updated_row["Original Caption"] = refreshed.get("original_caption") or updated_row.get("Original Caption", "")
-    updated_row["Media Type"] = refreshed.get("media_type") or updated_row.get("Media Type", "")
-    return updated_row
+        uploaded = upload_media_bundle(refreshed)
+        tmp_dir = uploaded["tmp_dir"]
+        status_value = (row.get("Status") or "").strip() or "ingested"
+        update_ingest_result(
+            GOOGLE_SHEET_ID,
+            row_num,
+            refreshed.get("username") or row.get("Source Username", ""),
+            refreshed.get("media_type") or row.get("Media Type", ""),
+            refreshed.get("photo_count") or row.get("Photo Count", ""),
+            uploaded.get("media_link", "") or row.get("Media Drive Link", ""),
+            uploaded.get("thumbnail_link", "") or row.get("Thumbnail Drive Link", ""),
+            refreshed.get("original_caption") or row.get("Original Caption", ""),
+            transcript,
+            status_value,
+        )
+
+        updated_row = dict(row)
+        updated_row["Transcript"] = transcript
+        updated_row["Source Username"] = refreshed.get("username") or updated_row.get("Source Username", "")
+        updated_row["Original Caption"] = refreshed.get("original_caption") or updated_row.get("Original Caption", "")
+        updated_row["Media Type"] = refreshed.get("media_type") or updated_row.get("Media Type", "")
+        updated_row["Photo Count"] = refreshed.get("photo_count") or updated_row.get("Photo Count", "")
+        updated_row["Media Drive Link"] = uploaded.get("media_link", "") or updated_row.get("Media Drive Link", "")
+        updated_row["Thumbnail Drive Link"] = uploaded.get("thumbnail_link", "") or updated_row.get("Thumbnail Drive Link", "")
+        return updated_row
+    finally:
+        if tmp_dir:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 def _download_media_to_drive(row: dict) -> None:
