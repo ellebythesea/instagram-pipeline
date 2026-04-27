@@ -427,12 +427,14 @@ def _tab_copy_preview(value: str) -> None:
     )
 
 
-def _copy_tabs(row_num: int, generated: str, original_caption: str, transcript: str) -> None:
+def _copy_tabs(row_num: int, generated: str, original_caption: str, transcript: str, username: str) -> None:
     text_tabs = st.tabs(["Caption", "Original caption", "Transcript"])
     with text_tabs[0]:
         _tab_copy_preview(generated)
     with text_tabs[1]:
         _tab_copy_preview(original_caption)
+        st.caption("Original caption + footer")
+        _tab_copy_preview(_build_footered_caption(original_caption, username) if original_caption else "")
     with text_tabs[2]:
         _tab_copy_preview(transcript)
 
@@ -883,10 +885,12 @@ if error_message:
 pending_tab = st.session_state.pop("_workspace_pending_tab", None)
 if pending_tab:
     st.session_state["workspace_active_tab"] = pending_tab
+elif "workspace_active_tab" not in st.session_state:
+    st.session_state["workspace_active_tab"] = "Edit"
 
 active_tab = st.radio(
     "Workspace section",
-    ["Data", "Edit", "Actions"],
+    ["Edit", "Actions", "Data"],
     horizontal=True,
     key="workspace_active_tab",
     label_visibility="collapsed",
@@ -1268,7 +1272,7 @@ if active_tab == "Edit":
                                 _rerun_workspace("Edit")
 
                     st.markdown('<div class="workspace-section-label workspace-content-tabs">Content</div>', unsafe_allow_html=True)
-                    _copy_tabs(row_num, generated, original_caption, transcript)
+                    _copy_tabs(row_num, generated, original_caption, transcript, username)
 
             st.divider()
 
