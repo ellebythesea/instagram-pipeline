@@ -688,7 +688,8 @@ def _rerun_with_transcript(row: dict) -> None:
     updated_row = _fetch_row_with_transcript(row)
     row_num = row["row_number"]
     caption = generate_row_caption(updated_row)
-    update_caption(GOOGLE_SHEET_ID, row_num, caption, "done")
+    next_status = "skipped" if (row.get("Status", "") or "").strip().lower() == "skipped" else "done"
+    update_caption(GOOGLE_SHEET_ID, row_num, caption, next_status)
 
 
 def _fetch_row_with_transcript(row: dict, download_media: bool = False) -> dict:
@@ -830,7 +831,8 @@ def _redo_caption_from_image_text(row: dict) -> None:
     updated_row["Caption Context"] = extracted_text
     updated_row["Transcript"] = extracted_text
     caption = generate_row_caption(updated_row)
-    update_caption(GOOGLE_SHEET_ID, row_num, caption, "done")
+    next_status = "skipped" if (row.get("Status", "") or "").strip().lower() == "skipped" else "done"
+    update_caption(GOOGLE_SHEET_ID, row_num, caption, next_status)
 
 
 def _queue_workspace_action(row_number: int, action: str) -> None:
@@ -883,7 +885,8 @@ def _process_next_workspace_action() -> None:
             with st.spinner(f"Refreshing row {row_number} with transcript and Drive upload..."):
                 updated_row = _fetch_row_with_transcript(row, download_media=True)
                 caption = generate_row_caption(updated_row)
-                update_caption(GOOGLE_SHEET_ID, row_number, caption, "done")
+                next_status = "skipped" if (row.get("Status", "") or "").strip().lower() == "skipped" else "done"
+                update_caption(GOOGLE_SHEET_ID, row_number, caption, next_status)
             st.session_state["workspace_success"] = f"Row {row_number}: transcript rerun complete and media uploaded to Drive."
         elif action == "download":
             with st.spinner(f"Uploading row {row_number} media to Drive..."):
@@ -1544,7 +1547,7 @@ if active_tab == "Edit":
                             "",
                         )
                         caption = generate_row_caption(row_for_caption)
-                        status_value = "done"
+                        status_value = "skipped" if (row.get("Status", "") or "").strip().lower() == "skipped" else "done"
                     except Exception as e:
                         caption = ""
                         status_value = f"error: caption - {describe_error(e)}"
