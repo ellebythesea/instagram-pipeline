@@ -1061,10 +1061,6 @@ if active_tab == "Actions":
         if home_notice:
             st.caption(home_notice)
 if active_tab == "Edit":
-    edit_header_cols = st.columns([1, 0.18], vertical_alignment="center")
-    with edit_header_cols[1]:
-        if st.button("Refresh", key="workspace_edit_refresh", width="stretch"):
-            _rerun_workspace("Edit")
     try:
         pending_edit_rows = _run_with_sheet_quota_countdown(
             lambda: get_pending_rows(GOOGLE_SHEET_ID),
