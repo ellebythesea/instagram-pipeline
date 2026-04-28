@@ -353,8 +353,24 @@ def _is_https_url(value: str) -> bool:
     return parsed.scheme == "https" and bool(parsed.netloc)
 
 
+def _clean_instagram_url(link: str) -> str:
+    parsed = urlparse((link or "").strip())
+    if not parsed.scheme or not parsed.netloc:
+        return (link or "").strip()
+    return f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+
+
 def _build_link_cta(word: str, link: str) -> str:
     return f"Comment {word.strip().upper()} (on instagram) and we will DM you the link to {link.strip()}"
+
+
+def _build_watch_cta(username: str, link: str) -> str:
+    cleaned_username = (username or "").strip().lstrip("@")
+    username_part = f" @{cleaned_username}" if cleaned_username else ""
+    return (
+        "Comment WATCH (on instagram) and we will DM you the link to "
+        f"the full video{username_part} {_clean_instagram_url(link)}"
+    )
 
 
 def _uppercase_session_value(key: str) -> None:
@@ -1228,7 +1244,7 @@ if active_tab == "Edit":
                                 disabled=not url,
                                 width="stretch",
                             ):
-                                top_comment = _build_link_cta("WATCH", url)
+                                top_comment = _build_watch_cta(username or speaker_name, url)
                                 _apply_top_comment_to_caption(row, row_num, speaker_name, top_comment)
                                 _close_workspace_menu(row_num)
                                 st.session_state["workspace_success"] = f"Row {row_num}: WATCH CTA added to generated caption."
