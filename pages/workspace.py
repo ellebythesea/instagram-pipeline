@@ -432,8 +432,6 @@ def _copy_tabs(row_num: int, generated: str, original_caption: str, transcript: 
     with text_tabs[0]:
         _tab_copy_preview(generated)
     with text_tabs[1]:
-        _tab_copy_preview(original_caption)
-        st.caption("Original caption + footer")
         _tab_copy_preview(_build_footered_caption(original_caption, username) if original_caption else "")
     with text_tabs[2]:
         _tab_copy_preview(transcript)
