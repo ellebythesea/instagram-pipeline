@@ -1102,22 +1102,19 @@ if active_tab == "Edit":
         pending_edit_rows = []
 
     if pending_edit_rows:
-        alert_col, button_col = st.columns([3, 1], vertical_alignment="center")
-        with alert_col:
-            row_word = "row" if len(pending_edit_rows) == 1 else "rows"
-            st.info(f"{len(pending_edit_rows)} new {row_word} found.")
-        with button_col:
-            if st.button("Process for editing", key="workspace_edit_process_pending", type="primary", width="stretch"):
-                try:
-                    processed_count = _process_pending_rows_from_sheet()
-                except Exception as e:
-                    st.error(f"Could not process new rows: {describe_error(e)}")
+        row_word = "row" if len(pending_edit_rows) == 1 else "rows"
+        st.info(f"{len(pending_edit_rows)} new {row_word} found.")
+        if st.button("Process for editing", key="workspace_edit_process_pending", type="primary", width="stretch"):
+            try:
+                processed_count = _process_pending_rows_from_sheet()
+            except Exception as e:
+                st.error(f"Could not process new rows: {describe_error(e)}")
+            else:
+                if processed_count:
+                    st.session_state["workspace_success"] = f"Processed {processed_count} new row(s) for editing."
                 else:
-                    if processed_count:
-                        st.session_state["workspace_success"] = f"Processed {processed_count} new row(s) for editing."
-                    else:
-                        st.session_state["workspace_success"] = "No new rows to process."
-                    _rerun_workspace("Edit")
+                    st.session_state["workspace_success"] = "No new rows to process."
+                _rerun_workspace("Edit")
     try:
         editor_rows = _sort_editor_rows(_run_with_sheet_quota_countdown(
             lambda: [
