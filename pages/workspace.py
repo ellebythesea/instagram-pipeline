@@ -10,6 +10,7 @@ import json
 from urllib.parse import parse_qs, quote, urlparse
 import html
 import requests
+from zoneinfo import ZoneInfo
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -255,10 +256,11 @@ def _sort_editor_rows(rows: list[dict]) -> list[dict]:
 
 
 WEEKDAY_OPTIONS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+EASTERN_TZ = ZoneInfo("America/New_York")
 
 
 def _schedule_day_defaults() -> tuple[str, dt_time]:
-    now = datetime.now()
+    now = datetime.now(EASTERN_TZ)
     return WEEKDAY_OPTIONS[now.weekday()], now.time().replace(second=0, microsecond=0)
 
 
@@ -275,6 +277,19 @@ def _format_schedule_time(value: dt_time) -> str:
     hour = value.hour % 12 or 12
     suffix = "am" if value.hour < 12 else "pm"
     return f"{hour}:{value.minute:02d}{suffix}"
+
+
+def _time_parts(value: dt_time) -> tuple[int, int, str]:
+    hour = value.hour % 12 or 12
+    suffix = "am" if value.hour < 12 else "pm"
+    return hour, value.minute, suffix
+
+
+def _time_from_parts(hour: int, minute: int, suffix: str) -> dt_time:
+    normalized_hour = hour % 12
+    if suffix == "pm":
+        normalized_hour += 12
+    return dt_time(normalized_hour, minute)
 
 
 def _build_schedule_labels(rows: list[dict], start_day: str, start_time: dt_time) -> dict[int, str]:
@@ -1132,10 +1147,13 @@ if active_tab == "Actions":
             st.caption(home_notice)
 if active_tab == "Edit":
     default_day, default_time = _schedule_day_defaults()
+    default_hour, default_minute, default_suffix = _time_parts(default_time)
     st.session_state.setdefault("workspace_schedule_day", default_day)
-    st.session_state.setdefault("workspace_schedule_time", default_time)
+    st.session_state.setdefault("workspace_schedule_hour", default_hour)
+    st.session_state.setdefault("workspace_schedule_minute", default_minute)
+    st.session_state.setdefault("workspace_schedule_suffix", default_suffix)
 
-    schedule_cols = st.columns([1, 1, 0.4], vertical_alignment="bottom")
+    schedule_cols = st.columns([1, 0.7, 0.7, 0.7, 0.4], vertical_alignment="bottom")
     with schedule_cols[0]:
         st.selectbox(
             "Day",
@@ -1144,15 +1162,35 @@ if active_tab == "Edit":
             key="workspace_schedule_day",
         )
     with schedule_cols[1]:
-        st.time_input(
-            "Starting time",
-            value=st.session_state.get("workspace_schedule_time", default_time),
-            key="workspace_schedule_time",
+        st.selectbox(
+            "Hour",
+            list(range(1, 13)),
+            index=list(range(1, 13)).index(st.session_state.get("workspace_schedule_hour", default_hour)),
+            key="workspace_schedule_hour",
         )
     with schedule_cols[2]:
+        st.selectbox(
+            "Minute",
+            list(range(60)),
+            index=list(range(60)).index(st.session_state.get("workspace_schedule_minute", default_minute)),
+            key="workspace_schedule_minute",
+            format_func=lambda value: f"{value:02d}",
+        )
+    with schedule_cols[3]:
+        st.selectbox(
+            "AM/PM",
+            ["am", "pm"],
+            index=["am", "pm"].index(st.session_state.get("workspace_schedule_suffix", default_suffix)),
+            key="workspace_schedule_suffix",
+        )
+    with schedule_cols[4]:
         if st.button("Set", key="workspace_schedule_set", type="primary", width="stretch"):
             st.session_state["workspace_schedule_applied_day"] = st.session_state.get("workspace_schedule_day", default_day)
-            st.session_state["workspace_schedule_applied_time"] = st.session_state.get("workspace_schedule_time", default_time)
+            st.session_state["workspace_schedule_applied_time"] = _time_from_parts(
+                int(st.session_state.get("workspace_schedule_hour", default_hour)),
+                int(st.session_state.get("workspace_schedule_minute", default_minute)),
+                st.session_state.get("workspace_schedule_suffix", default_suffix),
+            )
             _rerun_workspace("Edit")
 
     try:
