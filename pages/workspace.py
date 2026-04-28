@@ -1,5 +1,6 @@
 """Unified workspace shell for the next UI redesign."""
 
+from datetime import datetime, time as dt_time, timedelta
 import os
 import re
 import shutil
@@ -251,6 +252,44 @@ def _sort_editor_rows(rows: list[dict]) -> list[dict]:
             row.get("row_number", 0),
         ),
     )
+
+
+WEEKDAY_OPTIONS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+
+
+def _schedule_day_defaults() -> tuple[str, dt_time]:
+    now = datetime.now()
+    return WEEKDAY_OPTIONS[now.weekday()], now.time().replace(second=0, microsecond=0)
+
+
+def _next_schedule_slot(current_dt: datetime, rollover_minute: int) -> datetime:
+    next_dt = current_dt + timedelta(hours=1)
+    if next_dt.date() != current_dt.date():
+        next_dt = next_dt.replace(hour=9, minute=rollover_minute, second=0, microsecond=0)
+    elif next_dt.hour < 9:
+        next_dt = next_dt.replace(hour=9, minute=rollover_minute, second=0, microsecond=0)
+    return next_dt
+
+
+def _format_schedule_time(value: dt_time) -> str:
+    hour = value.hour % 12 or 12
+    suffix = "am" if value.hour < 12 else "pm"
+    return f"{hour}:{value.minute:02d}{suffix}"
+
+
+def _build_schedule_labels(rows: list[dict], start_day: str, start_time: dt_time) -> dict[int, str]:
+    if not rows:
+        return {}
+
+    start_index = WEEKDAY_OPTIONS.index(start_day)
+    anchor = datetime(2026, 1, 5 + start_index, start_time.hour, start_time.minute)
+    current = anchor
+    labels: dict[int, str] = {}
+    rollover_minute = start_time.minute
+    for row in rows:
+        current = _next_schedule_slot(current, rollover_minute)
+        labels[row["row_number"]] = f"{WEEKDAY_OPTIONS[current.weekday()]} {_format_schedule_time(current.time())}"
+    return labels
 
 
 def _fetch_post_data(url: str) -> dict:
@@ -1092,6 +1131,30 @@ if active_tab == "Actions":
         if home_notice:
             st.caption(home_notice)
 if active_tab == "Edit":
+    default_day, default_time = _schedule_day_defaults()
+    st.session_state.setdefault("workspace_schedule_day", default_day)
+    st.session_state.setdefault("workspace_schedule_time", default_time)
+
+    schedule_cols = st.columns([1, 1, 0.4], vertical_alignment="bottom")
+    with schedule_cols[0]:
+        st.selectbox(
+            "Day",
+            WEEKDAY_OPTIONS,
+            index=WEEKDAY_OPTIONS.index(st.session_state.get("workspace_schedule_day", default_day)),
+            key="workspace_schedule_day",
+        )
+    with schedule_cols[1]:
+        st.time_input(
+            "Starting time",
+            value=st.session_state.get("workspace_schedule_time", default_time),
+            key="workspace_schedule_time",
+        )
+    with schedule_cols[2]:
+        if st.button("Set", key="workspace_schedule_set", type="primary", width="stretch"):
+            st.session_state["workspace_schedule_applied_day"] = st.session_state.get("workspace_schedule_day", default_day)
+            st.session_state["workspace_schedule_applied_time"] = st.session_state.get("workspace_schedule_time", default_time)
+            _rerun_workspace("Edit")
+
     try:
         pending_edit_rows = _run_with_sheet_quota_countdown(
             lambda: get_pending_rows(GOOGLE_SHEET_ID),
@@ -1130,6 +1193,11 @@ if active_tab == "Edit":
     if not editor_rows:
         st.info("No rows yet. Add a link on Actions or process new rows on Data.")
     else:
+        schedule_labels = {}
+        applied_day = st.session_state.get("workspace_schedule_applied_day")
+        applied_time = st.session_state.get("workspace_schedule_applied_time")
+        if applied_day and applied_time:
+            schedule_labels = _build_schedule_labels(editor_rows, applied_day, applied_time)
         st.caption("Rows stay here until you delete them from the sheet.")
         for row in editor_rows:
             row_num = row["row_number"]
@@ -1157,8 +1225,12 @@ if active_tab == "Edit":
                 with top_right:
                     menu_label = "Photo run" if not _is_reel_url(url) else "Transcribe"
                     title_col, menu_col = st.columns([12, 1], vertical_alignment="center")
+                    schedule_suffix = schedule_labels.get(row_num, "")
+                    status_line = f"Row {row_num} · {media_type or 'pending'} · {status or 'blank'}"
+                    if schedule_suffix:
+                        status_line = f"{status_line} · {schedule_suffix}"
                     st.markdown(
-                        f'<div class="workspace-status-line">Row {row_num} · {media_type or "pending"} · {status or "blank"}</div>',
+                        f'<div class="workspace-status-line">{status_line}</div>',
                         unsafe_allow_html=True,
                     )
                     with title_col:
