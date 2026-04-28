@@ -517,6 +517,48 @@ def _run_with_sheet_quota_countdown(fn, waiting_label: str):
             countdown.empty()
 
 
+def _process_pending_rows_from_sheet() -> int:
+    pending = _run_with_sheet_quota_countdown(
+        lambda: get_pending_rows(GOOGLE_SHEET_ID),
+        "Processing new rows paused:",
+    )
+    if not pending:
+        return 0
+
+    progress = st.progress(0)
+    for i, row in enumerate(pending):
+        row_num = row["row_number"]
+        label = row["Instagram URL"][:60]
+        with st.status(f"Row {row_num}: {label}", expanded=False) as status_box:
+            result = _ingest_row(row)
+            try:
+                update_ingest_result(
+                    GOOGLE_SHEET_ID,
+                    row_num,
+                    result["username"],
+                    result["media_type"],
+                    result["photo_count"],
+                    result["media_link"],
+                    result["thumbnail_link"],
+                    result["original_caption"],
+                    result["transcript"],
+                    result["status"],
+                )
+            except Exception as e:
+                status_box.update(label=f"Row {row_num}: error writing to sheet - {describe_error(e)}", state="error")
+            else:
+                if result["status"].startswith("error"):
+                    status_box.update(label=f"Row {row_num}: {result['status']}", state="error")
+                else:
+                    status_box.update(
+                        label=f"Row {row_num}: ingested - @{result['username']} ({result['media_type']})",
+                        state="complete",
+                    )
+        progress.progress((i + 1) / len(pending))
+
+    return len(pending)
+
+
 def _ingest_row(row: dict) -> dict:
     """Process one row through ingest and return sheet fields."""
     url = row["Instagram URL"].strip()
@@ -1024,6 +1066,32 @@ if active_tab == "Edit":
         if st.button("Refresh", key="workspace_edit_refresh", width="stretch"):
             _rerun_workspace("Edit")
     try:
+        pending_edit_rows = _run_with_sheet_quota_countdown(
+            lambda: get_pending_rows(GOOGLE_SHEET_ID),
+            "Checking for new rows paused:",
+        )
+    except Exception as e:
+        st.error(f"Could not check for new rows: {describe_error(e)}")
+        pending_edit_rows = []
+
+    if pending_edit_rows:
+        alert_col, button_col = st.columns([3, 1], vertical_alignment="center")
+        with alert_col:
+            row_word = "row" if len(pending_edit_rows) == 1 else "rows"
+            st.info(f"{len(pending_edit_rows)} new {row_word} found.")
+        with button_col:
+            if st.button("Process for editing", key="workspace_edit_process_pending", type="primary", width="stretch"):
+                try:
+                    processed_count = _process_pending_rows_from_sheet()
+                except Exception as e:
+                    st.error(f"Could not process new rows: {describe_error(e)}")
+                else:
+                    if processed_count:
+                        st.session_state["workspace_success"] = f"Processed {processed_count} new row(s) for editing."
+                    else:
+                        st.session_state["workspace_success"] = "No new rows to process."
+                    _rerun_workspace("Edit")
+    try:
         editor_rows = _run_with_sheet_quota_countdown(
             lambda: [
                 r for r in get_all_rows(GOOGLE_SHEET_ID)
@@ -1395,46 +1463,12 @@ if active_tab == "Data":
 
     if st.button("Process new rows", type="primary", width="stretch", key="workspace_process_rows"):
         try:
-            pending = _run_with_sheet_quota_countdown(
-                lambda: get_pending_rows(GOOGLE_SHEET_ID),
-                "Processing new rows paused:",
-            )
+            processed_count = _process_pending_rows_from_sheet()
         except Exception as e:
-            st.error(f"Could not read sheet: {describe_error(e)}")
-            pending = []
-
-        if not pending:
-            st.info("No new rows to process.")
+            st.error(f"Could not process new rows: {describe_error(e)}")
         else:
-            progress = st.progress(0)
-            for i, row in enumerate(pending):
-                row_num = row["row_number"]
-                label = row["Instagram URL"][:60]
-                with st.status(f"Row {row_num}: {label}", expanded=False) as status_box:
-                    result = _ingest_row(row)
-                    try:
-                        update_ingest_result(
-                            GOOGLE_SHEET_ID,
-                            row_num,
-                            result["username"],
-                            result["media_type"],
-                            result["photo_count"],
-                            result["media_link"],
-                            result["thumbnail_link"],
-                            result["original_caption"],
-                            result["transcript"],
-                            result["status"],
-                        )
-                    except Exception as e:
-                        status_box.update(label=f"Row {row_num}: error writing to sheet - {describe_error(e)}", state="error")
-                    else:
-                        if result["status"].startswith("error"):
-                            status_box.update(label=f"Row {row_num}: {result['status']}", state="error")
-                        else:
-                            status_box.update(
-                                label=f"Row {row_num}: ingested - @{result['username']} ({result['media_type']})",
-                                state="complete",
-                            )
-                progress.progress((i + 1) / len(pending))
-            st.success(f"Done. Ingested {len(pending)} row(s).")
-            _rerun_workspace("Data")
+            if not processed_count:
+                st.info("No new rows to process.")
+            else:
+                st.success(f"Done. Ingested {processed_count} row(s).")
+                _rerun_workspace("Data")
