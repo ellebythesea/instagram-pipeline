@@ -1368,7 +1368,10 @@ if active_tab == "Edit":
 
             st.divider()
 
-        ingested_rows = [r for r in editor_rows if (r.get("Status", "").strip().lower() == "ingested")]
+        ingested_rows = [
+            r for r in editor_rows
+            if (r.get("Status", "").strip().lower() in {"ingested", "skipped"})
+        ]
         sticky_container = st.container()
         with sticky_container:
             st.markdown('<div class="workspace-generate-anchor"></div>', unsafe_allow_html=True)
