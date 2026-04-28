@@ -238,6 +238,21 @@ def _is_editable_row(row: dict) -> bool:
     )
 
 
+def _default_editor_status(row: dict) -> str:
+    generated_caption = (row.get("Generated Caption") or "").strip()
+    return "done" if generated_caption else "ingested"
+
+
+def _sort_editor_rows(rows: list[dict]) -> list[dict]:
+    return sorted(
+        rows,
+        key=lambda row: (
+            1 if (row.get("Status", "") or "").strip().lower() == "skipped" else 0,
+            row.get("row_number", 0),
+        ),
+    )
+
+
 def _fetch_post_data(url: str) -> dict:
     if _is_reel_url(url):
         return process_reel_url(url, include_transcript=False)
@@ -1088,13 +1103,13 @@ if active_tab == "Edit":
                         st.session_state["workspace_success"] = "No new rows to process."
                     _rerun_workspace("Edit")
     try:
-        editor_rows = _run_with_sheet_quota_countdown(
+        editor_rows = _sort_editor_rows(_run_with_sheet_quota_countdown(
             lambda: [
                 r for r in get_all_rows(GOOGLE_SHEET_ID)
                 if _is_editable_row(r)
             ],
             "Loading editor rows paused:",
-        )
+        ))
     except Exception as e:
         st.error(f"Could not load edit rows: {describe_error(e)}")
         editor_rows = []
@@ -1191,6 +1206,21 @@ if active_tab == "Edit":
                             ):
                                 _close_workspace_menu(row_num)
                                 _queue_workspace_action(row_num, "download")
+                                _rerun_workspace("Edit")
+                            skip_label = "Unskip" if status.strip().lower() == "skipped" else "Skip"
+                            if st.button(
+                                skip_label,
+                                key=f"workspace_menu_skip_{row_num}",
+                                width="stretch",
+                            ):
+                                next_status = _default_editor_status(row) if status.strip().lower() == "skipped" else "skipped"
+                                update_status(GOOGLE_SHEET_ID, row_num, next_status)
+                                _close_workspace_menu(row_num)
+                                st.session_state["workspace_success"] = (
+                                    f"Row {row_num}: moved back into the main edit list."
+                                    if next_status != "skipped"
+                                    else f"Row {row_num}: skipped and moved to the bottom."
+                                )
                                 _rerun_workspace("Edit")
                             if st.button(
                                 "Add Watch",
