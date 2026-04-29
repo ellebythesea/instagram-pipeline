@@ -395,29 +395,6 @@ def _generate_headlines(source_text: str) -> list[str]:
     return headlines
 
 
-def _generate_caption_from_caption(source_text: str) -> str:
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You write sharp political Instagram captions from an existing Instagram caption only. "
-                    "Return exactly two short paragraphs, no hashtags, no labels, and no quotation marks unless essential. "
-                    "Do not mention transcription or missing audio. Keep it concise, punchy, and readable."
-                ),
-            },
-            {
-                "role": "user",
-                "content": f"Write a caption from this Instagram caption:\n\n{source_text}",
-            },
-        ],
-        max_tokens=220,
-        temperature=0.5,
-    )
-    return response.choices[0].message.content.strip()
-
-
 def _build_footered_caption(caption_body: str, username: str) -> str:
     footer_parts = []
     cleaned_username = (username or "").strip().lstrip("@")
@@ -982,10 +959,7 @@ def _run_home_mode(mode: str, urls: list[str], org_hashtag: str) -> tuple[str, l
                     "url": url,
                     "username": post.get("username", ""),
                     "headlines": _generate_headlines(source_text),
-                    "caption": _build_footered_caption(
-                        _generate_caption_from_caption(source_text),
-                        post.get("username", ""),
-                    ),
+                    "caption": _build_footered_caption(source_text, post.get("username", "")),
                     "source_caption": source_text,
                 }
             )
