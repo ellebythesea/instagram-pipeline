@@ -1157,39 +1157,40 @@ if active_tab == "Edit":
     st.session_state.setdefault("workspace_schedule_minute", default_minute)
     st.session_state.setdefault("workspace_schedule_suffix", default_suffix)
 
-    st.markdown('<div class="workspace-schedule-anchor"></div>', unsafe_allow_html=True)
-    schedule_cols = st.columns([1, 0.7, 0.7, 0.7, 0.4], vertical_alignment="bottom")
-    with schedule_cols[0]:
-        st.selectbox(
-            "Day",
-            WEEKDAY_OPTIONS,
-            index=WEEKDAY_OPTIONS.index(st.session_state.get("workspace_schedule_day", default_day)),
-            key="workspace_schedule_day",
-        )
-    with schedule_cols[1]:
-        st.selectbox(
-            "Hour",
-            list(range(1, 13)),
-            index=list(range(1, 13)).index(st.session_state.get("workspace_schedule_hour", default_hour)),
-            key="workspace_schedule_hour",
-        )
-    with schedule_cols[2]:
-        st.selectbox(
-            "Minute",
-            list(range(60)),
-            index=list(range(60)).index(st.session_state.get("workspace_schedule_minute", default_minute)),
-            key="workspace_schedule_minute",
-            format_func=lambda value: f"{value:02d}",
-        )
-    with schedule_cols[3]:
-        st.selectbox(
-            "AM/PM",
-            ["am", "pm"],
-            index=["am", "pm"].index(st.session_state.get("workspace_schedule_suffix", default_suffix)),
-            key="workspace_schedule_suffix",
-        )
-    with schedule_cols[4]:
-        schedule_apply_requested = st.button("Set", key="workspace_schedule_set", type="primary", width="stretch")
+    with st.expander("Set times", expanded=False):
+        st.markdown('<div class="workspace-schedule-anchor"></div>', unsafe_allow_html=True)
+        schedule_cols = st.columns([1, 0.7, 0.7, 0.7, 0.4], vertical_alignment="bottom")
+        with schedule_cols[0]:
+            st.selectbox(
+                "Day",
+                WEEKDAY_OPTIONS,
+                index=WEEKDAY_OPTIONS.index(st.session_state.get("workspace_schedule_day", default_day)),
+                key="workspace_schedule_day",
+            )
+        with schedule_cols[1]:
+            st.selectbox(
+                "Hour",
+                list(range(1, 13)),
+                index=list(range(1, 13)).index(st.session_state.get("workspace_schedule_hour", default_hour)),
+                key="workspace_schedule_hour",
+            )
+        with schedule_cols[2]:
+            st.selectbox(
+                "Minute",
+                list(range(60)),
+                index=list(range(60)).index(st.session_state.get("workspace_schedule_minute", default_minute)),
+                key="workspace_schedule_minute",
+                format_func=lambda value: f"{value:02d}",
+            )
+        with schedule_cols[3]:
+            st.selectbox(
+                "AM/PM",
+                ["am", "pm"],
+                index=["am", "pm"].index(st.session_state.get("workspace_schedule_suffix", default_suffix)),
+                key="workspace_schedule_suffix",
+            )
+        with schedule_cols[4]:
+            schedule_apply_requested = st.button("Set", key="workspace_schedule_set", type="primary", width="stretch")
 
     try:
         pending_edit_rows = _run_with_sheet_quota_countdown(
