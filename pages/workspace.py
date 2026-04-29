@@ -1236,21 +1236,15 @@ if active_tab == "Edit":
                 int(st.session_state.get("workspace_schedule_minute", default_minute)),
                 st.session_state.get("workspace_schedule_suffix", default_suffix),
             )
-            unscheduled_rows = [
-                row for row in editor_rows
-                if not (row.get("Scheduled Time", "") or "").strip()
-            ]
-            assignments = _build_schedule_labels(unscheduled_rows, start_day, start_time)
-            if assignments:
-                try:
-                    update_scheduled_times(GOOGLE_SHEET_ID, assignments)
-                except Exception as e:
-                    st.session_state["workspace_error"] = f"Could not save schedule: {describe_error(e)}"
-                else:
-                    row_word = "row" if len(assignments) == 1 else "rows"
-                    st.session_state["workspace_success"] = f"Set schedule for {len(assignments)} {row_word}."
+            schedule_rows = sorted(editor_rows, key=lambda row: row.get("row_number", 0))
+            assignments = _build_schedule_labels(schedule_rows, start_day, start_time)
+            try:
+                update_scheduled_times(GOOGLE_SHEET_ID, assignments)
+            except Exception as e:
+                st.session_state["workspace_error"] = f"Could not save schedule: {describe_error(e)}"
             else:
-                st.session_state["workspace_success"] = "All visible rows already have a scheduled time."
+                row_word = "row" if len(assignments) == 1 else "rows"
+                st.session_state["workspace_success"] = f"Updated schedule for {len(assignments)} {row_word}."
             _rerun_workspace("Edit")
 
         st.caption("Rows stay here until you delete them from the sheet.")
