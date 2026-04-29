@@ -169,6 +169,42 @@ def _mark_transcribe_checkbox_for_reset(row_number: int) -> None:
         pending.append(row_number)
 
 
+def _workspace_row_identity(row: dict) -> str:
+    return "||".join([
+        (row.get("Instagram URL") or "").strip(),
+        (row.get("Media Type") or "").strip(),
+        (row.get("Source Username") or "").strip(),
+    ])
+
+
+def _workspace_row_state_keys(row_number: int) -> list[str]:
+    return [
+        f"workspace_speaker_{row_number}",
+        f"workspace_hashtags_{row_number}",
+        f"workspace_top_{row_number}",
+        f"workspace_context_{row_number}",
+        f"workspace_transcript_warning_{row_number}",
+        f"workspace_transcribe_{row_number}",
+        f"workspace_link_editor_open_{row_number}",
+        f"workspace_link_word_{row_number}",
+        f"workspace_link_url_{row_number}",
+        f"workspace_menu_nonce_{row_number}",
+    ]
+
+
+def _sync_workspace_row_state(row: dict) -> None:
+    row_number = row["row_number"]
+    identity_key = f"workspace_row_identity_{row_number}"
+    current_identity = _workspace_row_identity(row)
+    previous_identity = st.session_state.get(identity_key)
+    if previous_identity == current_identity:
+        return
+    if previous_identity is not None:
+        for key in _workspace_row_state_keys(row_number):
+            st.session_state.pop(key, None)
+    st.session_state[identity_key] = current_identity
+
+
 def _normalize_home_links(links: list[str]) -> list[str]:
     first = ""
     for link in links:
@@ -913,19 +949,9 @@ def _delete_workspace_row(row_number: int) -> None:
         st.session_state["workspace_transcribe_reset_rows"] = [
             pending for pending in pending_transcribe_resets if pending != row_number
         ]
-    keys_to_clear = [
-        f"workspace_speaker_{row_number}",
-        f"workspace_hashtags_{row_number}",
-        f"workspace_top_{row_number}",
-        f"workspace_context_{row_number}",
-        f"workspace_transcript_warning_{row_number}",
-        f"workspace_transcribe_{row_number}",
-        f"workspace_link_editor_open_{row_number}",
-        f"workspace_link_word_{row_number}",
-        f"workspace_link_url_{row_number}",
-    ]
-    for key in keys_to_clear:
+    for key in _workspace_row_state_keys(row_number):
         st.session_state.pop(key, None)
+    st.session_state.pop(f"workspace_row_identity_{row_number}", None)
 
 
 def _run_home_mode(mode: str, urls: list[str], org_hashtag: str) -> tuple[str, list[dict]]:
@@ -1250,6 +1276,7 @@ if active_tab == "Edit":
 
         st.caption("Rows stay here until you delete them from the sheet.")
         for row in editor_rows:
+            _sync_workspace_row_state(row)
             row_num = row["row_number"]
             username = (row.get("Source Username") or "").strip()
             url = (row.get("Instagram URL") or "").strip()
