@@ -408,7 +408,7 @@ def _generate_headlines(source_text: str) -> list[str]:
     return headlines
 
 
-def _build_footered_caption(caption_body: str, username: str) -> str:
+def _build_footered_caption(caption_body: str, username: str, required_hashtags: str = "") -> str:
     footer_parts = []
     cleaned_username = (username or "").strip().lstrip("@")
     if cleaned_username and cleaned_username.lower() != "unknown":
@@ -417,6 +417,8 @@ def _build_footered_caption(caption_body: str, username: str) -> str:
         "Help this information get to more voters. 🇺🇸 "
         "A well-informed electorate is a prerequisite to Democracy. - Thomas Jefferson"
     )
+    if required_hashtags.strip():
+        footer_parts.append(required_hashtags.strip())
     return f"{caption_body.strip()}\n\n{' '.join(footer_parts)}"
 
 
@@ -552,7 +554,7 @@ def _tab_copy_preview(value: str) -> None:
     )
 
 
-def _copy_tabs(row_num: int, generated: str, original_caption: str, transcript: str, username: str) -> None:
+def _copy_tabs(row_num: int, generated: str, original_caption: str, transcript: str, username: str, required_hashtags: str) -> None:
     text_tabs = st.tabs(["Caption", "Original caption", "Transcript"])
     with text_tabs[0]:
         _tab_copy_preview(generated)
@@ -561,7 +563,7 @@ def _copy_tabs(row_num: int, generated: str, original_caption: str, transcript: 
         cleaned_username = (username or "").strip().lstrip("@")
         if cleaned_username and original_with_username:
             original_with_username = f"@{cleaned_username}: {original_with_username}"
-        _tab_copy_preview(_build_footered_caption(original_with_username, username) if original_with_username else "")
+        _tab_copy_preview(_build_footered_caption(original_with_username, username, required_hashtags) if original_with_username else "")
     with text_tabs[2]:
         _tab_copy_preview(transcript)
 
@@ -1538,7 +1540,14 @@ if active_tab == "Edit":
                                 _rerun_workspace("Edit")
 
                     st.markdown('<div class="workspace-section-label workspace-content-tabs">Content</div>', unsafe_allow_html=True)
-                    _copy_tabs(row_num, generated, original_caption, transcript, username)
+                    _copy_tabs(
+                        row_num,
+                        generated,
+                        original_caption,
+                        transcript,
+                        username,
+                        st.session_state.get(hashtags_key, row.get("Required Hashtags", "")).strip(),
+                    )
 
             st.divider()
 
