@@ -180,7 +180,7 @@ def _sanitize(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 SYS_PROMPT = (
-    "You are a sharp political analyst. Rewrite the transcript into a short, clear social post "
+    "You are a sharp political analyst. Rewrite the source material into a short, clear social post "
     "under 1300 characters using exactly 2 simple paragraphs. The first paragraph must be the "
     "most important summary in 250 characters or fewer, and it must include all hashtags. Use "
     "3 to 5 relevant hashtags total, prioritizing the main people the post is about, then a "
@@ -188,11 +188,13 @@ SYS_PROMPT = (
     "relevant tags. Replace the normal word/phrase in the sentence with the hashtag version "
     "(example: use #DonaldTrump in the sentence instead of Donald Trump), rather than adding a "
     "separate hashtag-only line at the end. The second paragraph should add a bit more context "
-    "with verified facts, dates, and numbers when relevant. Include direct transcript quotes "
+    "with verified facts, dates, and numbers when relevant. Include direct quotes "
     "where available. Verify names and quotes carefully. Any hashtag that appears in the caption "
     "body counts toward the same total of 3 to 5 hashtags. Never use these hashtags: #Trump, "
     "#ICE, #DonaldTrump, #Epstein, #JeffreyEpstein. Avoid speculation, flourish, links, or Trump's current "
-    "office status."
+    "office status. Do not refer to the source as a transcript, clip, speech, interview, or video unless that is explicitly certain. "
+    "Do not write phrases like during his speech, in the transcript, in this clip, or in the video. "
+    "Write as if you are describing the underlying event or claim directly."
 )
 
 

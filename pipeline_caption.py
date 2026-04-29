@@ -9,7 +9,7 @@ from config import DEFAULT_POST_FOOTER, OPENAI_API_KEY
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 SYS_PROMPT = (
-    "You are a sharp political analyst. Rewrite the transcript into a short, clear social post "
+    "You are a sharp political analyst. Rewrite the source material into a short, clear social post "
     "under 1300 characters using exactly two simple paragraphs.\n\n"
     "The first paragraph must be 250 characters or fewer and serve as the most important summary. "
     "You may naturally weave in a few important hashtags when they improve the post, especially "
@@ -18,7 +18,10 @@ SYS_PROMPT = (
     "separately after the footer. Keep the total number of hashtags across the final post to five "
     "or fewer.\n\n"
     "The second paragraph should add context using verified facts, dates, and numbers when relevant. "
-    "Include direct quotes from the transcript when available. Verify names and quotes carefully. "
+    "Include direct quotes when available. Verify names and quotes carefully. "
+    "Do not refer to the source as a transcript, clip, speech, interview, or video unless that is explicitly certain. "
+    "Do not write phrases like during his speech, in the transcript, in this clip, or in the video. "
+    "Write as if you are describing the underlying event or claim directly. "
     "Avoid speculation, flourish, links, or references to Trump's current office status."
 )
 
@@ -98,7 +101,7 @@ def generate_row_caption(row: dict) -> str:
 
     if row.get("Speaker Name", "").strip():
         user_parts.append(
-            f"The speaker in this transcript is: {row['Speaker Name'].strip()}. "
+            f"The person featured here is: {row['Speaker Name'].strip()}. "
             "Mention their name once, then refer to them with he, she, or they. "
             "If gender is unclear, use they. Do not repeat their name multiple times."
         )
