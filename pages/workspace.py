@@ -1,6 +1,7 @@
 """Unified workspace shell for the next UI redesign."""
 
 from datetime import datetime, time as dt_time, timedelta
+import hashlib
 import os
 import re
 import shutil
@@ -163,10 +164,11 @@ def _reset_home_links_on_next_render() -> None:
     st.session_state["workspace_home_links"] = [""]
 
 
-def _mark_transcribe_checkbox_for_reset(row_number: int) -> None:
+def _mark_transcribe_checkbox_for_reset(row: dict) -> None:
+    transcribe_key = _workspace_key(row, "transcribe")
     pending = st.session_state.setdefault("workspace_transcribe_reset_rows", [])
-    if row_number not in pending:
-        pending.append(row_number)
+    if transcribe_key not in pending:
+        pending.append(transcribe_key)
 
 
 def _workspace_row_identity(row: dict) -> str:
@@ -177,30 +179,38 @@ def _workspace_row_identity(row: dict) -> str:
     ])
 
 
-def _workspace_row_state_keys(row_number: int) -> list[str]:
+def _row_state_token(row: dict) -> str:
+    identity = _workspace_row_identity(row) or str(row.get("row_number", ""))
+    return hashlib.md5(identity.encode("utf-8")).hexdigest()[:12]
+
+
+def _workspace_key(row: dict, name: str) -> str:
+    return f"workspace_{name}_{_row_state_token(row)}"
+
+
+def _workspace_row_state_keys(row: dict) -> list[str]:
     return [
-        f"workspace_speaker_{row_number}",
-        f"workspace_hashtags_{row_number}",
-        f"workspace_top_{row_number}",
-        f"workspace_context_{row_number}",
-        f"workspace_transcript_warning_{row_number}",
-        f"workspace_transcribe_{row_number}",
-        f"workspace_link_editor_open_{row_number}",
-        f"workspace_link_word_{row_number}",
-        f"workspace_link_url_{row_number}",
-        f"workspace_menu_nonce_{row_number}",
+        _workspace_key(row, "speaker"),
+        _workspace_key(row, "hashtags"),
+        _workspace_key(row, "top"),
+        _workspace_key(row, "context"),
+        _workspace_key(row, "transcript_warning"),
+        _workspace_key(row, "transcribe"),
+        _workspace_key(row, "link_editor_open"),
+        _workspace_key(row, "link_word"),
+        _workspace_key(row, "link_url"),
+        _workspace_key(row, "menu_nonce"),
     ]
 
 
 def _sync_workspace_row_state(row: dict) -> None:
-    row_number = row["row_number"]
-    identity_key = f"workspace_row_identity_{row_number}"
+    identity_key = _workspace_key(row, "identity")
     current_identity = _workspace_row_identity(row)
     previous_identity = st.session_state.get(identity_key)
     if previous_identity == current_identity:
         return
     if previous_identity is not None:
-        for key in _workspace_row_state_keys(row_number):
+        for key in _workspace_row_state_keys(row):
             st.session_state.pop(key, None)
     st.session_state[identity_key] = current_identity
 
@@ -238,16 +248,19 @@ def _clean_home_links() -> list[str]:
 
 
 def _row_is_dirty(row: dict) -> bool:
-    row_num = row["row_number"]
+    speaker_key = _workspace_key(row, "speaker")
+    hashtags_key = _workspace_key(row, "hashtags")
+    top_key = _workspace_key(row, "top")
+    context_key = _workspace_key(row, "context")
     return any(
         [
-            st.session_state.get(f"workspace_speaker_{row_num}", row.get("Speaker Name", "")).strip()
+            st.session_state.get(speaker_key, row.get("Speaker Name", "")).strip()
             != (row.get("Speaker Name", "") or "").strip(),
-            st.session_state.get(f"workspace_hashtags_{row_num}", row.get("Required Hashtags", "")).strip()
+            st.session_state.get(hashtags_key, row.get("Required Hashtags", "")).strip()
             != (row.get("Required Hashtags", "") or "").strip(),
-            st.session_state.get(f"workspace_top_{row_num}", row.get("Top Comment", "")).strip()
+            st.session_state.get(top_key, row.get("Top Comment", "")).strip()
             != (row.get("Top Comment", "") or "").strip(),
-            st.session_state.get(f"workspace_context_{row_num}", row.get("Caption Context", "")).strip()
+            st.session_state.get(context_key, row.get("Caption Context", "")).strip()
             != (row.get("Caption Context", "") or "").strip(),
         ]
     )
@@ -458,10 +471,10 @@ def _uppercase_session_value(key: str) -> None:
     st.session_state[key] = (st.session_state.get(key, "") or "").upper()
 
 
-def _close_workspace_menu(row_number: int) -> None:
-    nonce_key = f"workspace_menu_nonce_{row_number}"
+def _close_workspace_menu(row: dict) -> None:
+    nonce_key = _workspace_key(row, "menu_nonce")
     st.session_state[nonce_key] = st.session_state.get(nonce_key, 0) + 1
-    st.session_state[f"workspace_link_editor_open_{row_number}"] = False
+    st.session_state[_workspace_key(row, "link_editor_open")] = False
 
 
 def _apply_top_comment_to_caption(
@@ -470,9 +483,9 @@ def _apply_top_comment_to_caption(
     speaker_name: str,
     top_comment: str,
 ) -> None:
-    current_context = st.session_state.get(f"workspace_context_{row_num}", row.get("Caption Context", "")).strip()
-    current_speaker = st.session_state.get(f"workspace_speaker_{row_num}", speaker_name).strip()
-    current_hashtags = st.session_state.get(f"workspace_hashtags_{row_num}", row.get("Required Hashtags", "")).strip()
+    current_context = st.session_state.get(_workspace_key(row, "context"), row.get("Caption Context", "")).strip()
+    current_speaker = st.session_state.get(_workspace_key(row, "speaker"), speaker_name).strip()
+    current_hashtags = st.session_state.get(_workspace_key(row, "hashtags"), row.get("Required Hashtags", "")).strip()
     update_metadata(
         GOOGLE_SHEET_ID,
         row_num,
@@ -490,7 +503,7 @@ def _apply_top_comment_to_caption(
     caption = generate_row_caption(updated_row)
     current_status = (row.get("Status") or "").strip() or "done"
     update_caption(GOOGLE_SHEET_ID, row_num, caption, current_status)
-    st.session_state[f"workspace_top_{row_num}"] = top_comment
+    st.session_state[_workspace_key(row, "top")] = top_comment
 
 
 def _copy_block(label: str, value: str, key: str, empty_text: str = "(none)") -> None:
@@ -936,16 +949,17 @@ def _process_next_workspace_action() -> None:
     _rerun_workspace("Edit")
 
 
-def _delete_workspace_row(row_number: int) -> None:
+def _delete_workspace_row(row: dict) -> None:
+    row_number = row["row_number"]
     delete_sheet_row(GOOGLE_SHEET_ID, row_number)
     pending_transcribe_resets = st.session_state.get("workspace_transcribe_reset_rows", [])
     if pending_transcribe_resets:
         st.session_state["workspace_transcribe_reset_rows"] = [
-            pending for pending in pending_transcribe_resets if pending != row_number
+            pending for pending in pending_transcribe_resets if pending != _workspace_key(row, "transcribe")
         ]
-    for key in _workspace_row_state_keys(row_number):
+    for key in _workspace_row_state_keys(row):
         st.session_state.pop(key, None)
-    st.session_state.pop(f"workspace_row_identity_{row_number}", None)
+    st.session_state.pop(_workspace_key(row, "identity"), None)
 
 
 def _run_home_mode(mode: str, urls: list[str], org_hashtag: str) -> tuple[str, list[dict]]:
@@ -1269,6 +1283,16 @@ if active_tab == "Edit":
         for row in editor_rows:
             _sync_workspace_row_state(row)
             row_num = row["row_number"]
+            speaker_key = _workspace_key(row, "speaker")
+            hashtags_key = _workspace_key(row, "hashtags")
+            top_key = _workspace_key(row, "top")
+            context_key = _workspace_key(row, "context")
+            warning_key = _workspace_key(row, "transcript_warning")
+            transcribe_key = _workspace_key(row, "transcribe")
+            link_editor_key = _workspace_key(row, "link_editor_open")
+            link_word_key = _workspace_key(row, "link_word")
+            link_url_key = _workspace_key(row, "link_url")
+            menu_nonce_key = _workspace_key(row, "menu_nonce")
             username = (row.get("Source Username") or "").strip()
             url = (row.get("Instagram URL") or "").strip()
             media_type = (row.get("Media Type") or "").strip().lower()
@@ -1304,12 +1328,11 @@ if active_tab == "Edit":
                     with title_col:
                         st.markdown(f"#### @{username}" if username else f"#### Row {row_num}")
                     with menu_col:
-                        menu_nonce = st.session_state.get(f"workspace_menu_nonce_{row_num}", 0)
+                        menu_nonce = st.session_state.get(menu_nonce_key, 0)
                         with st.popover("\u200b" * (menu_nonce + 1), use_container_width=True):
                             primary_action = "transcript" if _is_reel_url(url) else "image_text"
                             primary_help = "Fetch transcript and regenerate caption." if _is_reel_url(url) else "Extract text from images and regenerate caption."
-                            current_top_comment = st.session_state.get(f"workspace_top_{row_num}", row.get("Top Comment", "")).strip()
-                            link_editor_key = f"workspace_link_editor_open_{row_num}"
+                            current_top_comment = st.session_state.get(top_key, row.get("Top Comment", "")).strip()
                             if st.button(
                                 menu_label,
                                 key=f"workspace_menu_primary_{row_num}",
@@ -1322,13 +1345,13 @@ if active_tab == "Edit":
                                         warning = _check_reel_transcript_risk(row)
                                     except Exception as e:
                                         st.session_state["workspace_error"] = f"Row {row_num}: could not check reel size - {describe_error(e)}"
-                                        _close_workspace_menu(row_num)
+                                        _close_workspace_menu(row)
                                         _rerun_workspace("Edit")
                                     if warning:
-                                        st.session_state[f"workspace_transcript_warning_{row_num}"] = warning
-                                        _close_workspace_menu(row_num)
+                                        st.session_state[warning_key] = warning
+                                        _close_workspace_menu(row)
                                         _rerun_workspace("Edit")
-                                _close_workspace_menu(row_num)
+                                _close_workspace_menu(row)
                                 _queue_workspace_action(row_num, primary_action)
                                 _rerun_workspace("Edit")
                             if _is_reel_url(url) and st.button(
@@ -1342,13 +1365,13 @@ if active_tab == "Edit":
                                     warning = _check_reel_transcript_risk(row)
                                 except Exception as e:
                                     st.session_state["workspace_error"] = f"Row {row_num}: could not check reel size - {describe_error(e)}"
-                                    _close_workspace_menu(row_num)
+                                    _close_workspace_menu(row)
                                     _rerun_workspace("Edit")
                                 if warning:
-                                    st.session_state[f"workspace_transcript_warning_{row_num}"] = warning
-                                    _close_workspace_menu(row_num)
+                                    st.session_state[warning_key] = warning
+                                    _close_workspace_menu(row)
                                     _rerun_workspace("Edit")
-                                _close_workspace_menu(row_num)
+                                _close_workspace_menu(row)
                                 _queue_workspace_action(row_num, "transcript_download")
                                 _rerun_workspace("Edit")
                             if st.button(
@@ -1357,7 +1380,7 @@ if active_tab == "Edit":
                                 disabled=not url,
                                 width="stretch",
                             ):
-                                _close_workspace_menu(row_num)
+                                _close_workspace_menu(row)
                                 _queue_workspace_action(row_num, "download")
                                 _rerun_workspace("Edit")
                             skip_label = "Unskip" if status.strip().lower() == "skipped" else "Skip"
@@ -1368,7 +1391,7 @@ if active_tab == "Edit":
                             ):
                                 next_status = _default_editor_status(row) if status.strip().lower() == "skipped" else "skipped"
                                 update_status(GOOGLE_SHEET_ID, row_num, next_status)
-                                _close_workspace_menu(row_num)
+                                _close_workspace_menu(row)
                                 st.session_state["workspace_success"] = (
                                     f"Row {row_num}: moved back into the main edit list."
                                     if next_status != "skipped"
@@ -1383,7 +1406,7 @@ if active_tab == "Edit":
                             ):
                                 top_comment = _build_watch_cta(username or speaker_name, url)
                                 _apply_top_comment_to_caption(row, row_num, speaker_name, top_comment)
-                                _close_workspace_menu(row_num)
+                                _close_workspace_menu(row)
                                 st.session_state["workspace_success"] = f"Row {row_num}: WATCH CTA added to generated caption."
                                 _rerun_workspace("Edit")
                             if st.session_state.get(link_editor_key, False):
@@ -1392,28 +1415,26 @@ if active_tab == "Edit":
                                     st.markdown('<div class="workspace-section-label">Add Link</div>', unsafe_allow_html=True)
                                 with close_col:
                                     if st.button("X", key=f"workspace_link_cancel_{row_num}", width="stretch"):
-                                        _close_workspace_menu(row_num)
-                                        st.session_state.pop(f"workspace_link_word_{row_num}", None)
-                                        st.session_state.pop(f"workspace_link_url_{row_num}", None)
+                                        _close_workspace_menu(row)
+                                        st.session_state.pop(link_word_key, None)
+                                        st.session_state.pop(link_url_key, None)
                                         _rerun_workspace("Edit")
 
-                                word_key = f"workspace_link_word_{row_num}"
-                                link_key = f"workspace_link_url_{row_num}"
                                 st.text_input(
                                     "Word",
-                                    key=word_key,
+                                    key=link_word_key,
                                     placeholder="act",
                                     on_change=_uppercase_session_value,
-                                    args=(word_key,),
+                                    args=(link_word_key,),
                                 )
                                 st.text_input(
                                     "Link",
-                                    key=link_key,
+                                    key=link_url_key,
                                     placeholder="https://example.com",
                                 )
                                 if st.button("Add", key=f"workspace_link_add_{row_num}", type="primary", width="stretch"):
-                                    word = st.session_state.get(word_key, "").strip().upper()
-                                    full_link = st.session_state.get(link_key, "").strip()
+                                    word = st.session_state.get(link_word_key, "").strip().upper()
+                                    full_link = st.session_state.get(link_url_key, "").strip()
                                     if not word:
                                         st.session_state["workspace_error"] = f"Row {row_num}: enter a word."
                                         _rerun_workspace("Edit")
@@ -1423,9 +1444,9 @@ if active_tab == "Edit":
 
                                     top_comment = _build_link_cta(word, full_link)
                                     _apply_top_comment_to_caption(row, row_num, speaker_name, top_comment)
-                                    _close_workspace_menu(row_num)
-                                    st.session_state.pop(word_key, None)
-                                    st.session_state.pop(link_key, None)
+                                    _close_workspace_menu(row)
+                                    st.session_state.pop(link_word_key, None)
+                                    st.session_state.pop(link_url_key, None)
                                     st.session_state["workspace_success"] = f"Row {row_num}: link CTA saved to generated caption."
                                     _rerun_workspace("Edit")
                             else:
@@ -1438,40 +1459,40 @@ if active_tab == "Edit":
                                 width="stretch",
                             ):
                                 try:
-                                    _delete_workspace_row(row_num)
+                                    _delete_workspace_row(row)
                                 except Exception as e:
                                     st.session_state["workspace_error"] = f"Row {row_num}: could not delete row - {describe_error(e)}"
                                 else:
                                     st.session_state["workspace_success"] = f"Row {row_num}: deleted from the sheet."
-                                _close_workspace_menu(row_num)
+                                _close_workspace_menu(row)
                                 _rerun_workspace("Edit")
 
                     st.text_input(
                         "Speaker Name",
                         value=speaker_name,
-                        key=f"workspace_speaker_{row_num}",
+                        key=speaker_key,
                         placeholder="Enter name",
                     )
                     if _is_reel_url(url):
                         pending_transcribe_resets = st.session_state.setdefault("workspace_transcribe_reset_rows", [])
-                        if row_num in pending_transcribe_resets:
-                            st.session_state.pop(f"workspace_transcribe_{row_num}", None)
+                        if transcribe_key in pending_transcribe_resets:
+                            st.session_state.pop(transcribe_key, None)
                             st.session_state["workspace_transcribe_reset_rows"] = [
-                                pending for pending in pending_transcribe_resets if pending != row_num
+                                pending for pending in pending_transcribe_resets if pending != transcribe_key
                             ]
                         st.checkbox(
                             "Check to transcribe",
-                            value=bool(st.session_state.get(f"workspace_transcribe_{row_num}", False)),
-                            key=f"workspace_transcribe_{row_num}",
+                            value=bool(st.session_state.get(transcribe_key, False)),
+                            key=transcribe_key,
                         )
-                    if st.session_state.get(f"workspace_speaker_{row_num}", speaker_name).strip() != (speaker_name or "").strip():
+                    if st.session_state.get(speaker_key, speaker_name).strip() != (speaker_name or "").strip():
                         if st.button(
                             "Update",
                             key=f"workspace_update_{row_num}",
                             type="primary",
                             width="stretch",
                         ):
-                            current_speaker = st.session_state.get(f"workspace_speaker_{row_num}", speaker_name).strip()
+                            current_speaker = st.session_state.get(speaker_key, speaker_name).strip()
                             update_metadata(
                                 GOOGLE_SHEET_ID,
                                 row_num,
@@ -1487,7 +1508,7 @@ if active_tab == "Edit":
                     if url:
                         st.link_button("Open in Instagram", url, width="stretch")
 
-                    transcript_warning = st.session_state.get(f"workspace_transcript_warning_{row_num}")
+                    transcript_warning = st.session_state.get(warning_key)
                     if transcript_warning:
                         size_label = _format_bytes(transcript_warning["size_bytes"])
                         threshold_label = _format_bytes(transcript_warning["threshold_bytes"])
@@ -1503,7 +1524,7 @@ if active_tab == "Edit":
                                 type="primary",
                                 width="stretch",
                             ):
-                                st.session_state.pop(f"workspace_transcript_warning_{row_num}", None)
+                                st.session_state.pop(warning_key, None)
                                 _queue_workspace_action(row_num, "transcript")
                                 _rerun_workspace("Edit")
                         with warning_cols[1]:
@@ -1512,7 +1533,7 @@ if active_tab == "Edit":
                                 key=f"workspace_warning_download_{row_num}",
                                 width="stretch",
                             ):
-                                st.session_state.pop(f"workspace_transcript_warning_{row_num}", None)
+                                st.session_state.pop(warning_key, None)
                                 _queue_workspace_action(row_num, "download")
                                 _rerun_workspace("Edit")
 
@@ -1549,11 +1570,11 @@ if active_tab == "Edit":
                 row_num = row["row_number"]
                 url = row["Instagram URL"]
                 label = url[:60] + "..." if len(url) > 60 else url
-                current_context = st.session_state.get(f"workspace_context_{row_num}", row.get("Caption Context", "")).strip()
-                current_top = st.session_state.get(f"workspace_top_{row_num}", row.get("Top Comment", "")).strip()
-                current_speaker = st.session_state.get(f"workspace_speaker_{row_num}", row.get("Speaker Name", "")).strip()
-                current_hashtags = st.session_state.get(f"workspace_hashtags_{row_num}", row.get("Required Hashtags", "")).strip()
-                should_transcribe = bool(st.session_state.get(f"workspace_transcribe_{row_num}", False))
+                current_context = st.session_state.get(_workspace_key(row, "context"), row.get("Caption Context", "")).strip()
+                current_top = st.session_state.get(_workspace_key(row, "top"), row.get("Top Comment", "")).strip()
+                current_speaker = st.session_state.get(_workspace_key(row, "speaker"), row.get("Speaker Name", "")).strip()
+                current_hashtags = st.session_state.get(_workspace_key(row, "hashtags"), row.get("Required Hashtags", "")).strip()
+                should_transcribe = bool(st.session_state.get(_workspace_key(row, "transcribe"), False))
                 row_for_caption = dict(row)
                 row_for_caption["Caption Context"] = current_context
                 row_for_caption["Top Comment"] = current_top
@@ -1590,7 +1611,7 @@ if active_tab == "Edit":
                         status_box.update(label=f"Row {row_num}: {status_value}", state="error")
                     else:
                         if should_transcribe and _is_reel_url(url):
-                            _mark_transcribe_checkbox_for_reset(row_num)
+                            _mark_transcribe_checkbox_for_reset(row)
                         status_box.update(label=f"Row {row_num}: caption generated", state="complete")
 
                 progress.progress((i + 1) / len(ingested_rows))
