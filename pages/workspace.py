@@ -1038,7 +1038,7 @@ if active_tab == "Actions":
     button_area = st.container()
     results_area = st.container()
 
-    mode = st.session_state.get("workspace_home_mode", MODE_OPTIONS[0])
+    mode = st.session_state.get("workspace_home_mode", "Generate headline")
     org_hashtag = st.session_state.get("workspace_org_hashtag", "")
     with settings_area:
         mode = st.selectbox(
