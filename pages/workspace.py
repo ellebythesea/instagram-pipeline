@@ -344,6 +344,19 @@ def _build_schedule_labels(rows: list[dict], start_day: str, start_time: dt_time
     return labels
 
 
+def _last_scheduled_time_label(rows: list[dict]) -> str:
+    scheduled_rows = sorted(
+        [
+            row for row in rows
+            if (row.get("Scheduled Time", "") or "").strip()
+        ],
+        key=lambda row: row.get("row_number", 0),
+    )
+    if not scheduled_rows:
+        return ""
+    return (scheduled_rows[-1].get("Scheduled Time", "") or "").strip()
+
+
 def _fetch_post_data(url: str) -> dict:
     if _is_reel_url(url):
         return process_reel_url(url, include_transcript=False)
@@ -1611,6 +1624,13 @@ if active_tab == "Edit":
         if queue:
             st.markdown(
                 f'<div class="workspace-action-note">{len(queue)} queued action(s) waiting to run.</div>',
+                unsafe_allow_html=True,
+            )
+
+        last_scheduled_time = _last_scheduled_time_label(editor_rows)
+        if last_scheduled_time:
+            st.markdown(
+                f'<div class="workspace-plain-copy-text">Last scheduled time: {html.escape(last_scheduled_time)}</div>',
                 unsafe_allow_html=True,
             )
 
