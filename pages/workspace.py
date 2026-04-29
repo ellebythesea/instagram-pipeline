@@ -56,6 +56,7 @@ update_caption = sheet_ops.update_caption
 update_caption_context = sheet_ops.update_caption_context
 update_ingest_result = sheet_ops.update_ingest_result
 update_metadata = sheet_ops.update_metadata
+update_scheduled_times = sheet_ops.update_scheduled_times
 update_transcript = sheet_ops.update_transcript
 delete_sheet_row = sheet_ops.delete_row
 
@@ -1188,14 +1189,7 @@ if active_tab == "Edit":
             key="workspace_schedule_suffix",
         )
     with schedule_cols[4]:
-        if st.button("Set", key="workspace_schedule_set", type="primary", width="stretch"):
-            st.session_state["workspace_schedule_applied_day"] = st.session_state.get("workspace_schedule_day", default_day)
-            st.session_state["workspace_schedule_applied_time"] = _time_from_parts(
-                int(st.session_state.get("workspace_schedule_hour", default_hour)),
-                int(st.session_state.get("workspace_schedule_minute", default_minute)),
-                st.session_state.get("workspace_schedule_suffix", default_suffix),
-            )
-            _rerun_workspace("Edit")
+        schedule_apply_requested = st.button("Set", key="workspace_schedule_set", type="primary", width="stretch")
 
     try:
         pending_edit_rows = _run_with_sheet_quota_countdown(
@@ -1235,11 +1229,30 @@ if active_tab == "Edit":
     if not editor_rows:
         st.info("No rows yet. Add a link on Actions or process new rows on Data.")
     else:
-        schedule_labels = {}
-        applied_day = st.session_state.get("workspace_schedule_applied_day")
-        applied_time = st.session_state.get("workspace_schedule_applied_time")
-        if applied_day and applied_time:
-            schedule_labels = _build_schedule_labels(editor_rows, applied_day, applied_time)
+        if schedule_apply_requested:
+            start_day = st.session_state.get("workspace_schedule_day", default_day)
+            start_time = _time_from_parts(
+                int(st.session_state.get("workspace_schedule_hour", default_hour)),
+                int(st.session_state.get("workspace_schedule_minute", default_minute)),
+                st.session_state.get("workspace_schedule_suffix", default_suffix),
+            )
+            unscheduled_rows = [
+                row for row in editor_rows
+                if not (row.get("Scheduled Time", "") or "").strip()
+            ]
+            assignments = _build_schedule_labels(unscheduled_rows, start_day, start_time)
+            if assignments:
+                try:
+                    update_scheduled_times(GOOGLE_SHEET_ID, assignments)
+                except Exception as e:
+                    st.session_state["workspace_error"] = f"Could not save schedule: {describe_error(e)}"
+                else:
+                    row_word = "row" if len(assignments) == 1 else "rows"
+                    st.session_state["workspace_success"] = f"Set schedule for {len(assignments)} {row_word}."
+            else:
+                st.session_state["workspace_success"] = "All visible rows already have a scheduled time."
+            _rerun_workspace("Edit")
+
         st.caption("Rows stay here until you delete them from the sheet.")
         for row in editor_rows:
             row_num = row["row_number"]
@@ -1267,7 +1280,7 @@ if active_tab == "Edit":
                 with top_right:
                     menu_label = "Photo run" if not _is_reel_url(url) else "Transcribe"
                     title_col, menu_col = st.columns([12, 1], vertical_alignment="center")
-                    schedule_suffix = schedule_labels.get(row_num, "")
+                    schedule_suffix = (row.get("Scheduled Time", "") or "").strip()
                     status_line = f"Row {row_num} · {media_type or 'pending'} · {status or 'blank'}"
                     if schedule_suffix:
                         status_line = f"{status_line} · {schedule_suffix}"

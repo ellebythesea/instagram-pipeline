@@ -9,7 +9,7 @@ Sheet layout:
   G  Thumbnail Drive Link
   H  Original Caption   I  Transcript         J  Top Comment
   K  Speaker Name       L  Required Hashtags  M  Footer
-  N  Status             O  Caption Context
+  N  Status             O  Caption Context   P  Scheduled Time
 """
 
 import json
@@ -43,6 +43,7 @@ _EXPECTED_HEADERS = [
     "Footer",
     "Status",
     "Caption Context",
+    "Scheduled Time",
 ]
 
 _ROWS_CACHE_TTL_SECONDS = 10
@@ -104,7 +105,7 @@ def _ensure_headers(sheet_id: str, ws: gspread.Worksheet) -> None:
     if normalized == _EXPECTED_HEADERS:
         _headers_checked.add(cache_key)
         return
-    _with_backoff(ws.update, "A1:O1", [_EXPECTED_HEADERS])
+    _with_backoff(ws.update, "A1:P1", [_EXPECTED_HEADERS])
     _headers_checked.add(cache_key)
 
 
@@ -217,6 +218,16 @@ def update_caption_context(sheet_id: str, row_number: int, caption_context: str)
     """Write caption context to col O for a single row."""
     ws = _worksheet(sheet_id)
     _with_backoff(ws.update, f"O{row_number}", [[caption_context]])
+    _invalidate_rows_cache(sheet_id)
+
+
+def update_scheduled_times(sheet_id: str, assignments: dict[int, str]) -> None:
+    """Write scheduled time values to col P for multiple rows."""
+    if not assignments:
+        return
+    ws = _worksheet(sheet_id)
+    for row_number, scheduled_time in assignments.items():
+        _with_backoff(ws.update, f"P{row_number}", [[scheduled_time]])
     _invalidate_rows_cache(sheet_id)
 
 
