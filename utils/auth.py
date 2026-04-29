@@ -27,13 +27,13 @@ def _cookie_value() -> str:
 
 
 def _set_auth_cookie() -> None:
-    expires_at = dt.datetime.utcnow() + dt.timedelta(days=30)
+    expires_at = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=30)
     _cookie_manager().set(
         COOKIE_NAME,
         _cookie_value(),
         expires_at=expires_at,
         path="/",
-        same_site="strict",
+        same_site="lax",
     )
 
 
@@ -58,7 +58,7 @@ def require_auth() -> bool:
         if password == APP_PASSWORD:
             st.session_state[SESSION_KEY] = True
             _set_auth_cookie()
-            st.rerun()
+            return True
         else:
             st.error("Incorrect password.")
 
