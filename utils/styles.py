@@ -6,7 +6,7 @@ import streamlit as st
 
 _BASE_CSS = """
 .stApp [data-testid="stAppViewContainer"] {
-    padding-bottom: 9rem;
+    padding-bottom: 13rem;
 }
 """
 
