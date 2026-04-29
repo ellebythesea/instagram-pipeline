@@ -209,7 +209,11 @@ def generate_caption(
 
         sys = SYS_PROMPT
         if speaker_name:
-            sys += f" The speaker in the video is {speaker_name}."
+            sys += (
+                f" The speaker in the video is {speaker_name}. Mention their name once, then "
+                "refer to them with he, she, or they. If gender is unclear, use they. "
+                "Do not repeat their name multiple times."
+            )
         if extra_prompt:
             sys += f" Additional instructions: {extra_prompt.strip()}"
 

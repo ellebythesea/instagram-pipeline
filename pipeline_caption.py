@@ -98,7 +98,9 @@ def generate_row_caption(row: dict) -> str:
 
     if row.get("Speaker Name", "").strip():
         user_parts.append(
-            f"The speaker in this transcript is: {row['Speaker Name'].strip()}. Reference them by name."
+            f"The speaker in this transcript is: {row['Speaker Name'].strip()}. "
+            "Mention their name once, then refer to them with he, she, or they. "
+            "If gender is unclear, use they. Do not repeat their name multiple times."
         )
 
     response = client.chat.completions.create(
