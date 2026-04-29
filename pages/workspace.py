@@ -1156,6 +1156,7 @@ if active_tab == "Edit":
     st.session_state.setdefault("workspace_schedule_minute", default_minute)
     st.session_state.setdefault("workspace_schedule_suffix", default_suffix)
 
+    st.markdown('<div class="workspace-schedule-anchor"></div>', unsafe_allow_html=True)
     schedule_cols = st.columns([1, 0.7, 0.7, 0.7, 0.4], vertical_alignment="bottom")
     with schedule_cols[0]:
         st.selectbox(

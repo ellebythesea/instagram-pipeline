@@ -258,8 +258,19 @@ div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-test
 }
 .workspace-edit-main-anchor,
 .workspace-action-anchor,
+.workspace-schedule-anchor,
 .workspace-generate-anchor {
     display: none;
+}
+div[data-testid="stVerticalBlock"]:has(> div.workspace-schedule-anchor) [data-testid="stHorizontalBlock"] {
+    display: grid;
+    grid-template-columns: minmax(72px, 1fr) 75px 75px 75px 75px;
+    align-items: end;
+    column-gap: 0.5rem;
+    row-gap: 0;
+}
+div[data-testid="stVerticalBlock"]:has(> div.workspace-schedule-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"] {
+    min-width: 0;
 }
 div[data-testid="stVerticalBlock"]:has(> div.workspace-generate-anchor) {
     position: fixed;
@@ -290,6 +301,15 @@ div[data-testid="stVerticalBlock"]:has(> div.workspace-generate-anchor) {
         display: grid;
         grid-template-columns: minmax(0, 1fr) 4rem 4rem;
         column-gap: 0.75rem;
+    }
+    div[data-testid="stVerticalBlock"]:has(> div.workspace-schedule-anchor) {
+        overflow-x: auto;
+    }
+    div[data-testid="stVerticalBlock"]:has(> div.workspace-schedule-anchor) [data-testid="stHorizontalBlock"] {
+        min-width: 392px;
+        grid-template-columns: 72px 75px 75px 75px 75px;
+        column-gap: 0.4rem;
+        flex-wrap: nowrap;
     }
 }
 """
