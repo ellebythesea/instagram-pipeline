@@ -1144,7 +1144,7 @@ if active_tab == "Actions":
                 headline_tabs = st.tabs(["Headline 1", "Headline 2", "Headline 3", "Caption"])
                 for tab_idx, headline in enumerate(item.get("headlines", [])[:3]):
                     with headline_tabs[tab_idx]:
-                        _copy_block(f"headline {tab_idx + 1}", headline, f"workspace_home_headline_{idx}_{tab_idx}")
+                        st.code(headline or "(none)", language=None)
                 with headline_tabs[3]:
                     st.code(item.get("caption", "") or "(none)", language=None)
 
