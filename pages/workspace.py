@@ -544,7 +544,11 @@ def _copy_tabs(row_num: int, generated: str, original_caption: str, transcript: 
     with text_tabs[0]:
         _tab_copy_preview(generated)
     with text_tabs[1]:
-        _tab_copy_preview(_build_footered_caption(original_caption, username) if original_caption else "")
+        original_with_username = original_caption.strip()
+        cleaned_username = (username or "").strip().lstrip("@")
+        if cleaned_username and original_with_username:
+            original_with_username = f"@{cleaned_username}: {original_with_username}"
+        _tab_copy_preview(_build_footered_caption(original_with_username, username) if original_with_username else "")
     with text_tabs[2]:
         _tab_copy_preview(transcript)
 
