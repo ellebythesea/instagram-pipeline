@@ -49,6 +49,8 @@ _EXPECTED_HEADERS = [
 _ROWS_CACHE_TTL_SECONDS = 10
 _rows_cache: dict[str, tuple[float, list[dict]]] = {}
 _headers_checked: set[tuple[str, str]] = set()
+_METADATA_SHEET_TITLE = "__workspace_meta__"
+_LAST_SCHEDULED_TIME_KEY = "last_scheduled_time"
 
 
 def _get_client() -> gspread.Client:
@@ -58,6 +60,10 @@ def _get_client() -> gspread.Client:
     else:
         creds = Credentials.from_service_account_info(json.loads(creds_src), scopes=_SCOPES)
     return gspread.authorize(creds)
+
+
+def _workbook(sheet_id: str):
+    return _get_client().open_by_key(sheet_id)
 
 
 def _with_backoff(fn, *args, **kwargs):
@@ -76,7 +82,7 @@ def _with_backoff(fn, *args, **kwargs):
 
 
 def _worksheet(sheet_id: str) -> gspread.Worksheet:
-    workbook = _get_client().open_by_key(sheet_id)
+    workbook = _workbook(sheet_id)
 
     if GOOGLE_WORKSHEET_NAME:
         ws = workbook.worksheet(GOOGLE_WORKSHEET_NAME)
@@ -92,6 +98,16 @@ def _worksheet(sheet_id: str) -> gspread.Worksheet:
 
     ws = workbook.sheet1
     _ensure_headers(sheet_id, ws)
+    return ws
+
+
+def _metadata_worksheet(sheet_id: str) -> gspread.Worksheet:
+    workbook = _workbook(sheet_id)
+    try:
+        ws = workbook.worksheet(_METADATA_SHEET_TITLE)
+    except gspread.WorksheetNotFound:
+        ws = workbook.add_worksheet(title=_METADATA_SHEET_TITLE, rows=10, cols=2)
+        _with_backoff(ws.update, "A1:B1", [["key", "value"]])
     return ws
 
 
@@ -229,6 +245,27 @@ def update_scheduled_times(sheet_id: str, assignments: dict[int, str]) -> None:
     for row_number, scheduled_time in assignments.items():
         _with_backoff(ws.update, f"P{row_number}", [[scheduled_time]])
     _invalidate_rows_cache(sheet_id)
+
+
+def get_last_scheduled_time(sheet_id: str) -> str:
+    """Return the last saved workspace scheduled time from metadata."""
+    ws = _metadata_worksheet(sheet_id)
+    records = _with_backoff(ws.get_all_records, default_blank="")
+    for record in records:
+        if (record.get("key", "") or "").strip() == _LAST_SCHEDULED_TIME_KEY:
+            return (record.get("value", "") or "").strip()
+    return ""
+
+
+def update_last_scheduled_time(sheet_id: str, scheduled_time: str) -> None:
+    """Persist the last assigned workspace scheduled time in metadata."""
+    ws = _metadata_worksheet(sheet_id)
+    records = _with_backoff(ws.get_all_records, default_blank="")
+    for index, record in enumerate(records, start=2):
+        if (record.get("key", "") or "").strip() == _LAST_SCHEDULED_TIME_KEY:
+            _with_backoff(ws.update, f"B{index}", [[scheduled_time]])
+            return
+    _with_backoff(ws.append_row, [_LAST_SCHEDULED_TIME_KEY, scheduled_time], value_input_option="USER_ENTERED")
 
 
 def update_metadata(

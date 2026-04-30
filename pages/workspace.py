@@ -60,6 +60,8 @@ update_metadata = sheet_ops.update_metadata
 update_scheduled_times = sheet_ops.update_scheduled_times
 update_transcript = sheet_ops.update_transcript
 delete_sheet_row = sheet_ops.delete_row
+get_last_scheduled_time = sheet_ops.get_last_scheduled_time
+update_last_scheduled_time = sheet_ops.update_last_scheduled_time
 
 
 def append_link_rows(sheet_id: str, urls: list[str], required_hashtags: str = "") -> None:
@@ -368,6 +370,16 @@ def _last_scheduled_time_label(rows: list[dict]) -> str:
     if not scheduled_rows:
         return ""
     return (scheduled_rows[-1].get("Scheduled Time", "") or "").strip()
+
+
+def _persisted_last_scheduled_time_label(rows: list[dict]) -> str:
+    row_label = _last_scheduled_time_label(rows)
+    if row_label:
+        return row_label
+    try:
+        return get_last_scheduled_time(GOOGLE_SHEET_ID)
+    except Exception:
+        return ""
 
 
 def _fetch_post_data(url: str) -> dict:
@@ -1260,6 +1272,8 @@ if active_tab == "Edit":
         st.error(f"Could not load edit rows: {describe_error(e)}")
         editor_rows = []
 
+    last_scheduled_time = _persisted_last_scheduled_time_label(editor_rows)
+
     if not editor_rows:
         st.info("No rows yet. Add a link on Actions or process new rows on Data.")
     else:
@@ -1274,6 +1288,8 @@ if active_tab == "Edit":
             assignments = _build_schedule_labels(schedule_rows, start_day, start_time)
             try:
                 update_scheduled_times(GOOGLE_SHEET_ID, assignments)
+                if assignments:
+                    update_last_scheduled_time(GOOGLE_SHEET_ID, list(assignments.values())[-1])
             except Exception as e:
                 st.session_state["workspace_error"] = f"Could not save schedule: {describe_error(e)}"
             else:
@@ -1635,12 +1651,11 @@ if active_tab == "Edit":
                 unsafe_allow_html=True,
             )
 
-        last_scheduled_time = _last_scheduled_time_label(editor_rows)
-        if last_scheduled_time:
-            st.markdown(
-                f'<div class="workspace-plain-copy-text">Last scheduled time: {html.escape(last_scheduled_time)}</div>',
-                unsafe_allow_html=True,
-            )
+    if last_scheduled_time:
+        st.markdown(
+            f'<div class="workspace-plain-copy-text">Last scheduled time: {html.escape(last_scheduled_time)}</div>',
+            unsafe_allow_html=True,
+        )
 
 if active_tab == "Data":
     st.caption("Data view for the Google Sheet plus batch ingest.")
