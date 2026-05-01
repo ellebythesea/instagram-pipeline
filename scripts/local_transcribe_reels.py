@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Locally transcribe reel rows that are missing transcripts.
+"""Locally transcribe reel rows that are missing transcripts and regenerate captions.
 
 Usage:
     python scripts/local_transcribe_reels.py
@@ -153,11 +153,6 @@ def main() -> int:
         default=0,
         help="Optional max number of rows to process.",
     )
-    parser.add_argument(
-        "--regenerate-captions",
-        action="store_true",
-        help="Also regenerate each row's caption after writing the transcript.",
-    )
     args = parser.parse_args()
 
     media_root = Path(args.media_dir).expanduser()
@@ -189,9 +184,8 @@ def main() -> int:
             local_path = _find_local_media_path(media_root, filename)
             transcript = transcribe(str(local_path))
             update_transcript(GOOGLE_SHEET_ID, row_num, transcript)
-            if args.regenerate_captions:
-                _update_caption_from_transcript(row, transcript)
-            print(f"Row {row_num}: transcribed {filename} for {url}")
+            _update_caption_from_transcript(row, transcript)
+            print(f"Row {row_num}: transcribed and regenerated caption for {filename} ({url})")
         except Exception as exc:
             print(f"Row {row_num}: failed - {exc}")
 

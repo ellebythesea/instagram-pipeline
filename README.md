@@ -91,12 +91,7 @@ That script:
 - finds the matching synced local video in your Drive folder
 - runs a local Whisper backend
 - writes the transcript back to the Google Sheet
-
-If you also want it to regenerate captions after writing transcripts:
-
-```bash
-python scripts/local_transcribe_reels.py --regenerate-captions
-```
+- regenerates the caption from that transcript
 
 ### Local transcription dependency
 
@@ -173,10 +168,4 @@ Run local reel transcription for all blank-transcript reel rows:
 
 ```bash
 python scripts/local_transcribe_reels.py
-```
-
-Run local reel transcription and regenerate captions too:
-
-```bash
-python scripts/local_transcribe_reels.py --regenerate-captions
 ```
