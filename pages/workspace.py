@@ -60,8 +60,21 @@ update_metadata = sheet_ops.update_metadata
 update_scheduled_times = sheet_ops.update_scheduled_times
 update_transcript = sheet_ops.update_transcript
 delete_sheet_row = sheet_ops.delete_row
-get_last_scheduled_times = sheet_ops.get_last_scheduled_times
-update_last_scheduled_times = sheet_ops.update_last_scheduled_times
+if hasattr(sheet_ops, "get_last_scheduled_times"):
+    get_last_scheduled_times = sheet_ops.get_last_scheduled_times
+else:
+    def get_last_scheduled_times(sheet_id: str) -> list[str]:
+        if hasattr(sheet_ops, "get_last_scheduled_time"):
+            value = sheet_ops.get_last_scheduled_time(sheet_id)
+            return [value] if value else []
+        return []
+
+if hasattr(sheet_ops, "update_last_scheduled_times"):
+    update_last_scheduled_times = sheet_ops.update_last_scheduled_times
+else:
+    def update_last_scheduled_times(sheet_id: str, scheduled_times: list[str]) -> None:
+        if hasattr(sheet_ops, "update_last_scheduled_time") and scheduled_times:
+            sheet_ops.update_last_scheduled_time(sheet_id, scheduled_times[-1])
 
 
 def append_link_rows(sheet_id: str, urls: list[str], required_hashtags: str = "") -> None:
