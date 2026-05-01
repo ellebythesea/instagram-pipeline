@@ -629,7 +629,9 @@ def _copy_tabs(
     source_url: str = "",
     is_instagram: bool = True,
 ) -> None:
-    tab_labels = ["Caption", "Original caption", "Transcript"]
+    tab_labels = ["Caption", "Original caption"]
+    if is_instagram:
+        tab_labels.append("Transcript")
     media_links = [link.strip() for link in (media_link or "").split(",") if link.strip()]
     if source_url:
         tab_labels.append("Link")
@@ -648,9 +650,11 @@ def _copy_tabs(
             _build_footered_caption(original_with_username, footer_username, required_hashtags)
             if original_with_username else ""
         )
-    with text_tabs[2]:
-        _tab_copy_preview(transcript)
-    next_tab_index = 3
+    next_tab_index = 2
+    if is_instagram:
+        with text_tabs[next_tab_index]:
+            _tab_copy_preview(transcript)
+        next_tab_index += 1
     if source_url:
         with text_tabs[next_tab_index]:
             open_label = "Open Instagram link" if is_instagram else "Open source link"
