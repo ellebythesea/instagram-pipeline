@@ -21,7 +21,7 @@ import streamlit as st
 
 from article_source import fetch_article_source
 from config import GOOGLE_SHEET_ID, OPENAI_API_KEY
-from ingest_helpers import upload_media_bundle, upload_thumbnail_only
+from ingest_helpers import upload_media_bundle
 from pipeline_caption import generate_row_caption
 from post_scraper import process_url as process_post_url
 from reel_scraper import process_url as process_reel_url
@@ -629,8 +629,6 @@ def _copy_tabs(
     if is_instagram:
         tab_labels.append("Transcript")
     media_links = [link.strip() for link in (media_link or "").split(",") if link.strip()]
-    if source_url:
-        tab_labels.append("Link")
     if media_links:
         tab_labels.append("Media")
     text_tabs = st.tabs(tab_labels)
@@ -650,12 +648,6 @@ def _copy_tabs(
     if is_instagram:
         with text_tabs[next_tab_index]:
             _tab_copy_preview(transcript)
-        next_tab_index += 1
-    if source_url:
-        with text_tabs[next_tab_index]:
-            open_label = "Open Instagram link" if is_instagram else "Open source link"
-            st.link_button(open_label, source_url, width="stretch")
-            st.code(source_url, language=None)
         next_tab_index += 1
     if media_links:
         with text_tabs[next_tab_index]:
@@ -831,12 +823,10 @@ def _ingest_row(row: dict) -> dict:
             }
         if _is_reel_url(url):
             data = process_reel_url(url, include_transcript=False)
-            uploaded = upload_thumbnail_only(data)
-            tmp_dir = uploaded["tmp_dir"]
         else:
             data = process_post_url(url)
-            uploaded = upload_media_bundle(data)
-            tmp_dir = uploaded["tmp_dir"]
+        uploaded = upload_media_bundle(data)
+        tmp_dir = uploaded["tmp_dir"]
 
         return {
             "username": data["username"],
