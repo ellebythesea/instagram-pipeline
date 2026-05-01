@@ -516,7 +516,7 @@ def _build_link_cta(word: str, link: str) -> str:
 
 
 def _build_read_cta(link: str) -> str:
-    return f"Comment READ (on instagram) and we will DM you the link to {link.strip()}"
+    return f"Comment READ (on instagram) and we will DM you the link to [{link.strip()}]"
 
 
 def _build_watch_cta(username: str, link: str) -> str:
