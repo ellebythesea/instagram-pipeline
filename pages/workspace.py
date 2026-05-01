@@ -19,6 +19,7 @@ import openai
 import pandas as pd
 import streamlit as st
 
+from article_source import fetch_article_source
 from config import GOOGLE_SHEET_ID, OPENAI_API_KEY
 from ingest_helpers import upload_media_bundle, upload_thumbnail_only
 from pipeline_caption import generate_row_caption
@@ -110,6 +111,10 @@ def update_status(sheet_id: str, row_number: int, status: str) -> None:
 def _is_reel_url(url: str) -> bool:
     lowered = (url or "").lower()
     return "/reel/" in lowered or "/reels/" in lowered
+
+
+def _is_instagram_url(url: str) -> bool:
+    return "instagram.com/" in (url or "").lower()
 
 
 def _format_bytes(num_bytes: int) -> str:
@@ -406,6 +411,26 @@ def _fetch_post_data(url: str) -> dict:
     return process_post_url(url)
 
 
+def _fetch_link_data(url: str) -> dict:
+    if _is_instagram_url(url):
+        post = _fetch_post_data(url)
+        return {
+            "url": url,
+            "username": post.get("username", ""),
+            "source_text": (post.get("original_caption") or "").strip(),
+            "is_instagram": True,
+        }
+
+    article = fetch_article_source(url)
+    return {
+        "url": article.get("url", url),
+        "username": "",
+        "display_name": article.get("domain", ""),
+        "source_text": (article.get("source_text") or "").strip(),
+        "is_instagram": False,
+    }
+
+
 def _generate_headlines(source_text: str) -> list[str]:
     response = client.chat.completions.create(
         model="gpt-4o",
@@ -488,6 +513,10 @@ def _clean_instagram_url(link: str) -> str:
 
 def _build_link_cta(word: str, link: str) -> str:
     return f"Comment {word.strip().upper()} (on instagram) and we will DM you the link to {link.strip()}"
+
+
+def _build_read_cta(link: str) -> str:
+    return f"Comment READ (on instagram) and we will DM you the link to {link.strip()}"
 
 
 def _build_watch_cta(username: str, link: str) -> str:
@@ -1026,36 +1055,46 @@ def _run_home_mode(mode: str, urls: list[str], org_hashtag: str) -> tuple[str, l
 
     for url in urls:
         if mode == "Generate headline":
-            post = _fetch_post_data(url)
-            source_text = (post.get("original_caption") or "").strip()
+            source = _fetch_link_data(url)
+            source_text = source.get("source_text", "").strip()
             if not source_text:
-                raise ValueError(f"{url}: Apify did not return a caption.")
+                raise ValueError(f"{url}: could not extract source text.")
+            footer_username = source.get("username", "") if source.get("is_instagram", False) else ""
+            final_caption = _build_footered_caption(source_text, footer_username)
+            if not source.get("is_instagram", False):
+                final_caption = f"{_build_read_cta(source['url'])}\n\n{final_caption}"
             results.append(
                 {
-                    "url": url,
-                    "username": post.get("username", ""),
+                    "url": source["url"],
+                    "username": source.get("username", ""),
+                    "display_name": source.get("display_name", ""),
+                    "is_instagram": source.get("is_instagram", False),
                     "headlines": _generate_headlines(source_text),
-                    "caption": _build_footered_caption(source_text, post.get("username", "")),
+                    "caption": final_caption,
                     "source_caption": source_text,
                 }
             )
         elif mode == "Caption this":
-            post = _fetch_post_data(url)
+            source = _fetch_link_data(url)
             row = {
-                "Instagram URL": url,
-                "Source Username": post.get("username", ""),
-                "Original Caption": (post.get("original_caption") or "").strip(),
+                "Instagram URL": source["url"],
+                "Source Username": source.get("username", "") if source.get("is_instagram", False) else "",
+                "Original Caption": source.get("source_text", "").strip(),
                 "Transcript": "",
                 "Caption Context": "",
                 "Speaker Name": "",
                 "Required Hashtags": tag_value,
-                "Top Comment": "",
+                "Top Comment": "" if source.get("is_instagram", False) else _build_read_cta(source["url"]),
             }
+            if not row["Original Caption"]:
+                raise ValueError(f"{url}: could not extract source text.")
             caption = generate_row_caption(row)
             results.append(
                 {
-                    "url": url,
-                    "username": post.get("username", ""),
+                    "url": source["url"],
+                    "username": source.get("username", ""),
+                    "display_name": source.get("display_name", ""),
+                    "is_instagram": source.get("is_instagram", False),
                     "caption": caption,
                     "source_caption": row["Original Caption"],
                 }
@@ -1118,8 +1157,8 @@ if active_tab == "Actions":
     home_notice = st.session_state.pop("workspace_home_notice", "")
 
     mode_help = {
-        "Generate headline": "Pull the Instagram caption, then return three headline options plus a footered caption.",
-        "Caption this": "Generate a caption directly from the Instagram caption using the selected hashtag preset.",
+        "Generate headline": "Pull source text from an Instagram post or article link, then return three headline options plus a footered caption.",
+        "Caption this": "Generate a caption directly from an Instagram post or article link using the selected hashtag preset.",
         "Download media": "Download the media and upload it to Drive without adding a row first.",
     }
     link_area = st.container()
@@ -1152,10 +1191,16 @@ if active_tab == "Actions":
 
     with link_area:
         links = _normalize_home_links(_ensure_home_links())
+        link_label = "Instagram Link" if mode in {"Add to sheet", "Download media"} else "Link"
+        link_placeholder = (
+            "https://www.instagram.com/p/... or /reel/..."
+            if mode in {"Add to sheet", "Download media"}
+            else "https://www.instagram.com/... or https://example.com/article"
+        )
         links[0] = st.text_input(
-            "Instagram Link",
+            link_label,
             value=links[0],
-            placeholder="https://www.instagram.com/p/... or /reel/...",
+            placeholder=link_placeholder,
             key="workspace_home_link_0",
         )
         normalized_links = _normalize_home_links(links)
@@ -1176,7 +1221,7 @@ if active_tab == "Actions":
         if submitted:
             links_to_process = _clean_home_links()
             if not links_to_process:
-                st.warning("Enter at least one Instagram link.")
+                st.warning(f"Enter at least one {link_label.lower()}.")
             elif mode == "Add to sheet":
                 try:
                     append_link_rows(
@@ -1211,8 +1256,10 @@ if active_tab == "Actions":
         if home_results and home_results.get("mode") == "Generate headline":
             for idx, item in enumerate(home_results.get("items", []), start=1):
                 st.caption(f"Result {idx}")
-                st.write(f"@{item.get('username') or 'unknown'}")
-                st.markdown(f"[Open Instagram link ↗]({item['url']})")
+                display_name = item.get("username") or item.get("display_name") or "unknown"
+                st.write(f"@{display_name}" if item.get("is_instagram", True) else display_name)
+                open_label = "Open Instagram link ↗" if item.get("is_instagram", True) else "Open source link ↗"
+                st.markdown(f"[{open_label}]({item['url']})")
                 headline_tabs = st.tabs(["Headline 1", "Headline 2", "Headline 3", "Caption"])
                 for tab_idx, headline in enumerate(item.get("headlines", [])[:3]):
                     with headline_tabs[tab_idx]:
@@ -1223,8 +1270,10 @@ if active_tab == "Actions":
         if home_results and home_results.get("mode") == "Caption this":
             for idx, item in enumerate(home_results.get("items", []), start=1):
                 st.caption(f"Caption {idx}")
-                st.write(f"@{item.get('username') or 'unknown'}")
-                st.markdown(f"[Open Instagram link ↗]({item['url']})")
+                display_name = item.get("username") or item.get("display_name") or "unknown"
+                st.write(f"@{display_name}" if item.get("is_instagram", True) else display_name)
+                open_label = "Open Instagram link ↗" if item.get("is_instagram", True) else "Open source link ↗"
+                st.markdown(f"[{open_label}]({item['url']})")
                 _copy_block("caption", item.get("caption", ""), f"workspace_home_caption_only_{idx}")
 
         if home_results and home_results.get("mode") == "Download media":
