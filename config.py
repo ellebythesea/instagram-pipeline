@@ -1,14 +1,63 @@
 # config.py
+from __future__ import annotations
+
 import os
-import streamlit as st
+from pathlib import Path
+
+
+try:
+    import tomllib
+except ImportError:  # pragma: no cover
+    tomllib = None
+
+try:
+    import streamlit as st
+except ImportError:  # Local scripts may not have Streamlit installed.
+    st = None
+
+try:
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover
+    load_dotenv = None
+
+
+REPO_ROOT = Path(__file__).resolve().parent
+
+if load_dotenv:
+    load_dotenv(REPO_ROOT / ".env")
+
+
+def _load_local_toml_secrets() -> dict[str, str]:
+    if tomllib is None:
+        return {}
+
+    secrets_paths = [
+        REPO_ROOT / ".streamlit" / "secrets.toml",
+        REPO_ROOT / ".streamlit" / "local_secrets.toml",
+    ]
+    for path in secrets_paths:
+        if path.exists():
+            with path.open("rb") as handle:
+                data = tomllib.load(handle)
+            return {str(key): value for key, value in data.items()}
+    return {}
+
+
+LOCAL_TOML_SECRETS = _load_local_toml_secrets()
 
 
 def _get_secret(key: str, default: str = "") -> str:
-    """Read a secret from Streamlit Cloud secrets first, then env vars."""
-    try:
-        return st.secrets[key]
-    except Exception:
-        return os.getenv(key, default)
+    """Read a secret from Streamlit, then local files, then env vars."""
+    if st is not None:
+        try:
+            return st.secrets[key]
+        except Exception:
+            pass
+
+    if key in LOCAL_TOML_SECRETS:
+        return LOCAL_TOML_SECRETS[key]
+
+    return os.getenv(key, default)
 
 
 OPENAI_API_KEY = _get_secret("OPENAI_API_KEY")
@@ -39,6 +88,7 @@ GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER = _get_secret("GOOGLE_DRIVE_SCREENSHOTS_SUBFO
 GOOGLE_OAUTH_CLIENT_JSON = _get_secret("GOOGLE_OAUTH_CLIENT_JSON")
 GOOGLE_OAUTH_TOKEN_JSON = _get_secret("GOOGLE_OAUTH_TOKEN_JSON")
 
+
 def _get_google_credentials_json() -> str:
     """Accept credentials as raw JSON or as a base64-encoded string."""
     raw = _get_secret("GOOGLE_SERVICE_ACCOUNT_JSON")
@@ -47,7 +97,9 @@ def _get_google_credentials_json() -> str:
     b64 = _get_secret("GOOGLE_CREDENTIALS_BASE64")
     if b64:
         import base64
+
         return base64.b64decode(b64).decode()
     return ""
+
 
 GOOGLE_SERVICE_ACCOUNT_JSON = _get_google_credentials_json()
