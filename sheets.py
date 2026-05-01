@@ -50,7 +50,7 @@ _ROWS_CACHE_TTL_SECONDS = 10
 _rows_cache: dict[str, tuple[float, list[dict]]] = {}
 _headers_checked: set[tuple[str, str]] = set()
 _METADATA_SHEET_TITLE = "__workspace_meta__"
-_LAST_SCHEDULED_TIME_KEY = "last_scheduled_time"
+_LAST_SCHEDULED_TIMES_KEY = "last_scheduled_times"
 
 
 def _get_client() -> gspread.Client:
@@ -247,25 +247,40 @@ def update_scheduled_times(sheet_id: str, assignments: dict[int, str]) -> None:
     _invalidate_rows_cache(sheet_id)
 
 
-def get_last_scheduled_time(sheet_id: str) -> str:
-    """Return the last saved workspace scheduled time from metadata."""
+def get_last_scheduled_times(sheet_id: str) -> list[str]:
+    """Return the last saved workspace scheduled times from metadata."""
     ws = _metadata_worksheet(sheet_id)
     records = _with_backoff(ws.get_all_records, default_blank="")
     for record in records:
-        if (record.get("key", "") or "").strip() == _LAST_SCHEDULED_TIME_KEY:
-            return (record.get("value", "") or "").strip()
-    return ""
+        key = (record.get("key", "") or "").strip()
+        if key not in {"last_scheduled_time", _LAST_SCHEDULED_TIMES_KEY}:
+            continue
+        raw_value = (record.get("value", "") or "").strip()
+        if not raw_value:
+            return []
+        if key == "last_scheduled_time":
+            return [raw_value]
+        try:
+            values = json.loads(raw_value)
+        except json.JSONDecodeError:
+            return [raw_value]
+        if isinstance(values, list):
+            return [str(value).strip() for value in values if str(value).strip()]
+        return [str(values).strip()] if str(values).strip() else []
+    return []
 
 
-def update_last_scheduled_time(sheet_id: str, scheduled_time: str) -> None:
-    """Persist the last assigned workspace scheduled time in metadata."""
+def update_last_scheduled_times(sheet_id: str, scheduled_times: list[str]) -> None:
+    """Persist the last assigned workspace scheduled times in metadata."""
     ws = _metadata_worksheet(sheet_id)
+    payload = json.dumps([value.strip() for value in scheduled_times if value.strip()])
     records = _with_backoff(ws.get_all_records, default_blank="")
     for index, record in enumerate(records, start=2):
-        if (record.get("key", "") or "").strip() == _LAST_SCHEDULED_TIME_KEY:
-            _with_backoff(ws.update, f"B{index}", [[scheduled_time]])
+        key = (record.get("key", "") or "").strip()
+        if key in {"last_scheduled_time", _LAST_SCHEDULED_TIMES_KEY}:
+            _with_backoff(ws.update, f"A{index}:B{index}", [[_LAST_SCHEDULED_TIMES_KEY, payload]])
             return
-    _with_backoff(ws.append_row, [_LAST_SCHEDULED_TIME_KEY, scheduled_time], value_input_option="USER_ENTERED")
+    _with_backoff(ws.append_row, [_LAST_SCHEDULED_TIMES_KEY, payload], value_input_option="USER_ENTERED")
 
 
 def update_metadata(

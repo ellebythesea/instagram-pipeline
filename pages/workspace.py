@@ -60,8 +60,8 @@ update_metadata = sheet_ops.update_metadata
 update_scheduled_times = sheet_ops.update_scheduled_times
 update_transcript = sheet_ops.update_transcript
 delete_sheet_row = sheet_ops.delete_row
-get_last_scheduled_time = sheet_ops.get_last_scheduled_time
-update_last_scheduled_time = sheet_ops.update_last_scheduled_time
+get_last_scheduled_times = sheet_ops.get_last_scheduled_times
+update_last_scheduled_times = sheet_ops.update_last_scheduled_times
 
 
 def append_link_rows(sheet_id: str, urls: list[str], required_hashtags: str = "") -> None:
@@ -359,7 +359,7 @@ def _build_schedule_labels(rows: list[dict], start_day: str, start_time: dt_time
     return labels
 
 
-def _last_scheduled_time_label(rows: list[dict]) -> str:
+def _last_scheduled_time_labels(rows: list[dict]) -> list[str]:
     scheduled_rows = sorted(
         [
             row for row in rows
@@ -368,18 +368,22 @@ def _last_scheduled_time_label(rows: list[dict]) -> str:
         key=lambda row: row.get("row_number", 0),
     )
     if not scheduled_rows:
-        return ""
-    return (scheduled_rows[-1].get("Scheduled Time", "") or "").strip()
+        return []
+    return [
+        (row.get("Scheduled Time", "") or "").strip()
+        for row in scheduled_rows[-3:]
+        if (row.get("Scheduled Time", "") or "").strip()
+    ]
 
 
-def _persisted_last_scheduled_time_label(rows: list[dict]) -> str:
-    row_label = _last_scheduled_time_label(rows)
-    if row_label:
-        return row_label
+def _persisted_last_scheduled_time_labels(rows: list[dict]) -> list[str]:
+    row_labels = _last_scheduled_time_labels(rows)
+    if row_labels:
+        return row_labels
     try:
-        return get_last_scheduled_time(GOOGLE_SHEET_ID)
+        return get_last_scheduled_times(GOOGLE_SHEET_ID)
     except Exception:
-        return ""
+        return []
 
 
 def _fetch_post_data(url: str) -> dict:
@@ -1272,7 +1276,7 @@ if active_tab == "Edit":
         st.error(f"Could not load edit rows: {describe_error(e)}")
         editor_rows = []
 
-    last_scheduled_time = _persisted_last_scheduled_time_label(editor_rows)
+    last_scheduled_times = _persisted_last_scheduled_time_labels(editor_rows)
 
     if not editor_rows:
         st.info("No rows yet. Add a link on Actions or process new rows on Data.")
@@ -1289,7 +1293,7 @@ if active_tab == "Edit":
             try:
                 update_scheduled_times(GOOGLE_SHEET_ID, assignments)
                 if assignments:
-                    update_last_scheduled_time(GOOGLE_SHEET_ID, list(assignments.values())[-1])
+                    update_last_scheduled_times(GOOGLE_SHEET_ID, list(assignments.values())[-3:])
             except Exception as e:
                 st.session_state["workspace_error"] = f"Could not save schedule: {describe_error(e)}"
             else:
@@ -1651,9 +1655,10 @@ if active_tab == "Edit":
                 unsafe_allow_html=True,
             )
 
-    if last_scheduled_time:
+    if last_scheduled_times:
+        schedule_summary = " · ".join(last_scheduled_times)
         st.markdown(
-            f'<div class="workspace-plain-copy-text">Last scheduled time: {html.escape(last_scheduled_time)}</div>',
+            f'<div class="workspace-plain-copy-text">Last scheduled entries: {html.escape(schedule_summary)}</div>',
             unsafe_allow_html=True,
         )
 
