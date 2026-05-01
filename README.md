@@ -1,106 +1,182 @@
-# Instagram Caption Generator
+# Instagram Pipeline
 
-Standalone Streamlit app that takes an Instagram reel/post URL, downloads the video, transcribes the audio, and generates a ready-to-post political caption with a footer containing the original Instagram caption and username.
+Streamlit workspace for:
 
-## Project Structure
+- adding Instagram posts, reels, and article links to a Google Sheet
+- processing rows into an editor
+- generating captions and headlines
+- uploading Instagram media to Google Drive
+- optionally transcribing reels locally on your Mac from your synced Drive folder
 
+## Main Flow
+
+### Actions tab
+
+Use this to:
+
+- `Add to sheet`
+- `Generate headline`
+- `Caption this`
+- `Download media`
+
+Instagram links and article links both work for `Add to sheet`, `Generate headline`, and `Caption this`.
+
+### Edit tab
+
+This is the main working area.
+
+Rows that have been processed for editing appear here with:
+
+- preview image
+- source username or article source
+- generated caption
+- original caption
+- transcript for Instagram rows
+- scheduling controls
+- row actions like transcribe, download, skip, add CTA, or delete
+
+### Data tab
+
+This shows the sheet-backed table view and lets you batch-process pending rows into the editor.
+
+## Google Sheet Columns
+
+The app expects this order:
+
+1. `Instagram URL`
+2. `Source Username`
+3. `Generated Caption`
+4. `Media Type`
+5. `Photo Count`
+6. `Media Drive Link`
+7. `Thumbnail Drive Link`
+8. `Original Caption`
+9. `Transcript`
+10. `Top Comment`
+11. `Required Hashtags`
+12. `Speaker Name`
+13. `Footer`
+14. `Status`
+15. `Caption Context`
+16. `Scheduled Time`
+
+The app restores headers if they are missing.
+
+## Drive Media Folder
+
+The app uploads Instagram media into your Drive folder and you sync that folder locally on your Mac.
+
+Your local synced media folder is:
+
+```text
+/Users/lisamollica/Library/CloudStorage/GoogleDrive-voteinorout@gmail.com/My Drive/_apps/vioo instagram pipeline/instagram pipeline media/
 ```
-instagram-caption-app/
-  app.py              Main Streamlit app
-  instagram.py        Downloads video + metadata via yt-dlp
-  caption.py          Audio extraction, Whisper transcription, GPT-4o caption generation
-  news.py             Fetches related news via Serper API for prompt context
-  config.py           Loads secrets from Streamlit Cloud or environment variables
-  requirements.txt    Python dependencies
-  packages.txt        System-level dependencies for Streamlit Cloud (ffmpeg)
-  .streamlit/
-    config.toml       Dark theme config
-```
 
-## How It Works
+## Local Reel Transcription
 
-1. You paste an Instagram URL and the speaker's name into the form.
-2. The app downloads the video and extracts metadata (original caption, username) using yt-dlp.
-3. Audio is extracted with ffmpeg and sent to OpenAI Whisper for transcription.
-4. The transcript is combined with recent news context (via Serper) and sent to GPT-4o, which generates a two-paragraph caption with inline hashtags.
-5. A footer is appended with the original Instagram caption and @username.
-
-## Deploying to Streamlit Cloud
-
-### 1. Push to GitHub
-
-Create a new GitHub repo (public or private) and push this folder as the root of the repo:
+If you want free local transcription on your Mac instead of paying for transcript runs in the cloud app, use the local script:
 
 ```bash
-cd instagram-caption-app
-git init
-git add .
-git commit -m "Initial commit"
-git remote add origin https://github.com/YOUR_USERNAME/instagram-caption-app.git
-git branch -M main
-git push -u origin main
+python scripts/local_transcribe_reels.py
 ```
 
-### 2. Connect on Streamlit Cloud
+That script:
 
-Go to https://share.streamlit.io and sign in with your GitHub account.
+- reads the Google Sheet
+- finds rows where:
+  - `Media Type = reel`
+  - `Transcript` is blank
+  - `Media Drive Link` exists
+- looks up the Drive filename for the reel
+- finds the matching synced local video in your Drive folder
+- runs a local Whisper backend
+- writes the transcript back to the Google Sheet
 
-Click "New app" and fill in:
+If you also want it to regenerate captions after writing transcripts:
 
-- **Repository:** YOUR_USERNAME/instagram-caption-app
-- **Branch:** main
-- **Main file path:** app.py
-
-Click "Deploy".
-
-### 3. Add Secrets
-
-In the Streamlit Cloud dashboard, open your app's settings and go to the "Secrets" tab. Paste the following (with your actual keys):
-
-```toml
-OPENAI_API_KEY = "sk-..."
-SERPER_API_KEY = "your-serper-key"
-APP_PASSWORD = "whatever-password-you-want"
+```bash
+python scripts/local_transcribe_reels.py --regenerate-captions
 ```
 
-- `OPENAI_API_KEY` (required) -- used for Whisper transcription and GPT-4o caption generation.
-- `SERPER_API_KEY` (optional) -- enables news context enrichment. Without it, captions still generate but without current-events context.
-- `APP_PASSWORD` (optional) -- if set, the app will prompt for a password before showing the form. Leave it out to make the app open to anyone with the link.
+### Local transcription dependency
 
-After saving secrets, the app will automatically reboot.
+Install one local Whisper backend first:
+
+```bash
+pip install faster-whisper
+```
+
+If you prefer the OpenAI Whisper Python package instead:
+
+```bash
+pip install openai-whisper
+```
+
+The script tries `faster-whisper` first, then falls back to `openai-whisper`.
 
 ## Running Locally
+
+Install Python dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-You also need ffmpeg installed on your system (`brew install ffmpeg` on macOS, `sudo apt install ffmpeg` on Ubuntu).
-
-Set your API keys as environment variables or create a `.streamlit/secrets.toml` file:
-
-```toml
-OPENAI_API_KEY = "sk-..."
-SERPER_API_KEY = "your-serper-key"
-APP_PASSWORD = "your-password"
-```
-
-Then run:
+Run the app:
 
 ```bash
 streamlit run app.py
 ```
 
-The app will open at http://localhost:8501.
+## Required Secrets
 
-## Optional Config
-
-These can also be added to your secrets if you want to tweak audio processing:
+These are normally provided through Streamlit secrets or environment variables:
 
 ```toml
-TRIM_SILENCE = "true"          # Trim silence from audio before transcription
-AUDIO_SAMPLE_RATE = "16000"    # Sample rate for audio extraction
-AUDIO_CHANNELS = "1"           # Mono audio
-AUDIO_BITRATE = "32k"          # Audio bitrate
-CAPTION_SPLIT_THRESHOLD = "400" # Character threshold for splitting into 2 paragraphs
+OPENAI_API_KEY = "..."
+APIFY_API_TOKEN = "..."
+GOOGLE_SHEET_ID = "..."
+GOOGLE_DRIVE_FOLDER_ID = "..."
+GOOGLE_SERVICE_ACCOUNT_JSON = '''{...}'''
+GOOGLE_OAUTH_TOKEN_JSON = '''{...}'''
+GOOGLE_OAUTH_CLIENT_JSON = '''{...}'''
+APP_PASSWORD = "..."
+```
+
+Notes:
+
+- `OPENAI_API_KEY` powers caption/headline generation and some OCR/image-text flows.
+- `APIFY_API_TOKEN` powers Instagram scraping.
+- `GOOGLE_SERVICE_ACCOUNT_JSON` is used for Sheets access.
+- `GOOGLE_OAUTH_TOKEN_JSON` is used for Drive uploads when running with OAuth.
+
+## Current Caption Behavior
+
+### Instagram rows
+
+- captions are generated from transcript, original caption, or caption context
+- reels auto-prepend a `LINK` CTA if no custom top comment exists
+- original captions can be previewed with footer and required hashtags
+
+### Article rows
+
+- article source text is extracted from the page
+- captions are auto-generated during `Process for editing`
+- article captions prepend:
+  - `Comment LINK (on instagram) and we will DM you the link to https://...`
+- article rows do not show a transcript tab
+- article rows do not append source text back under the generated caption
+
+## Useful Commands
+
+Run local reel transcription for all blank-transcript reel rows:
+
+```bash
+python scripts/local_transcribe_reels.py
+```
+
+Run local reel transcription and regenerate captions too:
+
+```bash
+python scripts/local_transcribe_reels.py --regenerate-captions
 ```
