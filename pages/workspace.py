@@ -868,6 +868,18 @@ def _fetch_row_with_transcript(row: dict, download_media: bool = False) -> dict:
         raise ValueError("Transcript rerun is only available for reels.")
 
     row_num = row["row_number"]
+    existing_transcript = (row.get("Transcript") or "").strip()
+    if existing_transcript and not download_media:
+        updated_row = dict(row)
+        updated_row["Transcript"] = existing_transcript
+        return updated_row
+
+    if existing_transcript and download_media:
+        _download_media_to_drive(row)
+        updated_row = dict(row)
+        updated_row["Transcript"] = existing_transcript
+        return updated_row
+
     tmp_dir = None
     try:
         refreshed = process_reel_url(url, include_transcript=True)
@@ -1501,7 +1513,7 @@ if active_tab == "Edit":
                                 width="stretch",
                                 help=primary_help,
                             ):
-                                if primary_action == "transcript":
+                                if primary_action == "transcript" and not transcript:
                                     try:
                                         warning = _check_reel_transcript_risk(row)
                                     except Exception as e:
@@ -1522,16 +1534,17 @@ if active_tab == "Edit":
                                 width="stretch",
                                 help="Fetch transcript, regenerate caption, and upload the reel media to Drive.",
                             ):
-                                try:
-                                    warning = _check_reel_transcript_risk(row)
-                                except Exception as e:
-                                    st.session_state["workspace_error"] = f"Row {row_num}: could not check reel size - {describe_error(e)}"
-                                    _close_workspace_menu(row)
-                                    _rerun_workspace("Edit")
-                                if warning:
-                                    st.session_state[warning_key] = warning
-                                    _close_workspace_menu(row)
-                                    _rerun_workspace("Edit")
+                                if not transcript:
+                                    try:
+                                        warning = _check_reel_transcript_risk(row)
+                                    except Exception as e:
+                                        st.session_state["workspace_error"] = f"Row {row_num}: could not check reel size - {describe_error(e)}"
+                                        _close_workspace_menu(row)
+                                        _rerun_workspace("Edit")
+                                    if warning:
+                                        st.session_state[warning_key] = warning
+                                        _close_workspace_menu(row)
+                                        _rerun_workspace("Edit")
                                 _close_workspace_menu(row)
                                 _queue_workspace_action(row_num, "transcript_download")
                                 _rerun_workspace("Edit")
