@@ -515,25 +515,21 @@ def _clean_instagram_url(link: str) -> str:
     return f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
 
 
-def _build_link_cta(word: str, link: str) -> str:
-    return f"Comment {word.strip().upper()} (on instagram) and we will DM you the link to {link.strip()}"
+def _build_link_cta(link: str) -> str:
+    return f"Comment LINK (on instagram) and we will DM you the link to {link.strip()}"
 
 
 def _build_read_cta(link: str) -> str:
-    return f"Comment READ (on instagram) and we will DM you the link to [{link.strip()}]"
+    return f"Comment LINK (on instagram) and we will DM you the link to [{link.strip()}]"
 
 
 def _build_watch_cta(username: str, link: str) -> str:
     cleaned_username = (username or "").strip().lstrip("@")
     username_part = f" @{cleaned_username}" if cleaned_username else ""
     return (
-        "Comment WATCH (on instagram) and we will DM you the link to "
+        "Comment LINK (on instagram) and we will DM you the link to "
         f"the full video{username_part} {_clean_instagram_url(link)}"
     )
-
-
-def _uppercase_session_value(key: str) -> None:
-    st.session_state[key] = (st.session_state.get(key, "") or "").upper()
 
 
 def _close_workspace_menu(row: dict) -> None:
@@ -1457,7 +1453,6 @@ if active_tab == "Edit":
             warning_key = _workspace_key(row, "transcript_warning")
             transcribe_key = _workspace_key(row, "transcribe")
             link_editor_key = _workspace_key(row, "link_editor_open")
-            link_word_key = _workspace_key(row, "link_word")
             link_url_key = _workspace_key(row, "link_url")
             menu_nonce_key = _workspace_key(row, "menu_nonce")
             username = (row.get("Source Username") or "").strip()
@@ -1592,36 +1587,22 @@ if active_tab == "Edit":
                                 with close_col:
                                     if st.button("X", key=f"workspace_link_cancel_{row_num}", width="stretch"):
                                         _close_workspace_menu(row)
-                                        st.session_state.pop(link_word_key, None)
                                         st.session_state.pop(link_url_key, None)
                                         _rerun_workspace("Edit")
-
-                                st.text_input(
-                                    "Word",
-                                    key=link_word_key,
-                                    placeholder="act",
-                                    on_change=_uppercase_session_value,
-                                    args=(link_word_key,),
-                                )
                                 st.text_input(
                                     "Link",
                                     key=link_url_key,
                                     placeholder="https://example.com",
                                 )
                                 if st.button("Add", key=f"workspace_link_add_{row_num}", type="primary", width="stretch"):
-                                    word = st.session_state.get(link_word_key, "").strip().upper()
                                     full_link = st.session_state.get(link_url_key, "").strip()
-                                    if not word:
-                                        st.session_state["workspace_error"] = f"Row {row_num}: enter a word."
-                                        _rerun_workspace("Edit")
                                     if not _is_https_url(full_link):
                                         st.session_state["workspace_error"] = f"Row {row_num}: link must start with https://"
                                         _rerun_workspace("Edit")
 
-                                    top_comment = _build_link_cta(word, full_link)
+                                    top_comment = _build_link_cta(full_link)
                                     _apply_top_comment_to_caption(row, row_num, speaker_name, top_comment)
                                     _close_workspace_menu(row)
-                                    st.session_state.pop(link_word_key, None)
                                     st.session_state.pop(link_url_key, None)
                                     st.session_state["workspace_success"] = f"Row {row_num}: link CTA saved to generated caption."
                                     _rerun_workspace("Edit")
