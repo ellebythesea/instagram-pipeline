@@ -117,6 +117,10 @@ def _is_instagram_url(url: str) -> bool:
     return "instagram.com/" in (url or "").lower()
 
 
+def _is_article_url(url: str) -> bool:
+    return _is_https_url(url) and not _is_instagram_url(url)
+
+
 def _format_bytes(num_bytes: int) -> str:
     value = float(num_bytes)
     units = ["B", "KB", "MB", "GB"]
@@ -622,9 +626,13 @@ def _copy_tabs(
     required_hashtags: str,
     media_link: str = "",
     media_type: str = "",
+    source_url: str = "",
+    is_instagram: bool = True,
 ) -> None:
     tab_labels = ["Caption", "Original caption", "Transcript"]
     media_links = [link.strip() for link in (media_link or "").split(",") if link.strip()]
+    if source_url:
+        tab_labels.append("Link")
     if media_links:
         tab_labels.append("Media")
     text_tabs = st.tabs(tab_labels)
@@ -638,8 +646,15 @@ def _copy_tabs(
         _tab_copy_preview(_build_footered_caption(original_with_username, username, required_hashtags) if original_with_username else "")
     with text_tabs[2]:
         _tab_copy_preview(transcript)
+    next_tab_index = 3
+    if source_url:
+        with text_tabs[next_tab_index]:
+            open_label = "Open Instagram link" if is_instagram else "Open source link"
+            st.link_button(open_label, source_url, width="stretch")
+            st.code(source_url, language=None)
+        next_tab_index += 1
     if media_links:
-        with text_tabs[3]:
+        with text_tabs[next_tab_index]:
             st.markdown(
                 f'<div class="workspace-plain-copy-text">Drive media link{"" if len(media_links) == 1 else "s"}.</div>',
                 unsafe_allow_html=True,
@@ -780,6 +795,18 @@ def _ingest_row(row: dict) -> dict:
     url = row["Instagram URL"].strip()
     tmp_dir = None
     try:
+        if _is_article_url(url):
+            article = fetch_article_source(url)
+            return {
+                "username": article.get("domain", ""),
+                "media_type": "article",
+                "photo_count": "",
+                "media_link": "",
+                "thumbnail_link": "",
+                "original_caption": article.get("source_text", ""),
+                "transcript": "",
+                "status": "ingested",
+            }
         if _is_reel_url(url):
             data = process_reel_url(url, include_transcript=False)
             uploaded = upload_thumbnail_only(data)
@@ -1157,6 +1184,7 @@ if active_tab == "Actions":
     home_notice = st.session_state.pop("workspace_home_notice", "")
 
     mode_help = {
+        "Add to sheet": "Add an Instagram post or article link to the sheet so it can be processed into the editor.",
         "Generate headline": "Pull source text from an Instagram post or article link, then return three headline options plus a footered caption.",
         "Caption this": "Generate a caption directly from an Instagram post or article link using the selected hashtag preset.",
         "Download media": "Download the media and upload it to Drive without adding a row first.",
@@ -1191,10 +1219,10 @@ if active_tab == "Actions":
 
     with link_area:
         links = _normalize_home_links(_ensure_home_links())
-        link_label = "Instagram Link" if mode in {"Add to sheet", "Download media"} else "Link"
+        link_label = "Instagram Link" if mode == "Download media" else "Link"
         link_placeholder = (
             "https://www.instagram.com/p/... or /reel/..."
-            if mode in {"Add to sheet", "Download media"}
+            if mode == "Download media"
             else "https://www.instagram.com/... or https://example.com/article"
         )
         links[0] = st.text_input(
@@ -1408,6 +1436,8 @@ if active_tab == "Edit":
             menu_nonce_key = _workspace_key(row, "menu_nonce")
             username = (row.get("Source Username") or "").strip()
             url = (row.get("Instagram URL") or "").strip()
+            is_instagram = _is_instagram_url(url)
+            is_article = _is_article_url(url)
             media_type = (row.get("Media Type") or "").strip().lower()
             generated = (row.get("Generated Caption") or "").strip()
             original_caption = (row.get("Original Caption") or "").strip()
@@ -1424,6 +1454,10 @@ if active_tab == "Edit":
                     if thumb_link:
                         image_url = _drive_image_url(thumb_link) or thumb_link
                         st.image(image_url, width="stretch")
+                    elif is_article:
+                        st.info("Article link")
+                        if original_caption:
+                            st.caption(original_caption[:260] + ("..." if len(original_caption) > 260 else ""))
                     else:
                         st.info("Thumbnail will appear here after ingest.")
 
@@ -1439,14 +1473,17 @@ if active_tab == "Edit":
                         unsafe_allow_html=True,
                     )
                     with title_col:
-                        st.markdown(f"#### @{username}" if username else f"#### Row {row_num}")
+                        if username:
+                            st.markdown(f"#### @{username}" if is_instagram else f"#### {username}")
+                        else:
+                            st.markdown(f"#### Row {row_num}")
                     with menu_col:
                         menu_nonce = st.session_state.get(menu_nonce_key, 0)
                         with st.popover("\u200b" * (menu_nonce + 1), use_container_width=True):
                             primary_action = "transcript" if _is_reel_url(url) else "image_text"
                             primary_help = "Fetch transcript and regenerate caption." if _is_reel_url(url) else "Extract text from images and regenerate caption."
                             current_top_comment = st.session_state.get(top_key, row.get("Top Comment", "")).strip()
-                            if st.button(
+                            if is_instagram and st.button(
                                 menu_label,
                                 key=f"workspace_menu_primary_{row_num}",
                                 disabled=not url,
@@ -1487,7 +1524,7 @@ if active_tab == "Edit":
                                 _close_workspace_menu(row)
                                 _queue_workspace_action(row_num, "transcript_download")
                                 _rerun_workspace("Edit")
-                            if st.button(
+                            if is_instagram and st.button(
                                 "Download media",
                                 key=f"workspace_menu_download_{row_num}",
                                 disabled=not url,
@@ -1511,7 +1548,7 @@ if active_tab == "Edit":
                                     else f"Row {row_num}: skipped and moved to the bottom."
                                 )
                                 _rerun_workspace("Edit")
-                            if st.button(
+                            if is_instagram and st.button(
                                 "Add Watch",
                                 key=f"workspace_menu_watch_{row_num}",
                                 disabled=not url,
@@ -1619,7 +1656,7 @@ if active_tab == "Edit":
                             _rerun_workspace("Edit")
 
                     if url:
-                        st.link_button("Open in Instagram", url, width="stretch")
+                        st.link_button("Open in Instagram" if is_instagram else "Open source link", url, width="stretch")
 
                     transcript_warning = st.session_state.get(warning_key)
                     if transcript_warning:
@@ -1660,6 +1697,8 @@ if active_tab == "Edit":
                         st.session_state.get(hashtags_key, row.get("Required Hashtags", "")).strip(),
                         row.get("Media Drive Link", ""),
                         media_type,
+                        url,
+                        is_instagram,
                     )
 
             st.divider()
@@ -1700,6 +1739,8 @@ if active_tab == "Edit":
                 should_transcribe = bool(st.session_state.get(_workspace_key(row, "transcribe"), False))
                 if _is_reel_url(url) and not current_top:
                     current_top = _build_watch_cta(current_username or current_speaker, url)
+                elif _is_article_url(url) and not current_top:
+                    current_top = _build_read_cta(url)
                 row_for_caption = dict(row)
                 row_for_caption["Caption Context"] = current_context
                 row_for_caption["Top Comment"] = current_top
