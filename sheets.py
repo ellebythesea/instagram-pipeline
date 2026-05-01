@@ -258,6 +258,30 @@ def update_caption(sheet_id: str, row_number: int, caption: str, status: str) ->
     _invalidate_rows_cache(sheet_id)
 
 
+def update_caption_and_metadata(
+    sheet_id: str,
+    row_number: int,
+    caption: str,
+    status: str,
+    caption_context: str,
+    speaker_name: str,
+    hashtags: str,
+    top_comment: str,
+    footer: str,
+) -> None:
+    """Write generated caption, status, and editor metadata after one worksheet lookup."""
+    ws = _worksheet(sheet_id)
+    _with_backoff(
+        ws.batch_update,
+        [
+            {"range": f"C{row_number}", "values": [[caption]]},
+            {"range": f"J{row_number}:M{row_number}", "values": [[top_comment, hashtags, speaker_name, footer]]},
+            {"range": f"N{row_number}:O{row_number}", "values": [[status, caption_context]]},
+        ],
+    )
+    _invalidate_rows_cache(sheet_id)
+
+
 def update_status(sheet_id: str, row_number: int, status: str) -> None:
     """Write status to col N for a single row."""
     ws = _worksheet(sheet_id)

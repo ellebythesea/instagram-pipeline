@@ -55,6 +55,7 @@ client = openai.OpenAI(api_key=OPENAI_API_KEY)
 get_all_rows = sheet_ops.get_all_rows
 get_pending_rows = sheet_ops.get_pending_rows
 update_caption = sheet_ops.update_caption
+update_caption_and_metadata = getattr(sheet_ops, "update_caption_and_metadata", None)
 update_caption_context = sheet_ops.update_caption_context
 update_ingest_result = sheet_ops.update_ingest_result
 update_metadata = sheet_ops.update_metadata
@@ -555,15 +556,6 @@ def _apply_top_comment_to_caption(
     current_context = st.session_state.get(_workspace_key(row, "context"), row.get("Caption Context", "")).strip()
     current_speaker = st.session_state.get(_workspace_key(row, "speaker"), speaker_name).strip()
     current_hashtags = st.session_state.get(_workspace_key(row, "hashtags"), row.get("Required Hashtags", "")).strip()
-    update_metadata(
-        GOOGLE_SHEET_ID,
-        row_num,
-        current_context,
-        current_speaker,
-        current_hashtags,
-        top_comment,
-        "",
-    )
     updated_row = dict(row)
     updated_row["Caption Context"] = current_context
     updated_row["Speaker Name"] = current_speaker
@@ -571,7 +563,29 @@ def _apply_top_comment_to_caption(
     updated_row["Top Comment"] = top_comment
     caption = generate_row_caption(updated_row)
     current_status = (row.get("Status") or "").strip() or "done"
-    update_caption(GOOGLE_SHEET_ID, row_num, caption, current_status)
+    if update_caption_and_metadata is not None:
+        update_caption_and_metadata(
+            GOOGLE_SHEET_ID,
+            row_num,
+            caption,
+            current_status,
+            current_context,
+            current_speaker,
+            current_hashtags,
+            top_comment,
+            "",
+        )
+    else:
+        update_metadata(
+            GOOGLE_SHEET_ID,
+            row_num,
+            current_context,
+            current_speaker,
+            current_hashtags,
+            top_comment,
+            "",
+        )
+        update_caption(GOOGLE_SHEET_ID, row_num, caption, current_status)
     st.session_state[_workspace_key(row, "top")] = top_comment
 
 
