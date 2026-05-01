@@ -508,7 +508,7 @@ def _is_https_url(value: str) -> bool:
     return parsed.scheme == "https" and bool(parsed.netloc)
 
 
-def _clean_instagram_url(link: str) -> str:
+def _clean_public_url(link: str) -> str:
     parsed = urlparse((link or "").strip())
     if not parsed.scheme or not parsed.netloc:
         return (link or "").strip()
@@ -516,11 +516,11 @@ def _clean_instagram_url(link: str) -> str:
 
 
 def _build_link_cta(link: str) -> str:
-    return f"Comment LINK (on instagram) and we will DM you the link to {link.strip()}"
+    return f"Comment LINK (on instagram) and we will DM you the link to {_clean_public_url(link)}"
 
 
 def _build_read_cta(link: str) -> str:
-    return f"Comment LINK (on instagram) and we will DM you the link to {link.strip()}"
+    return f"Comment LINK (on instagram) and we will DM you the link to {_clean_public_url(link)}"
 
 
 def _build_watch_cta(username: str, link: str) -> str:
@@ -528,7 +528,7 @@ def _build_watch_cta(username: str, link: str) -> str:
     username_part = f" @{cleaned_username}" if cleaned_username else ""
     return (
         "Comment LINK (on instagram) and we will DM you the link to "
-        f"the full video{username_part} {_clean_instagram_url(link)}"
+        f"the full video{username_part} {_clean_public_url(link)}"
     )
 
 
