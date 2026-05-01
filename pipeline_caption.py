@@ -129,8 +129,9 @@ def generate_row_caption(row: dict) -> str:
         caption, appended_required = _finalize_required_hashtags(caption, required_hashtags)
 
     username = row.get("Source Username", "").strip().lstrip("@")
+    media_type = (row.get("Media Type", "") or "").strip().lower()
     footer_parts = []
-    if username and username.lower() != "unknown":
+    if media_type != "article" and username and username.lower() != "unknown":
         footer_parts.append(f"Follow @{username} for more.")
 
     footer = DEFAULT_POST_FOOTER.strip()

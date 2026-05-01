@@ -641,9 +641,13 @@ def _copy_tabs(
     with text_tabs[1]:
         original_with_username = original_caption.strip()
         cleaned_username = (username or "").strip().lstrip("@")
-        if cleaned_username and original_with_username:
+        if is_instagram and cleaned_username and original_with_username:
             original_with_username = f"@{cleaned_username}: {original_with_username}"
-        _tab_copy_preview(_build_footered_caption(original_with_username, username, required_hashtags) if original_with_username else "")
+        footer_username = username if is_instagram else ""
+        _tab_copy_preview(
+            _build_footered_caption(original_with_username, footer_username, required_hashtags)
+            if original_with_username else ""
+        )
     with text_tabs[2]:
         _tab_copy_preview(transcript)
     next_tab_index = 3
