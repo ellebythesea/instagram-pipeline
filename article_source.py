@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from html import unescape
 from html.parser import HTMLParser
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import requests
 
@@ -137,9 +137,11 @@ def fetch_article_source(url: str) -> dict:
 
     og_title = _extract_meta(html, "property", "og:title")
     og_description = _extract_meta(html, "property", "og:description")
+    og_image = _extract_meta(html, "property", "og:image")
     meta_description = _extract_meta(html, "name", "description")
     twitter_title = _extract_meta(html, "name", "twitter:title")
     twitter_description = _extract_meta(html, "name", "twitter:description")
+    twitter_image = _extract_meta(html, "name", "twitter:image")
 
     parsed_title, paragraphs = _extract_title_and_body(html)
     title = og_title or twitter_title or parsed_title
@@ -150,10 +152,14 @@ def fetch_article_source(url: str) -> dict:
 
     parsed = urlparse(response.url or url)
     domain = parsed.netloc.replace("www.", "")
+    image_url = og_image or twitter_image
+    if image_url:
+        image_url = urljoin(response.url or url, image_url)
     return {
         "url": response.url or url,
         "domain": domain,
         "title": title,
         "description": description,
+        "image_url": image_url,
         "source_text": source_text,
     }

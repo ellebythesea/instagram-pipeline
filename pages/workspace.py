@@ -802,7 +802,7 @@ def _ingest_row(row: dict) -> dict:
                 "media_type": "article",
                 "photo_count": "",
                 "media_link": "",
-                "thumbnail_link": "",
+                "thumbnail_link": article.get("image_url", ""),
                 "original_caption": article.get("source_text", ""),
                 "transcript": "",
                 "status": "ingested",
