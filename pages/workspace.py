@@ -567,6 +567,39 @@ def _apply_top_comment_to_caption(
     st.session_state[_workspace_key(row, "top")] = top_comment
 
 
+def _current_row_caption_inputs(row: dict) -> dict:
+    current_context = st.session_state.get(
+        _workspace_key(row, "context"),
+        row.get("Caption Context", ""),
+    ).strip()
+    current_speaker = st.session_state.get(
+        _workspace_key(row, "speaker"),
+        row.get("Speaker Name", ""),
+    ).strip()
+    current_hashtags = st.session_state.get(
+        _workspace_key(row, "hashtags"),
+        row.get("Required Hashtags", ""),
+    ).strip()
+    current_top = st.session_state.get(
+        _workspace_key(row, "top"),
+        row.get("Top Comment", ""),
+    ).strip()
+    url = (row.get("Instagram URL") or "").strip()
+    current_username = (row.get("Source Username") or "").strip()
+
+    if not current_top and _is_reel_url(url):
+        current_top = _build_watch_cta(current_username or current_speaker, url)
+    elif not current_top and _is_article_url(url):
+        current_top = _build_read_cta(url)
+
+    return {
+        "Caption Context": current_context,
+        "Speaker Name": current_speaker,
+        "Required Hashtags": current_hashtags,
+        "Top Comment": current_top,
+    }
+
+
 def _copy_block(label: str, value: str, key: str, empty_text: str = "(none)") -> None:
     display_text = value or empty_text
     escaped_label = html.escape(label)
@@ -619,6 +652,7 @@ def _copy_tabs(
     original_caption: str,
     transcript: str,
     username: str,
+    top_comment: str,
     required_hashtags: str,
     media_link: str = "",
     media_type: str = "",
@@ -639,10 +673,13 @@ def _copy_tabs(
         cleaned_username = (username or "").strip().lstrip("@")
         if is_instagram and cleaned_username and original_with_username:
             original_with_username = f"@{cleaned_username}: {original_with_username}"
+        original_preview = original_with_username
+        if top_comment.strip():
+            original_preview = f"{top_comment.strip()}\n\n{original_preview}".strip()
         footer_username = username if is_instagram else ""
         _tab_copy_preview(
-            _build_footered_caption(original_with_username, footer_username, required_hashtags)
-            if original_with_username else ""
+            _build_footered_caption(original_preview, footer_username, required_hashtags)
+            if original_preview else ""
         )
     next_tab_index = 2
     if is_instagram:
@@ -771,29 +808,24 @@ def _process_pending_rows_from_sheet() -> int:
                     result["transcript"],
                     result["status"],
                 )
-                if (
-                    result["status"] == "ingested"
-                    and result["media_type"] == "article"
-                ):
-                    row_for_caption = dict(row)
-                    row_for_caption["Source Username"] = result["username"]
-                    row_for_caption["Media Type"] = result["media_type"]
-                    row_for_caption["Photo Count"] = result["photo_count"]
-                    row_for_caption["Media Drive Link"] = result["media_link"]
-                    row_for_caption["Thumbnail Drive Link"] = result["thumbnail_link"]
-                    row_for_caption["Original Caption"] = result["original_caption"]
-                    row_for_caption["Transcript"] = result["transcript"]
-                    if not (row_for_caption.get("Top Comment") or "").strip():
-                        row_for_caption["Top Comment"] = _build_read_cta(row["Instagram URL"].strip())
-                    article_caption = generate_row_caption(row_for_caption)
-                    update_caption(GOOGLE_SHEET_ID, row_num, article_caption, "done")
+                if result["status"] == "ingested" and result["media_type"] == "article":
+                    existing_inputs = _current_row_caption_inputs(row)
+                    update_metadata(
+                        GOOGLE_SHEET_ID,
+                        row_num,
+                        existing_inputs["Caption Context"],
+                        existing_inputs["Speaker Name"],
+                        existing_inputs["Required Hashtags"],
+                        existing_inputs["Top Comment"],
+                        "",
+                    )
             except Exception as e:
                 status_box.update(label=f"Row {row_num}: error writing to sheet - {describe_error(e)}", state="error")
             else:
                 if result["status"].startswith("error"):
                     status_box.update(label=f"Row {row_num}: {result['status']}", state="error")
                 else:
-                    action_word = "captioned" if result["media_type"] == "article" else "ingested"
+                    action_word = "ingested"
                     display_name = f"@{result['username']}" if result["username"] and result["media_type"] != "article" else result["username"]
                     status_box.update(
                         label=f"Row {row_num}: {action_word} - {display_name} ({result['media_type']})",
@@ -1017,6 +1049,25 @@ def _redo_caption_from_image_text(row: dict) -> None:
     update_caption(GOOGLE_SHEET_ID, row_num, caption, next_status)
 
 
+def _generate_caption_for_row(row: dict) -> None:
+    row_num = row["row_number"]
+    current_inputs = _current_row_caption_inputs(row)
+    update_metadata(
+        GOOGLE_SHEET_ID,
+        row_num,
+        current_inputs["Caption Context"],
+        current_inputs["Speaker Name"],
+        current_inputs["Required Hashtags"],
+        current_inputs["Top Comment"],
+        "",
+    )
+    updated_row = dict(row)
+    updated_row.update(current_inputs)
+    caption = generate_row_caption(updated_row)
+    next_status = "skipped" if (row.get("Status", "") or "").strip().lower() == "skipped" else "done"
+    update_caption(GOOGLE_SHEET_ID, row_num, caption, next_status)
+
+
 def _queue_workspace_action(row_number: int, action: str) -> None:
     queue = st.session_state.setdefault("workspace_action_queue", [])
     queue.append({"row_number": row_number, "action": action})
@@ -1063,17 +1114,10 @@ def _process_next_workspace_action() -> None:
             with st.spinner(f"Refreshing row {row_number} with transcript..."):
                 _rerun_with_transcript(row)
             st.session_state["workspace_success"] = f"Row {row_number}: transcript rerun complete."
-        elif action == "transcript_download":
-            with st.spinner(f"Refreshing row {row_number} with transcript and Drive upload..."):
-                updated_row = _fetch_row_with_transcript(row, download_media=True)
-                caption = generate_row_caption(updated_row)
-                next_status = "skipped" if (row.get("Status", "") or "").strip().lower() == "skipped" else "done"
-                update_caption(GOOGLE_SHEET_ID, row_number, caption, next_status)
-            st.session_state["workspace_success"] = f"Row {row_number}: transcript rerun complete and media uploaded to Drive."
-        elif action == "download":
-            with st.spinner(f"Uploading row {row_number} media to Drive..."):
-                _download_media_to_drive(row)
-            st.session_state["workspace_success"] = f"Row {row_number}: media uploaded to Drive."
+        elif action == "generate_caption":
+            with st.spinner(f"Generating caption for row {row_number}..."):
+                _generate_caption_for_row(row)
+            st.session_state["workspace_success"] = f"Row {row_number}: caption generated."
         elif action == "image_text":
             with st.spinner(f"Extracting image text for row {row_number}..."):
                 _redo_caption_from_image_text(row)
@@ -1505,7 +1549,6 @@ if active_tab == "Edit":
                         with st.popover("\u200b" * (menu_nonce + 1), use_container_width=True):
                             primary_action = "transcript" if _is_reel_url(url) else "image_text"
                             primary_help = "Fetch transcript and regenerate caption." if _is_reel_url(url) else "Extract text from images and regenerate caption."
-                            current_top_comment = st.session_state.get(top_key, row.get("Top Comment", "")).strip()
                             if is_instagram and st.button(
                                 menu_label,
                                 key=f"workspace_menu_primary_{row_num}",
@@ -1527,35 +1570,13 @@ if active_tab == "Edit":
                                 _close_workspace_menu(row)
                                 _queue_workspace_action(row_num, primary_action)
                                 _rerun_workspace("Edit")
-                            if _is_reel_url(url) and st.button(
-                                "Transcribe and Download",
-                                key=f"workspace_menu_transcribe_download_{row_num}",
-                                disabled=not url,
-                                width="stretch",
-                                help="Fetch transcript, regenerate caption, and upload the reel media to Drive.",
-                            ):
-                                if not transcript:
-                                    try:
-                                        warning = _check_reel_transcript_risk(row)
-                                    except Exception as e:
-                                        st.session_state["workspace_error"] = f"Row {row_num}: could not check reel size - {describe_error(e)}"
-                                        _close_workspace_menu(row)
-                                        _rerun_workspace("Edit")
-                                    if warning:
-                                        st.session_state[warning_key] = warning
-                                        _close_workspace_menu(row)
-                                        _rerun_workspace("Edit")
-                                _close_workspace_menu(row)
-                                _queue_workspace_action(row_num, "transcript_download")
-                                _rerun_workspace("Edit")
-                            if is_instagram and st.button(
-                                "Download media",
-                                key=f"workspace_menu_download_{row_num}",
-                                disabled=not url,
+                            if st.button(
+                                "Generate caption",
+                                key=f"workspace_menu_generate_{row_num}",
                                 width="stretch",
                             ):
                                 _close_workspace_menu(row)
-                                _queue_workspace_action(row_num, "download")
+                                _queue_workspace_action(row_num, "generate_caption")
                                 _rerun_workspace("Edit")
                             skip_label = "Unskip" if status.strip().lower() == "skipped" else "Skip"
                             if st.button(
@@ -1571,17 +1592,6 @@ if active_tab == "Edit":
                                     if next_status != "skipped"
                                     else f"Row {row_num}: skipped and moved to the bottom."
                                 )
-                                _rerun_workspace("Edit")
-                            if is_instagram and st.button(
-                                "Add Watch",
-                                key=f"workspace_menu_watch_{row_num}",
-                                disabled=not url,
-                                width="stretch",
-                            ):
-                                top_comment = _build_watch_cta(username or speaker_name, url)
-                                _apply_top_comment_to_caption(row, row_num, speaker_name, top_comment)
-                                _close_workspace_menu(row)
-                                st.session_state["workspace_success"] = f"Row {row_num}: WATCH CTA added to generated caption."
                                 _rerun_workspace("Edit")
                             if st.session_state.get(link_editor_key, False):
                                 header_col, close_col = st.columns([12, 1], vertical_alignment="center")
@@ -1676,26 +1686,15 @@ if active_tab == "Edit":
                             f"This reel is {size_label}, which is over the {threshold_label} transcript warning limit. "
                             "Transcription may cost more than usual."
                         )
-                        warning_cols = st.columns(2)
-                        with warning_cols[0]:
-                            if st.button(
-                                "Transcribe anyway",
-                                key=f"workspace_warning_transcribe_{row_num}",
-                                type="primary",
-                                width="stretch",
-                            ):
-                                st.session_state.pop(warning_key, None)
-                                _queue_workspace_action(row_num, "transcript")
-                                _rerun_workspace("Edit")
-                        with warning_cols[1]:
-                            if st.button(
-                                "Download media",
-                                key=f"workspace_warning_download_{row_num}",
-                                width="stretch",
-                            ):
-                                st.session_state.pop(warning_key, None)
-                                _queue_workspace_action(row_num, "download")
-                                _rerun_workspace("Edit")
+                        if st.button(
+                            "Transcribe anyway",
+                            key=f"workspace_warning_transcribe_{row_num}",
+                            type="primary",
+                            width="stretch",
+                        ):
+                            st.session_state.pop(warning_key, None)
+                            _queue_workspace_action(row_num, "transcript")
+                            _rerun_workspace("Edit")
 
                     st.markdown('<div class="workspace-section-label workspace-content-tabs">Content</div>', unsafe_allow_html=True)
                     _copy_tabs(
@@ -1704,6 +1703,7 @@ if active_tab == "Edit":
                         original_caption,
                         transcript,
                         username,
+                        st.session_state.get(top_key, row.get("Top Comment", "")).strip(),
                         st.session_state.get(hashtags_key, row.get("Required Hashtags", "")).strip(),
                         row.get("Media Drive Link", ""),
                         media_type,
