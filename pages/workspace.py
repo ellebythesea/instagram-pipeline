@@ -1619,7 +1619,10 @@ if active_tab == "Edit":
                 current_top = st.session_state.get(_workspace_key(row, "top"), row.get("Top Comment", "")).strip()
                 current_speaker = st.session_state.get(_workspace_key(row, "speaker"), row.get("Speaker Name", "")).strip()
                 current_hashtags = st.session_state.get(_workspace_key(row, "hashtags"), row.get("Required Hashtags", "")).strip()
+                current_username = (row.get("Source Username") or "").strip()
                 should_transcribe = bool(st.session_state.get(_workspace_key(row, "transcribe"), False))
+                if _is_reel_url(url) and not current_top:
+                    current_top = _build_watch_cta(current_username or current_speaker, url)
                 row_for_caption = dict(row)
                 row_for_caption["Caption Context"] = current_context
                 row_for_caption["Top Comment"] = current_top
