@@ -8,7 +8,7 @@ Sheet layout:
   D  Media Type         E  Photo Count        F  Media Drive Link
   G  Thumbnail Drive Link
   H  Original Caption   I  Transcript         J  Top Comment
-  K  Speaker Name       L  Required Hashtags  M  Footer
+  K  Required Hashtags  L  Speaker Name       M  Footer
   N  Status             O  Caption Context   P  Scheduled Time
 """
 
@@ -28,6 +28,25 @@ _SCOPES = [
 ]
 
 _EXPECTED_HEADERS = [
+    "Instagram URL",
+    "Source Username",
+    "Generated Caption",
+    "Media Type",
+    "Photo Count",
+    "Media Drive Link",
+    "Thumbnail Drive Link",
+    "Original Caption",
+    "Transcript",
+    "Top Comment",
+    "Required Hashtags",
+    "Speaker Name",
+    "Footer",
+    "Status",
+    "Caption Context",
+    "Scheduled Time",
+]
+
+_LEGACY_HEADERS = [
     "Instagram URL",
     "Source Username",
     "Generated Caption",
@@ -121,6 +140,15 @@ def _ensure_headers(sheet_id: str, ws: gspread.Worksheet) -> None:
     if normalized == _EXPECTED_HEADERS:
         _headers_checked.add(cache_key)
         return
+    if normalized == _LEGACY_HEADERS:
+        existing = _with_backoff(ws.get, f"K2:L{ws.row_count}")
+        if existing:
+            swapped = []
+            for row in existing:
+                speaker = row[0] if len(row) > 0 else ""
+                hashtags = row[1] if len(row) > 1 else ""
+                swapped.append([hashtags, speaker])
+            _with_backoff(ws.update, f"K2:L{ws.row_count}", swapped)
     _with_backoff(ws.update, "A1:P1", [_EXPECTED_HEADERS])
     _headers_checked.add(cache_key)
 
@@ -171,7 +199,7 @@ def append_link_rows(sheet_id: str, urls: list[str], required_hashtags: str = ""
     for url in cleaned_urls:
         row = [""] * len(_EXPECTED_HEADERS)
         row[0] = url
-        row[11] = required_hashtags.strip()
+        row[10] = required_hashtags.strip()
         rows.append(row)
     _with_backoff(ws.append_rows, rows, value_input_option="USER_ENTERED")
     _invalidate_rows_cache(sheet_id)
@@ -297,7 +325,7 @@ def update_metadata(
     _with_backoff(
         ws.update,
         f"J{row_number}:M{row_number}",
-        [[top_comment, speaker_name, hashtags, footer]],
+        [[top_comment, hashtags, speaker_name, footer]],
     )
     _with_backoff(ws.update, f"O{row_number}", [[caption_context]])
     _invalidate_rows_cache(sheet_id)

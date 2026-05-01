@@ -92,7 +92,7 @@ def append_link_rows(sheet_id: str, urls: list[str], required_hashtags: str = ""
     for url in cleaned_urls:
         row = [""] * len(sheet_ops._EXPECTED_HEADERS)
         row[0] = url
-        row[11] = required_hashtags.strip()
+        row[10] = required_hashtags.strip()
         rows.append(row)
     sheet_ops._with_backoff(ws.append_rows, rows, value_input_option="USER_ENTERED")
     sheet_ops._invalidate_rows_cache(sheet_id)
