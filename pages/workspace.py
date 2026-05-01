@@ -584,8 +584,21 @@ def _tab_copy_preview(value: str) -> None:
     )
 
 
-def _copy_tabs(row_num: int, generated: str, original_caption: str, transcript: str, username: str, required_hashtags: str) -> None:
-    text_tabs = st.tabs(["Caption", "Original caption", "Transcript"])
+def _copy_tabs(
+    row_num: int,
+    generated: str,
+    original_caption: str,
+    transcript: str,
+    username: str,
+    required_hashtags: str,
+    media_link: str = "",
+    media_type: str = "",
+) -> None:
+    tab_labels = ["Caption", "Original caption", "Transcript"]
+    media_links = [link.strip() for link in (media_link or "").split(",") if link.strip()]
+    if media_links:
+        tab_labels.append("Media")
+    text_tabs = st.tabs(tab_labels)
     with text_tabs[0]:
         _tab_copy_preview(generated)
     with text_tabs[1]:
@@ -596,6 +609,19 @@ def _copy_tabs(row_num: int, generated: str, original_caption: str, transcript: 
         _tab_copy_preview(_build_footered_caption(original_with_username, username, required_hashtags) if original_with_username else "")
     with text_tabs[2]:
         _tab_copy_preview(transcript)
+    if media_links:
+        with text_tabs[3]:
+            st.markdown(
+                f'<div class="workspace-plain-copy-text">Drive media link{"" if len(media_links) == 1 else "s"}.</div>',
+                unsafe_allow_html=True,
+            )
+            if (media_type or "").strip().lower() == "reel" and media_links:
+                st.link_button("Open reel in Drive", media_links[0], width="stretch")
+            else:
+                for index, link in enumerate(media_links, start=1):
+                    label = "Open media in Drive" if len(media_links) == 1 else f"Open media {index} in Drive"
+                    st.link_button(label, link, width="stretch")
+            st.code("\n".join(media_links), language=None)
 
 
 def _icon_copy_button(label: str, value: str) -> None:
@@ -1583,6 +1609,8 @@ if active_tab == "Edit":
                         transcript,
                         username,
                         st.session_state.get(hashtags_key, row.get("Required Hashtags", "")).strip(),
+                        row.get("Media Drive Link", ""),
+                        media_type,
                     )
 
             st.divider()
