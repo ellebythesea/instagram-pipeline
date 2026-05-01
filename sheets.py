@@ -16,6 +16,7 @@ import json
 import os
 import random
 import time
+from json import JSONDecodeError
 
 import gspread
 from google.oauth2.service_account import Credentials
@@ -74,10 +75,23 @@ _LAST_SCHEDULED_TIMES_KEY = "last_scheduled_times"
 
 def _get_client() -> gspread.Client:
     creds_src = GOOGLE_SERVICE_ACCOUNT_JSON
+    if not creds_src:
+        raise RuntimeError(
+            "GOOGLE_SERVICE_ACCOUNT_JSON is not configured. Add it to "
+            ".streamlit/local_secrets.toml, set it as an environment variable, "
+            "or set it to a service-account JSON file path."
+        )
     if os.path.isfile(creds_src):
         creds = Credentials.from_service_account_file(creds_src, scopes=_SCOPES)
     else:
-        creds = Credentials.from_service_account_info(json.loads(creds_src), scopes=_SCOPES)
+        try:
+            creds_info = json.loads(creds_src)
+        except JSONDecodeError as exc:
+            raise RuntimeError(
+                "GOOGLE_SERVICE_ACCOUNT_JSON must be either a valid service-account "
+                "JSON object or a path to a service-account JSON file."
+            ) from exc
+        creds = Credentials.from_service_account_info(creds_info, scopes=_SCOPES)
     return gspread.authorize(creds)
 
 

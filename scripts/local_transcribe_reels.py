@@ -29,14 +29,45 @@ if str(REPO_ROOT) not in sys.path:
 from config import GOOGLE_SHEET_ID  # noqa: E402
 from drive import _get_service  # noqa: E402
 from pipeline_caption import generate_row_caption  # noqa: E402
-from sheets import get_all_rows, update_caption, update_transcript  # noqa: E402
+from sheets import get_all_rows, update_caption, update_metadata, update_transcript  # noqa: E402
 
 
-DEFAULT_MEDIA_DIR = (
-    "/Users/lisamollica/Library/CloudStorage/"
-    "GoogleDrive-voteinorout@gmail.com/My Drive/_apps/"
-    "vioo instagram pipeline/instagram pipeline media/"
-)
+MEDIA_DIR_SUFFIX = Path("_apps") / "vioo instagram pipeline" / "instagram pipeline media"
+
+MEDIA_DIR_CANDIDATES = [
+    Path.home()
+    / "Library"
+    / "CloudStorage"
+    / "GoogleDrive-voteinorout@gmail.com"
+    / "My Drive"
+    / MEDIA_DIR_SUFFIX,
+    Path("/Users/lisa")
+    / "Library"
+    / "CloudStorage"
+    / "GoogleDrive-voteinorout@gmail.com"
+    / "My Drive"
+    / MEDIA_DIR_SUFFIX,
+    Path("/Users/lisamollica")
+    / "Library"
+    / "CloudStorage"
+    / "GoogleDrive-voteinorout@gmail.com"
+    / "My Drive"
+    / MEDIA_DIR_SUFFIX,
+]
+
+
+def _default_media_dir() -> Path:
+    for candidate in MEDIA_DIR_CANDIDATES:
+        if candidate.exists():
+            return candidate
+
+    cloud_storage = Path.home() / "Library" / "CloudStorage"
+    if cloud_storage.exists():
+        matches = sorted(cloud_storage.glob(f"GoogleDrive-*/My Drive/{MEDIA_DIR_SUFFIX}"))
+        if matches:
+            return matches[0]
+
+    return MEDIA_DIR_CANDIDATES[0]
 
 
 def _extract_drive_file_id(link: str) -> str:
@@ -57,6 +88,24 @@ def _drive_filename(service, link: str) -> str:
         .execute()
     )
     return (metadata.get("name") or "").strip()
+
+
+def _is_instagram_url(url: str) -> bool:
+    return "instagram.com/" in (url or "").lower()
+
+
+def _clean_public_url(link: str) -> str:
+    parsed = urlparse((link or "").strip())
+    if not parsed.scheme or not parsed.netloc:
+        return (link or "").strip()
+    return f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+
+
+def _build_instagram_cta(username: str, link: str) -> str:
+    cleaned_username = (username or "").strip().lstrip("@")
+    cleaned_link = _clean_public_url(link)
+    destination = f"@{cleaned_username} {cleaned_link}" if cleaned_username else cleaned_link
+    return f"Comment LINK (on instagram) and we will DM you the link to {destination}"
 
 
 def _find_local_media_path(media_root: Path, filename: str) -> Path:
@@ -124,6 +173,20 @@ def _eligible_rows(rows: list[dict]) -> list[dict]:
 def _update_caption_from_transcript(row: dict, transcript: str) -> None:
     updated_row = dict(row)
     updated_row["Transcript"] = transcript
+    current_top = (updated_row.get("Top Comment") or "").strip()
+    instagram_url = (updated_row.get("Instagram URL") or "").strip()
+    if not current_top and _is_instagram_url(instagram_url):
+        current_top = _build_instagram_cta(updated_row.get("Source Username", ""), instagram_url)
+        updated_row["Top Comment"] = current_top
+        update_metadata(
+            GOOGLE_SHEET_ID,
+            row["row_number"],
+            updated_row.get("Caption Context", ""),
+            updated_row.get("Speaker Name", ""),
+            updated_row.get("Required Hashtags", ""),
+            current_top,
+            updated_row.get("Footer", ""),
+        )
     caption = generate_row_caption(updated_row)
     current_status = (row.get("Status") or "").strip()
     if current_status.lower() == "skipped":
@@ -139,8 +202,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Locally transcribe reel rows missing transcripts.")
     parser.add_argument(
         "--media-dir",
-        default=DEFAULT_MEDIA_DIR,
-        help="Path to your locally synced Drive media folder.",
+        default=None,
+        help="Path to your locally synced Drive media folder. Defaults to auto-detecting common Google Drive locations.",
     )
     parser.add_argument(
         "--model",
@@ -155,9 +218,10 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    media_root = Path(args.media_dir).expanduser()
+    media_root = Path(args.media_dir).expanduser() if args.media_dir else _default_media_dir()
     if not media_root.exists():
         raise FileNotFoundError(f"Media directory does not exist: {media_root}")
+    print(f"Using media directory: {media_root}")
 
     rows = get_all_rows(GOOGLE_SHEET_ID)
     targets = _eligible_rows(rows)

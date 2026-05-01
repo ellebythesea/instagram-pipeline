@@ -525,11 +525,19 @@ def _build_read_cta(link: str) -> str:
 
 def _build_watch_cta(username: str, link: str) -> str:
     cleaned_username = (username or "").strip().lstrip("@")
-    username_part = f" @{cleaned_username}" if cleaned_username else ""
-    return (
-        "Comment LINK (on instagram) and we will DM you the link to "
-        f"the full video{username_part} {_clean_public_url(link)}"
-    )
+    cleaned_link = _clean_public_url(link)
+    destination = f"@{cleaned_username} {cleaned_link}" if cleaned_username else cleaned_link
+    return f"Comment LINK (on instagram) and we will DM you the link to {destination}"
+
+
+def _append_top_comment(existing: str, addition: str) -> str:
+    existing = (existing or "").strip()
+    addition = (addition or "").strip()
+    if not existing:
+        return addition
+    if not addition or addition in existing.split("\n\n"):
+        return existing
+    return f"{existing}\n\n{addition}"
 
 
 def _close_workspace_menu(row: dict) -> None:
@@ -587,7 +595,7 @@ def _current_row_caption_inputs(row: dict) -> dict:
     url = (row.get("Instagram URL") or "").strip()
     current_username = (row.get("Source Username") or "").strip()
 
-    if not current_top and _is_reel_url(url):
+    if not current_top and _is_instagram_url(url):
         current_top = _build_watch_cta(current_username or current_speaker, url)
     elif not current_top and _is_article_url(url):
         current_top = _build_read_cta(url)
@@ -1179,7 +1187,11 @@ def _run_home_mode(mode: str, urls: list[str], org_hashtag: str) -> tuple[str, l
                 "Caption Context": "",
                 "Speaker Name": "",
                 "Required Hashtags": tag_value,
-                "Top Comment": "" if source.get("is_instagram", False) else _build_read_cta(source["url"]),
+                "Top Comment": (
+                    _build_watch_cta(source.get("username", ""), source["url"])
+                    if source.get("is_instagram", False)
+                    else _build_read_cta(source["url"])
+                ),
             }
             if not row["Original Caption"]:
                 raise ValueError(f"{url}: could not extract source text.")
@@ -1578,6 +1590,12 @@ if active_tab == "Edit":
                                 _close_workspace_menu(row)
                                 _queue_workspace_action(row_num, "generate_caption")
                                 _rerun_workspace("Edit")
+                            if url and st.button("Add Watch", key=f"workspace_watch_add_{row_num}", width="stretch"):
+                                top_comment = _build_watch_cta(username or speaker_name, url)
+                                _apply_top_comment_to_caption(row, row_num, speaker_name, top_comment)
+                                _close_workspace_menu(row)
+                                st.session_state["workspace_success"] = f"Row {row_num}: watch CTA saved to generated caption."
+                                _rerun_workspace("Edit")
                             skip_label = "Unskip" if status.strip().lower() == "skipped" else "Skip"
                             if st.button(
                                 skip_label,
@@ -1613,7 +1631,8 @@ if active_tab == "Edit":
                                         st.session_state["workspace_error"] = f"Row {row_num}: link must start with https://"
                                         _rerun_workspace("Edit")
 
-                                    top_comment = _build_link_cta(full_link)
+                                    current_top_comment = _current_row_caption_inputs(row)["Top Comment"]
+                                    top_comment = _append_top_comment(current_top_comment, _build_link_cta(full_link))
                                     _apply_top_comment_to_caption(row, row_num, speaker_name, top_comment)
                                     _close_workspace_menu(row)
                                     st.session_state.pop(link_url_key, None)
@@ -1747,7 +1766,7 @@ if active_tab == "Edit":
                 current_hashtags = st.session_state.get(_workspace_key(row, "hashtags"), row.get("Required Hashtags", "")).strip()
                 current_username = (row.get("Source Username") or "").strip()
                 should_transcribe = bool(st.session_state.get(_workspace_key(row, "transcribe"), False))
-                if _is_reel_url(url) and not current_top:
+                if _is_instagram_url(url) and not current_top:
                     current_top = _build_watch_cta(current_username or current_speaker, url)
                 elif _is_article_url(url) and not current_top:
                     current_top = _build_read_cta(url)

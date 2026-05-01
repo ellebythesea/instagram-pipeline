@@ -66,9 +66,10 @@ The app restores headers if they are missing.
 
 The app uploads Instagram media into your Drive folder and you sync that folder locally on your Mac.
 
-Your local synced media folder is:
+The local transcription script auto-detects the synced media folder from common Google Drive locations, including:
 
 ```text
+/Users/lisa/Library/CloudStorage/GoogleDrive-voteinorout@gmail.com/My Drive/_apps/vioo instagram pipeline/instagram pipeline media/
 /Users/lisamollica/Library/CloudStorage/GoogleDrive-voteinorout@gmail.com/My Drive/_apps/vioo instagram pipeline/instagram pipeline media/
 ```
 
@@ -78,6 +79,12 @@ If you want free local transcription on your Mac instead of paying for transcrip
 
 ```bash
 python scripts/local_transcribe_reels.py
+```
+
+You can still override the folder explicitly:
+
+```bash
+python scripts/local_transcribe_reels.py --media-dir "/path/to/instagram pipeline media"
 ```
 
 That script:
