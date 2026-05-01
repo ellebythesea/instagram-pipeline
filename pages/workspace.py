@@ -390,13 +390,14 @@ def _last_scheduled_time_labels(rows: list[dict]) -> list[str]:
 
 
 def _persisted_last_scheduled_time_labels(rows: list[dict]) -> list[str]:
-    row_labels = _last_scheduled_time_labels(rows)
-    if row_labels:
-        return row_labels
     try:
-        return get_last_scheduled_times(GOOGLE_SHEET_ID)
+        persisted = get_last_scheduled_times(GOOGLE_SHEET_ID)
+        if persisted:
+            return persisted
     except Exception:
-        return []
+        pass
+    row_labels = _last_scheduled_time_labels(rows)
+    return row_labels[-1:] if row_labels else []
 
 
 def _fetch_post_data(url: str) -> dict:
@@ -1306,7 +1307,9 @@ if active_tab == "Edit":
             try:
                 update_scheduled_times(GOOGLE_SHEET_ID, assignments)
                 if assignments:
-                    update_last_scheduled_times(GOOGLE_SHEET_ID, list(assignments.values())[-3:])
+                    latest_entry = list(assignments.values())[-1]
+                    existing_entries = get_last_scheduled_times(GOOGLE_SHEET_ID)
+                    update_last_scheduled_times(GOOGLE_SHEET_ID, [latest_entry, *existing_entries][:3])
             except Exception as e:
                 st.session_state["workspace_error"] = f"Could not save schedule: {describe_error(e)}"
             else:
