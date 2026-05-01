@@ -783,14 +783,32 @@ def _process_pending_rows_from_sheet() -> int:
                     result["transcript"],
                     result["status"],
                 )
+                if (
+                    result["status"] == "ingested"
+                    and result["media_type"] == "article"
+                ):
+                    row_for_caption = dict(row)
+                    row_for_caption["Source Username"] = result["username"]
+                    row_for_caption["Media Type"] = result["media_type"]
+                    row_for_caption["Photo Count"] = result["photo_count"]
+                    row_for_caption["Media Drive Link"] = result["media_link"]
+                    row_for_caption["Thumbnail Drive Link"] = result["thumbnail_link"]
+                    row_for_caption["Original Caption"] = result["original_caption"]
+                    row_for_caption["Transcript"] = result["transcript"]
+                    if not (row_for_caption.get("Top Comment") or "").strip():
+                        row_for_caption["Top Comment"] = _build_read_cta(row["Instagram URL"].strip())
+                    article_caption = generate_row_caption(row_for_caption)
+                    update_caption(GOOGLE_SHEET_ID, row_num, article_caption, "done")
             except Exception as e:
                 status_box.update(label=f"Row {row_num}: error writing to sheet - {describe_error(e)}", state="error")
             else:
                 if result["status"].startswith("error"):
                     status_box.update(label=f"Row {row_num}: {result['status']}", state="error")
                 else:
+                    action_word = "captioned" if result["media_type"] == "article" else "ingested"
+                    display_name = f"@{result['username']}" if result["username"] and result["media_type"] != "article" else result["username"]
                     status_box.update(
-                        label=f"Row {row_num}: ingested - @{result['username']} ({result['media_type']})",
+                        label=f"Row {row_num}: {action_word} - {display_name} ({result['media_type']})",
                         state="complete",
                     )
         progress.progress((i + 1) / len(pending))
