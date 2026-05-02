@@ -1,14 +1,22 @@
 # config.py
 from __future__ import annotations
 
+import base64
+import json
 import os
+import re
+from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 
 try:
     import tomllib
 except ImportError:  # pragma: no cover
-    tomllib = None
+    try:
+        import tomli as tomllib  # type: ignore
+    except ImportError:  # pragma: no cover
+        tomllib = None
 
 try:
     import streamlit as st
@@ -20,6 +28,16 @@ try:
 except ImportError:  # pragma: no cover
     load_dotenv = None
 
+try:
+    from google.cloud import secretmanager
+except ImportError:  # pragma: no cover
+    secretmanager = None
+
+try:
+    from google.oauth2 import service_account
+except ImportError:  # pragma: no cover
+    service_account = None
+
 
 REPO_ROOT = Path(__file__).resolve().parent
 
@@ -27,27 +45,33 @@ if load_dotenv:
     load_dotenv(REPO_ROOT / ".env")
 
 
-def _load_local_toml_secrets() -> dict[str, str]:
-    if tomllib is None:
-        return {}
-
+def _load_local_toml_secrets() -> dict[str, Any]:
     secrets_paths = [
         REPO_ROOT / ".streamlit" / "secrets.toml",
         REPO_ROOT / ".streamlit" / "local_secrets.toml",
     ]
     for path in secrets_paths:
         if path.exists():
-            with path.open("rb") as handle:
-                data = tomllib.load(handle)
-            return {str(key): value for key, value in data.items()}
+            if tomllib is not None:
+                with path.open("rb") as handle:
+                    data = tomllib.load(handle)
+                return {str(key): value for key, value in data.items()}
+            text = path.read_text()
+            return {
+                match.group("key"): match.group("value")
+                for match in re.finditer(
+                    r'(?m)^\s*(?P<key>[A-Z0-9_]+)\s*=\s*"(?P<value>.*)"\s*$',
+                    text,
+                )
+            }
     return {}
 
 
 LOCAL_TOML_SECRETS = _load_local_toml_secrets()
 
 
-def _get_secret(key: str, default: str = "") -> str:
-    """Read a secret from Streamlit, then local files, then env vars."""
+def _runtime_secret(key: str, default: Any = "") -> Any:
+    """Read from Streamlit, then local TOML, then environment variables."""
     if st is not None:
         try:
             return st.secrets[key]
@@ -58,6 +82,99 @@ def _get_secret(key: str, default: str = "") -> str:
         return LOCAL_TOML_SECRETS[key]
 
     return os.getenv(key, default)
+
+
+def _decode_service_account_json(raw_json: str, b64_json: str) -> str:
+    if raw_json:
+        return raw_json
+    if b64_json:
+        return base64.b64decode(b64_json).decode()
+    return ""
+
+
+BOOTSTRAP_SERVICE_ACCOUNT_JSON = _decode_service_account_json(
+    str(_runtime_secret("GOOGLE_SERVICE_ACCOUNT_JSON", "") or ""),
+    str(_runtime_secret("GOOGLE_CREDENTIALS_BASE64", "") or ""),
+)
+
+
+SECRET_MANAGER_PROJECT_ID = (
+    str(_runtime_secret("SECRET_MANAGER_PROJECT_ID", "") or "")
+    or str(_runtime_secret("GOOGLE_CLOUD_PROJECT", "") or "")
+    or os.getenv("GOOGLE_CLOUD_PROJECT", "")
+)
+
+if not SECRET_MANAGER_PROJECT_ID and BOOTSTRAP_SERVICE_ACCOUNT_JSON:
+    try:
+        SECRET_MANAGER_PROJECT_ID = json.loads(BOOTSTRAP_SERVICE_ACCOUNT_JSON).get("project_id", "")
+    except Exception:
+        SECRET_MANAGER_PROJECT_ID = ""
+
+
+SECRET_MANAGER_SECRET_NAMES: dict[str, str] = {
+    "OPENAI_API_KEY": str(_runtime_secret("SECRET_MANAGER_OPENAI_API_KEY_NAME", "openai-api-key") or "openai-api-key"),
+    "SERPER_API_KEY": str(_runtime_secret("SECRET_MANAGER_SERPER_API_KEY_NAME", "serper-id") or "serper-id"),
+    "APP_PASSWORD": str(_runtime_secret("SECRET_MANAGER_APP_PASSWORD_NAME", "password") or "password"),
+    "APIFY_API_TOKEN": str(_runtime_secret("SECRET_MANAGER_APIFY_API_TOKEN_NAME", "apify-api") or "apify-api"),
+    "GOOGLE_SHEET_ID": str(_runtime_secret("SECRET_MANAGER_GOOGLE_SHEET_ID_NAME", "google-sheet-id") or "google-sheet-id"),
+    "GOOGLE_WORKSHEET_NAME": str(_runtime_secret("SECRET_MANAGER_GOOGLE_WORKSHEET_NAME", "google-worksheet-name") or "google-worksheet-name"),
+    "GOOGLE_DRIVE_FOLDER_ID": str(_runtime_secret("SECRET_MANAGER_GOOGLE_DRIVE_FOLDER_ID_NAME", "google-folder-id") or "google-folder-id"),
+    "GOOGLE_OAUTH_CLIENT_JSON": str(_runtime_secret("SECRET_MANAGER_GOOGLE_OAUTH_CLIENT_JSON_NAME", "google-oauth-id") or "google-oauth-id"),
+    "GOOGLE_OAUTH_TOKEN_JSON": str(_runtime_secret("SECRET_MANAGER_GOOGLE_OAUTH_TOKEN_JSON_NAME", "google-oauth-token") or "google-oauth-token"),
+    "GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER": str(_runtime_secret("SECRET_MANAGER_GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER_NAME", "google-screenshots-subfolder") or "google-screenshots-subfolder"),
+    "APIFY_REEL_ACTOR_ID": str(_runtime_secret("SECRET_MANAGER_APIFY_REEL_ACTOR_ID_NAME", "apify-reel-actor-id") or "apify-reel-actor-id"),
+    "APIFY_POST_ACTOR_ID": str(_runtime_secret("SECRET_MANAGER_APIFY_POST_ACTOR_ID_NAME", "apify-post-actor-id") or "apify-post-actor-id"),
+}
+
+
+@lru_cache(maxsize=1)
+def _secret_manager_client():
+    if secretmanager is None:
+        return None
+
+    if BOOTSTRAP_SERVICE_ACCOUNT_JSON and service_account is not None:
+        try:
+            info = json.loads(BOOTSTRAP_SERVICE_ACCOUNT_JSON)
+            credentials = service_account.Credentials.from_service_account_info(info)
+            return secretmanager.SecretManagerServiceClient(credentials=credentials)
+        except Exception:
+            pass
+
+    try:
+        return secretmanager.SecretManagerServiceClient()
+    except Exception:
+        return None
+
+
+@lru_cache(maxsize=None)
+def _secret_manager_value(secret_name: str) -> str:
+    if not secret_name or not SECRET_MANAGER_PROJECT_ID:
+        return ""
+
+    client = _secret_manager_client()
+    if client is None:
+        return ""
+
+    try:
+        resource = f"projects/{SECRET_MANAGER_PROJECT_ID}/secrets/{secret_name}/versions/latest"
+        response = client.access_secret_version(request={"name": resource})
+        return response.payload.data.decode("utf-8")
+    except Exception:
+        return ""
+
+
+def _get_secret(key: str, default: str = "") -> str:
+    """Read a secret from Secret Manager first, then runtime secrets."""
+    secret_name = SECRET_MANAGER_SECRET_NAMES.get(key, "")
+    if secret_name:
+        value = _secret_manager_value(secret_name)
+        if value:
+            return value
+
+    value = _runtime_secret(key, default)
+    if value is None:
+        return default
+    return str(value)
 
 
 OPENAI_API_KEY = _get_secret("OPENAI_API_KEY")
@@ -91,13 +208,13 @@ GOOGLE_OAUTH_TOKEN_JSON = _get_secret("GOOGLE_OAUTH_TOKEN_JSON")
 
 def _get_google_credentials_json() -> str:
     """Accept credentials as raw JSON or as a base64-encoded string."""
+    if BOOTSTRAP_SERVICE_ACCOUNT_JSON:
+        return BOOTSTRAP_SERVICE_ACCOUNT_JSON
     raw = _get_secret("GOOGLE_SERVICE_ACCOUNT_JSON")
     if raw:
         return raw
     b64 = _get_secret("GOOGLE_CREDENTIALS_BASE64")
     if b64:
-        import base64
-
         return base64.b64decode(b64).decode()
     return ""
 
