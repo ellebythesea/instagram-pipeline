@@ -141,12 +141,16 @@ By default, `config.py` looks for these secrets:
 - `openai-api-key`
 - `apify-api`
 - `google-sheet-id`
-- `google-worksheet-name`
 - `google-folder-id`
 - `google-oauth-id`
 - `google-oauth-token`
+- `google-service-account`
 - `password`
 - `serper-id`
+
+Optional:
+
+- `google-worksheet-name`
 
 Optional secret names:
 

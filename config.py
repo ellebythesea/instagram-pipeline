@@ -121,6 +121,8 @@ SECRET_MANAGER_SECRET_NAMES: dict[str, str] = {
     "GOOGLE_DRIVE_FOLDER_ID": str(_runtime_secret("SECRET_MANAGER_GOOGLE_DRIVE_FOLDER_ID_NAME", "google-folder-id") or "google-folder-id"),
     "GOOGLE_OAUTH_CLIENT_JSON": str(_runtime_secret("SECRET_MANAGER_GOOGLE_OAUTH_CLIENT_JSON_NAME", "google-oauth-id") or "google-oauth-id"),
     "GOOGLE_OAUTH_TOKEN_JSON": str(_runtime_secret("SECRET_MANAGER_GOOGLE_OAUTH_TOKEN_JSON_NAME", "google-oauth-token") or "google-oauth-token"),
+    "GOOGLE_SERVICE_ACCOUNT_JSON": str(_runtime_secret("SECRET_MANAGER_GOOGLE_SERVICE_ACCOUNT_JSON_NAME", "google-service-account") or "google-service-account"),
+    "GOOGLE_CREDENTIALS_BASE64": str(_runtime_secret("SECRET_MANAGER_GOOGLE_CREDENTIALS_BASE64_NAME", "google-service-account") or "google-service-account"),
     "GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER": str(_runtime_secret("SECRET_MANAGER_GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER_NAME", "google-screenshots-subfolder") or "google-screenshots-subfolder"),
     "APIFY_REEL_ACTOR_ID": str(_runtime_secret("SECRET_MANAGER_APIFY_REEL_ACTOR_ID_NAME", "apify-reel-actor-id") or "apify-reel-actor-id"),
     "APIFY_POST_ACTOR_ID": str(_runtime_secret("SECRET_MANAGER_APIFY_POST_ACTOR_ID_NAME", "apify-post-actor-id") or "apify-post-actor-id"),
