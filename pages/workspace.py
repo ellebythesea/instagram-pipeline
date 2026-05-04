@@ -1701,7 +1701,6 @@ if active_tab == "Edit":
 
                 with top_right:
                     menu_label = "Photo run" if not _is_reel_url(url) else "Transcribe"
-                    title_col, menu_col = st.columns([12, 1], vertical_alignment="center")
                     schedule_suffix = (row.get("Scheduled Time", "") or "").strip()
                     status_line = f"Row {row_num} · {media_type or 'pending'} · {status or 'blank'}"
                     if schedule_suffix:
@@ -1710,14 +1709,53 @@ if active_tab == "Edit":
                         f'<div class="workspace-status-line">{status_line}</div>',
                         unsafe_allow_html=True,
                     )
-                    with title_col:
-                        if username:
-                            st.markdown(f"#### @{username}" if is_instagram else f"#### {username}")
-                        else:
-                            st.markdown(f"#### Row {row_num}")
-                    with menu_col:
+                    if username:
+                        st.markdown(f"#### @{username}" if is_instagram else f"#### {username}")
+                    else:
+                        st.markdown(f"#### Row {row_num}")
+
+                    st.text_input(
+                        "Speaker Name",
+                        value=speaker_name,
+                        key=speaker_key,
+                        placeholder="Enter name",
+                    )
+                    if _is_reel_url(url):
+                        pending_transcribe_resets = st.session_state.setdefault("workspace_transcribe_reset_rows", [])
+                        if transcribe_key in pending_transcribe_resets:
+                            st.session_state.pop(transcribe_key, None)
+                            st.session_state["workspace_transcribe_reset_rows"] = [
+                                pending for pending in pending_transcribe_resets if pending != transcribe_key
+                            ]
+                        st.checkbox(
+                            "Check to transcribe",
+                            value=bool(st.session_state.get(transcribe_key, False)),
+                            key=transcribe_key,
+                        )
+                    if st.session_state.get(speaker_key, speaker_name).strip() != (speaker_name or "").strip():
+                        if st.button(
+                            "Update",
+                            key=f"workspace_update_{row_num}",
+                            type="primary",
+                            width="stretch",
+                        ):
+                            current_speaker = st.session_state.get(speaker_key, speaker_name).strip()
+                            update_metadata(
+                                GOOGLE_SHEET_ID,
+                                row_num,
+                                row.get("Caption Context", ""),
+                                current_speaker,
+                                row.get("Required Hashtags", ""),
+                                row.get("Top Comment", ""),
+                                "",
+                            )
+                            st.session_state["workspace_success"] = f"Row {row_num}: metadata updated."
+                            _rerun_workspace("Edit")
+
+                    if url:
+                        st.link_button("Open in Instagram" if is_instagram else "Open source link", url, width="stretch")
                         menu_nonce = st.session_state.get(menu_nonce_key, 0)
-                        with st.popover("\u200b" * (menu_nonce + 1), use_container_width=True):
+                        with st.popover(f"Actions{'\u200b' * menu_nonce}", use_container_width=True):
                             primary_action = "transcript" if _is_reel_url(url) else "image_text"
                             primary_help = "Fetch transcript and regenerate caption." if _is_reel_url(url) else "Extract text from images and regenerate caption."
                             if is_instagram and st.button(
@@ -1793,47 +1831,6 @@ if active_tab == "Edit":
                                     st.session_state["workspace_success"] = f"Row {row_num}: deleted from the sheet."
                                 _close_workspace_menu(row)
                                 _rerun_workspace("Edit")
-
-                    st.text_input(
-                        "Speaker Name",
-                        value=speaker_name,
-                        key=speaker_key,
-                        placeholder="Enter name",
-                    )
-                    if _is_reel_url(url):
-                        pending_transcribe_resets = st.session_state.setdefault("workspace_transcribe_reset_rows", [])
-                        if transcribe_key in pending_transcribe_resets:
-                            st.session_state.pop(transcribe_key, None)
-                            st.session_state["workspace_transcribe_reset_rows"] = [
-                                pending for pending in pending_transcribe_resets if pending != transcribe_key
-                            ]
-                        st.checkbox(
-                            "Check to transcribe",
-                            value=bool(st.session_state.get(transcribe_key, False)),
-                            key=transcribe_key,
-                        )
-                    if st.session_state.get(speaker_key, speaker_name).strip() != (speaker_name or "").strip():
-                        if st.button(
-                            "Update",
-                            key=f"workspace_update_{row_num}",
-                            type="primary",
-                            width="stretch",
-                        ):
-                            current_speaker = st.session_state.get(speaker_key, speaker_name).strip()
-                            update_metadata(
-                                GOOGLE_SHEET_ID,
-                                row_num,
-                                row.get("Caption Context", ""),
-                                current_speaker,
-                                row.get("Required Hashtags", ""),
-                                row.get("Top Comment", ""),
-                                "",
-                            )
-                            st.session_state["workspace_success"] = f"Row {row_num}: metadata updated."
-                            _rerun_workspace("Edit")
-
-                    if url:
-                        st.link_button("Open in Instagram" if is_instagram else "Open source link", url, width="stretch")
 
                     transcript_warning = st.session_state.get(warning_key)
                     if transcript_warning:
