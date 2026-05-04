@@ -141,7 +141,7 @@ div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) {
 .workspace-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0;
+    gap: 1px;
     width: 100%;
 }
 .workspace-grid-card {
