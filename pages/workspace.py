@@ -602,6 +602,7 @@ def _close_workspace_menu(row: dict) -> None:
     nonce_key = _workspace_key(row, "menu_nonce")
     st.session_state[nonce_key] = st.session_state.get(nonce_key, 0) + 1
     st.session_state[_workspace_key(row, "link_editor_open")] = False
+    st.session_state.pop("workspace_link_dialog_row", None)
 
 
 def _close_workspace_link_dialog(row: dict) -> None:
