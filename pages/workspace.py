@@ -392,36 +392,37 @@ def _grid_preview_url(row: dict) -> str:
 
 
 def _render_editor_grid(editor_rows: list[dict]) -> None:
-    for start in range(0, len(editor_rows), 3):
-        columns = st.columns(3)
-        for column, row in zip(columns, editor_rows[start:start + 3]):
-            row_num = row.get("row_number")
-            username = (row.get("Source Username") or "").strip().lstrip("@")
-            media_type = (row.get("Media Type") or "").strip().lower() or "post"
-            image_url = _grid_preview_url(row)
-            badge_html = "".join(
-                f'<span class="workspace-grid-badge" title="{html.escape(title)}">{html.escape(label)}</span>'
-                for label, title in _grid_badges(row)
+    cards = []
+    for row in editor_rows:
+        row_num = row.get("row_number")
+        username = (row.get("Source Username") or "").strip().lstrip("@")
+        media_type = (row.get("Media Type") or "").strip().lower() or "post"
+        image_url = _grid_preview_url(row)
+        badge_html = "".join(
+            f'<span class="workspace-grid-badge" title="{html.escape(title)}">{html.escape(label)}</span>'
+            for label, title in _grid_badges(row)
+        )
+        label = f"@{username}" if username else f"Row {row_num}"
+        href = f"?workspace_edit_view=list&workspace_row={row_num}#workspace-row-{row_num}"
+        if image_url:
+            media_html = f'<img src="{html.escape(image_url)}" alt="{html.escape(label)}">'
+        else:
+            media_html = (
+                '<div class="workspace-grid-placeholder">'
+                f'{html.escape(label)}<br>{html.escape(media_type)}'
+                '</div>'
             )
-            label = f"@{username}" if username else f"Row {row_num}"
-            href = f"?workspace_edit_view=list&workspace_row={row_num}#workspace-row-{row_num}"
-            if image_url:
-                media_html = f'<img src="{html.escape(image_url)}" alt="{html.escape(label)}">'
-            else:
-                media_html = (
-                    '<div class="workspace-grid-placeholder">'
-                    f'{html.escape(label)}<br>{html.escape(media_type)}'
-                    '</div>'
-                )
-            card_html = f"""
+        cards.append(
+            f"""
             <a class="workspace-grid-card" href="{html.escape(href)}">
               {media_html}
               <div class="workspace-grid-badges">{badge_html}</div>
               <div class="workspace-grid-meta">{html.escape(label)} · {html.escape(media_type)}</div>
             </a>
             """
-            with column:
-                st.markdown(card_html, unsafe_allow_html=True)
+        )
+    grid_html = "".join(cards)
+    st.markdown(f'<div class="workspace-grid">{grid_html}</div>', unsafe_allow_html=True)
 
 
 def _scroll_to_editor_row(row_number: str) -> None:

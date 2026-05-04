@@ -138,16 +138,22 @@ div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) {
 .workspace-view-toggle {
     margin: 0.25rem 0 0.85rem;
 }
+.workspace-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0;
+    width: 100%;
+}
 .workspace-grid-card {
     position: relative;
     display: block;
     aspect-ratio: 1 / 1;
     overflow: hidden;
-    border: 1px solid rgba(15, 23, 42, 0.12);
-    border-radius: 14px;
+    border: 0;
+    border-radius: 0;
     background: #f8fafc;
     text-decoration: none;
-    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+    box-shadow: none;
 }
 .workspace-grid-card img {
     width: 100%;
