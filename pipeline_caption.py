@@ -75,6 +75,28 @@ def _finalize_required_hashtags(caption: str, required_hashtags: str) -> tuple[s
     return caption, missing_required[:remaining_slots]
 
 
+def _strip_top_comment_paragraphs(text: str, top_comment: str) -> str:
+    text = (text or "").strip()
+    top_comment = (top_comment or "").strip()
+    if not text:
+        return text
+
+    paragraphs = [part.strip() for part in re.split(r"\n\s*\n", text) if part.strip()]
+    cleaned: list[str] = []
+    top_lower = top_comment.lower()
+
+    for paragraph in paragraphs:
+        normalized = paragraph.strip()
+        lowered = normalized.lower()
+        if top_comment and lowered == top_lower:
+            continue
+        if lowered.startswith("comment link (on instagram)"):
+            continue
+        cleaned.append(normalized)
+
+    return "\n\n".join(cleaned).strip()
+
+
 def generate_row_caption(row: dict) -> str:
     """Generate a final caption string for one sheet row."""
     transcript = row.get("Transcript", "").strip()
@@ -117,8 +139,12 @@ def generate_row_caption(row: dict) -> str:
     )
     caption = response.choices[0].message.content.strip()
 
-    if row.get("Top Comment", "").strip():
-        caption = f"{row['Top Comment'].strip()}\n\n{caption}"
+    top_comment = row.get("Top Comment", "").strip()
+    if top_comment:
+        caption = _strip_top_comment_paragraphs(caption, top_comment)
+        original_caption = _strip_top_comment_paragraphs(original_caption, top_comment)
+    if top_comment:
+        caption = f"{caption}\n\n{top_comment}"
 
     media_type = (row.get("Media Type", "") or "").strip().lower()
 

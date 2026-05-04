@@ -73,18 +73,30 @@ The local transcription script auto-detects the synced media folder from common 
 /Users/lisamollica/Library/CloudStorage/GoogleDrive-voteinorout@gmail.com/My Drive/_apps/vioo instagram pipeline/instagram pipeline media/
 ```
 
+## Local Helper Scripts
+
+These are the local scripts in `scripts/` and what they do.
+
+### Google Drive OAuth token generator
+
+```bash
+python scripts/generate_drive_oauth_token.py "/path/to/oauth-client.json"
+```
+
+Use this when you need to refresh `GOOGLE_OAUTH_TOKEN_JSON`.
+
 ## Local Reel Transcription
 
 If you want free local transcription on your Mac instead of paying for transcript runs in the cloud app, use the local script:
 
 ```bash
-python scripts/local_transcribe_reels.py
+.venv/bin/python scripts/local_transcribe_reels.py
 ```
 
 You can still override the folder explicitly:
 
 ```bash
-python scripts/local_transcribe_reels.py --media-dir "/path/to/instagram pipeline media"
+.venv/bin/python scripts/local_transcribe_reels.py --media-dir "/path/to/instagram pipeline media"
 ```
 
 That script:
@@ -115,6 +127,67 @@ pip install openai-whisper
 ```
 
 The script tries `faster-whisper` first, then falls back to `openai-whisper`.
+
+## Local One-Minute Video Splitter
+
+This script only works on files that are already downloaded locally. By default it scans:
+
+```text
+/Users/lisamollica/Library/CloudStorage/GoogleDrive-voteinorout@gmail.com/My Drive/_apps/vioo instagram pipeline/instagram pipeline media/splits
+```
+
+Run it with:
+
+```bash
+.venv/bin/python scripts/split_video_minutes.py
+```
+
+Or point it at a different folder:
+
+```bash
+.venv/bin/python scripts/split_video_minutes.py "/path/to/folder"
+```
+
+What it does:
+
+- looks for local video files already in that folder
+- splits them into exact one-minute `.mp4` segments using `ffmpeg`
+- creates a sibling output folder like `my_video_segments/`
+- names the segments `one.mp4`, `two.mp4`, `three.mp4`, and so on
+- skips any source video that already has segments created
+
+Requirement:
+
+```bash
+ffmpeg
+```
+
+## Local Auto-Split Folder Watcher
+
+If you want the split to happen automatically whenever you drag a video into the folder, run the watcher:
+
+```bash
+.venv/bin/python scripts/watch_split_folder.py
+```
+
+By default it watches:
+
+```text
+/Users/lisamollica/Library/CloudStorage/GoogleDrive-voteinorout@gmail.com/My Drive/_apps/vioo instagram pipeline/instagram pipeline media/splits
+```
+
+You can also point it at another folder:
+
+```bash
+.venv/bin/python scripts/watch_split_folder.py "/path/to/folder"
+```
+
+What it does:
+
+- watches the folder continuously
+- waits until a newly dropped video stops changing size
+- automatically runs the one-minute split
+- skips files that already have a `*_segments` folder with output files
 
 ## Running Locally
 
@@ -225,5 +298,17 @@ Notes:
 Run local reel transcription for all blank-transcript reel rows:
 
 ```bash
-python scripts/local_transcribe_reels.py
+.venv/bin/python scripts/local_transcribe_reels.py
+```
+
+Split all already-downloaded videos in the local `splits` folder into one-minute chunks:
+
+```bash
+.venv/bin/python scripts/split_video_minutes.py
+```
+
+Watch the local `splits` folder and auto-split new videos as you drag them in:
+
+```bash
+.venv/bin/python scripts/watch_split_folder.py
 ```

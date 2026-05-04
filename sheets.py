@@ -71,6 +71,7 @@ _rows_cache: dict[str, tuple[float, list[dict]]] = {}
 _headers_checked: set[tuple[str, str]] = set()
 _METADATA_SHEET_TITLE = "__workspace_meta__"
 _LAST_SCHEDULED_TIMES_KEY = "last_scheduled_times"
+_FUNDRAISING_SHEET_TITLE = "fundraising"
 
 
 def _get_client() -> gspread.Client:
@@ -142,6 +143,14 @@ def _metadata_worksheet(sheet_id: str) -> gspread.Worksheet:
         ws = workbook.add_worksheet(title=_METADATA_SHEET_TITLE, rows=10, cols=2)
         _with_backoff(ws.update, "A1:B1", [["key", "value"]])
     return ws
+
+
+def _optional_worksheet(sheet_id: str, title: str) -> gspread.Worksheet | None:
+    workbook = _workbook(sheet_id)
+    try:
+        return workbook.worksheet(title)
+    except gspread.WorksheetNotFound:
+        return None
 
 
 def _ensure_headers(sheet_id: str, ws: gspread.Worksheet) -> None:
@@ -347,6 +356,36 @@ def update_last_scheduled_times(sheet_id: str, scheduled_times: list[str]) -> No
             _with_backoff(ws.update, f"A{index}:B{index}", [[_LAST_SCHEDULED_TIMES_KEY, payload]])
             return
     _with_backoff(ws.append_row, [_LAST_SCHEDULED_TIMES_KEY, payload], value_input_option="USER_ENTERED")
+
+
+def get_fundraising_links(sheet_id: str) -> list[dict[str, str]]:
+    """Return fundraising top-comment presets from the optional worksheet.
+
+    Expected layout is two columns:
+      A: label/name
+      B: full top comment text
+    The first row may optionally be a header row.
+    """
+    ws = _optional_worksheet(sheet_id, _FUNDRAISING_SHEET_TITLE)
+    if ws is None:
+        return []
+
+    values = _with_backoff(ws.get_all_values)
+    if not values:
+        return []
+
+    presets: list[dict[str, str]] = []
+    for index, row in enumerate(values):
+        label = row[0].strip() if len(row) > 0 else ""
+        link = row[1].strip() if len(row) > 1 else ""
+        if not label and not link:
+            continue
+        if index == 0 and label.lower() in {"name", "label", "fundraising", "preset"} and link.lower() in {"link", "url", "comment", "top comment"}:
+            continue
+        if not label or not link:
+            continue
+        presets.append({"label": label, "link": link})
+    return presets
 
 
 def update_metadata(
