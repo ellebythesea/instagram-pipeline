@@ -847,13 +847,13 @@ def _copy_tabs(
                 f'<div class="workspace-plain-copy-text">Drive media link{"" if len(media_links) == 1 else "s"}.</div>',
                 unsafe_allow_html=True,
             )
+            st.code("\n".join(media_links), language=None)
             if (media_type or "").strip().lower() == "reel" and media_links:
                 st.link_button("Open reel in Drive", media_links[0], width="stretch")
             else:
                 for index, link in enumerate(media_links, start=1):
                     label = "Open media in Drive" if len(media_links) == 1 else f"Open media {index} in Drive"
                     st.link_button(label, link, width="stretch")
-            st.code("\n".join(media_links), language=None)
 
 
 def _icon_copy_button(label: str, value: str) -> None:
