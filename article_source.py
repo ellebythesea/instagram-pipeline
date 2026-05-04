@@ -15,11 +15,37 @@ _USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0 Safari/537.36"
 )
 
+_NOISE_PATTERNS = [
+    r"^copyright\s+\d{4}.*all rights reserved\.?$",
+    r"^\(ap photo/.*\)$",
+    r"^ap photo/.*$",
+    r"^read more at the link in our bio\.?$",
+]
+
 
 def _clean_text(value: str) -> str:
     text = unescape(value or "")
     text = re.sub(r"\s+", " ", text)
     return text.strip()
+
+
+def _normalize_compare_text(value: str) -> str:
+    return re.sub(r"\s+", " ", (value or "").strip().lower())
+
+
+def _looks_like_noise(paragraph: str) -> bool:
+    cleaned = _clean_text(paragraph)
+    if not cleaned:
+        return True
+    lowered = cleaned.lower()
+    for pattern in _NOISE_PATTERNS:
+        if re.match(pattern, lowered, re.IGNORECASE):
+            return True
+    if "(ap photo/" in lowered:
+        return True
+    if "all rights reserved" in lowered:
+        return True
+    return False
 
 
 def _extract_meta(html: str, attr_name: str, attr_value: str) -> str:
@@ -99,23 +125,35 @@ def _extract_title_and_body(html: str) -> tuple[str, list[str]]:
 
 def _compose_source_text(title: str, description: str, paragraphs: list[str]) -> str:
     parts: list[str] = []
+    seen: set[str] = set()
 
     cleaned_title = _clean_text(title)
     cleaned_description = _clean_text(description)
     if cleaned_title:
         parts.append(cleaned_title)
+        seen.add(_normalize_compare_text(cleaned_title))
     if cleaned_description and cleaned_description.lower() != cleaned_title.lower():
         parts.append(cleaned_description)
+        seen.add(_normalize_compare_text(cleaned_description))
 
     for paragraph in paragraphs:
+        if _looks_like_noise(paragraph):
+            continue
         lowered = paragraph.lower()
         if cleaned_description and lowered == cleaned_description.lower():
             continue
         if cleaned_title and lowered == cleaned_title.lower():
             continue
+        normalized = _normalize_compare_text(paragraph)
+        if normalized in seen:
+            continue
         if len(paragraph) < 40:
             continue
+        sentence_count = len(re.findall(r"[.!?](?:\s|$)", paragraph))
+        if sentence_count <= 1 and len(paragraph) < 120:
+            continue
         parts.append(paragraph)
+        seen.add(normalized)
         if len(" ".join(parts)) >= 1800:
             break
 
