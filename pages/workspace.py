@@ -1339,6 +1339,25 @@ def _redo_caption_from_image_text(row: dict) -> None:
     update_caption(GOOGLE_SHEET_ID, row_num, caption, next_status)
 
 
+def _generate_caption_for_row(row: dict) -> None:
+    row_num = row["row_number"]
+    current_inputs = _current_row_caption_inputs(row)
+    update_metadata(
+        GOOGLE_SHEET_ID,
+        row_num,
+        current_inputs["Caption Context"],
+        current_inputs["Speaker Name"],
+        current_inputs["Required Hashtags"],
+        current_inputs["Top Comment"],
+        "",
+    )
+    updated_row = dict(row)
+    updated_row.update(current_inputs)
+    caption = generate_row_caption(updated_row)
+    next_status = "skipped" if (row.get("Status", "") or "").strip().lower() == "skipped" else "done"
+    update_caption(GOOGLE_SHEET_ID, row_num, caption, next_status)
+
+
 def _queue_workspace_action(row_number: int, action: str) -> None:
     queue = st.session_state.setdefault("workspace_action_queue", [])
     queue.append({"row_number": row_number, "action": action})
@@ -1387,6 +1406,10 @@ def _process_next_workspace_action() -> None:
             with st.spinner(f"Refreshing row {row_number} with transcript..."):
                 _rerun_with_transcript(row, force_remote=True)
             st.session_state["workspace_success"] = f"Row {row_number}: transcript rerun complete."
+        elif action == "generate_caption":
+            with st.spinner(f"Generating caption for row {row_number}..."):
+                _generate_caption_for_row(row)
+            st.session_state["workspace_success"] = f"Row {row_number}: caption generated."
         elif action == "image_text":
             with st.spinner(f"Extracting image text for row {row_number}..."):
                 _redo_caption_from_image_text(row)
@@ -1862,6 +1885,15 @@ if active_tab == "Home":
                                         _rerun_workspace("Edit")
                                 _close_workspace_menu(row)
                                 _queue_workspace_action(row_num, primary_action)
+                                _rerun_workspace("Edit")
+                            if st.button(
+                                "Generate caption",
+                                key=f"workspace_menu_generate_{row_num}",
+                                width="stretch",
+                                help="Generate a caption for this row from its existing source text, transcript, and context.",
+                            ):
+                                _close_workspace_menu(row)
+                                _queue_workspace_action(row_num, "generate_caption")
                                 _rerun_workspace("Edit")
                             if url and st.button("Add Watch", key=f"workspace_watch_add_{row_num}", width="stretch"):
                                 top_comment = _build_watch_cta(username or speaker_name, url)
