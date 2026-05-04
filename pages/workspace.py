@@ -842,8 +842,6 @@ def _save_all_workspace_speaker_names(rows: list[dict]) -> int:
         )
         updated_count += 1
     return updated_count
-    else:
-        row["Speaker Name"] = current_speaker
 
 
 def _fundraising_preset_map() -> dict[str, str]:
