@@ -51,7 +51,6 @@ ORG_HASHTAG_MAP = {
 
 EDITABLE_STATUSES = {"ingested", "done"}
 TRANSCRIPT_SIZE_WARNING_BYTES = 100 * 1024 * 1024
-GRID_INITIAL_RENDER_LIMIT = 60
 EDITOR_INITIAL_RENDER_LIMIT = 12
 client = openai.OpenAI(api_key=OPENAI_API_KEY, timeout=45.0, max_retries=1)
 PINNED_TOP_COMMENT_PREFIX = "[[TOP]] "
@@ -358,12 +357,25 @@ def _default_editor_status(row: dict) -> str:
 
 
 def _sort_editor_rows(rows: list[dict]) -> list[dict]:
+    def row_sort_key(row: dict) -> tuple[int, int]:
+        has_caption = bool((row.get("Generated Caption") or "").strip())
+        has_transcript = bool((row.get("Transcript") or "").strip())
+        is_skipped = (row.get("Status") or "").strip().lower() == "skipped"
+        if is_skipped:
+            group = 3
+        elif not has_caption:
+            group = 0
+        elif has_caption and not has_transcript:
+            group = 1
+        elif has_caption and has_transcript:
+            group = 2
+        else:
+            group = 3
+        return group, row.get("row_number", 0)
+
     return sorted(
         rows,
-        key=lambda row: (
-            1 if (row.get("Status", "") or "").strip().lower() == "skipped" else 0,
-            row.get("row_number", 0),
-        ),
+        key=row_sort_key,
     )
 
 
@@ -402,14 +414,9 @@ def _visible_rows_with_target(rows: list[dict], limit: int, target_row_number: s
     return visible_rows
 
 
-def _render_editor_grid(editor_rows: list[dict], show_all: bool = False, target_row_number: str = "") -> None:
-    visible_rows = editor_rows if show_all else _visible_rows_with_target(
-        editor_rows,
-        GRID_INITIAL_RENDER_LIMIT,
-        target_row_number,
-    )
+def _render_editor_grid(editor_rows: list[dict]) -> None:
     cards = []
-    for row in visible_rows:
+    for row in editor_rows:
         row_num = row.get("row_number")
         username = (row.get("Source Username") or "").strip().lstrip("@")
         media_type = (row.get("Media Type") or "").strip().lower() or "post"
@@ -439,8 +446,6 @@ def _render_editor_grid(editor_rows: list[dict], show_all: bool = False, target_
         )
     grid_html = "".join(cards)
     st.html(f'<div class="workspace-grid">{grid_html}</div>')
-    if len(visible_rows) < len(editor_rows):
-        st.caption(f"Showing {len(visible_rows)} of {len(editor_rows)} thumbnails.")
 
 
 def _scroll_to_editor_row(row_number: str) -> None:
@@ -1747,11 +1752,7 @@ if active_tab == "Home":
         query_row = str(st.query_params.get("workspace_row", "") or "")
         if query_row and st.session_state.get("workspace_target_row") != query_row:
             st.session_state["workspace_target_row"] = query_row
-        show_all_thumbnails = st.checkbox(
-            "Show all thumbnails",
-            key="workspace_show_all_thumbnails",
-        )
-        _render_editor_grid(editor_rows, show_all_thumbnails, query_row)
+        _render_editor_grid(editor_rows)
         show_full_list = st.checkbox(
             "Show full list",
             key="workspace_show_full_list",
