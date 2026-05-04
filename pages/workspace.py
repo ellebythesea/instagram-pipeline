@@ -403,7 +403,7 @@ def _render_editor_grid(editor_rows: list[dict]) -> None:
             for label, title in _grid_badges(row)
         )
         label = f"@{username}" if username else f"Row {row_num}"
-        href = f"?workspace_edit_view=list&workspace_row={row_num}#workspace-row-{row_num}"
+        href = f"?workspace_active_tab=Edit&workspace_row={row_num}#workspace-row-{row_num}"
         if image_url:
             media_html = f'<img src="{html.escape(image_url)}" alt="{html.escape(label)}">'
         else:
@@ -1510,11 +1510,11 @@ pending_tab = st.session_state.pop("_workspace_pending_tab", None)
 if pending_tab:
     st.session_state["workspace_active_tab"] = pending_tab
 elif "workspace_active_tab" not in st.session_state:
-    st.session_state["workspace_active_tab"] = "Edit"
+    st.session_state["workspace_active_tab"] = "Grid"
 
 active_tab = st.radio(
     "Workspace section",
-    ["Edit", "Actions", "Data"],
+    ["Grid", "Edit", "Actions", "Data"],
     horizontal=True,
     key="workspace_active_tab",
     label_visibility="collapsed",
@@ -1655,7 +1655,7 @@ if active_tab == "Actions":
                     st.write(f"Thumbnail: {item['thumbnail_link']}")
         if home_notice:
             st.caption(home_notice)
-if active_tab == "Edit":
+if active_tab in {"Grid", "Edit"}:
     default_day, default_time = _schedule_day_defaults()
     default_hour, default_minute, default_suffix = _time_parts(default_time)
     st.session_state.setdefault("workspace_schedule_day", default_day)
@@ -1716,18 +1716,8 @@ if active_tab == "Edit":
 
         query_row = str(st.query_params.get("workspace_row", "") or "")
         if query_row and st.session_state.get("workspace_target_row") != query_row:
-            st.session_state["workspace_edit_view"] = "List"
             st.session_state["workspace_target_row"] = query_row
-        st.session_state.setdefault("workspace_edit_view", "Grid")
-        st.markdown('<div class="workspace-view-toggle"></div>', unsafe_allow_html=True)
-        edit_view = st.radio(
-            "View",
-            ["Grid", "List"],
-            horizontal=True,
-            key="workspace_edit_view",
-            label_visibility="collapsed",
-        )
-        if edit_view == "Grid":
+        if active_tab == "Grid":
             _render_editor_grid(editor_rows)
         else:
             st.caption("Rows stay here until you delete them from the sheet.")
