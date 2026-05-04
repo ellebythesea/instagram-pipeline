@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import openai
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 from article_source import fetch_article_source
 from config import GOOGLE_SHEET_ID, OPENAI_API_KEY
@@ -421,6 +422,29 @@ def _render_editor_grid(editor_rows: list[dict]) -> None:
             """
             with column:
                 st.markdown(card_html, unsafe_allow_html=True)
+
+
+def _scroll_to_editor_row(row_number: str) -> None:
+    if not row_number:
+        return
+    target_id = f"workspace-row-{row_number}"
+    script = f"""
+    <script>
+    const targetId = {json.dumps(target_id)};
+    function scrollToTarget(attempt) {{
+      const target = window.parent.document.getElementById(targetId);
+      if (target) {{
+        target.scrollIntoView({{ behavior: "smooth", block: "start" }});
+        return;
+      }}
+      if (attempt < 20) {{
+        window.setTimeout(() => scrollToTarget(attempt + 1), 100);
+      }}
+    }}
+    window.setTimeout(() => scrollToTarget(0), 100);
+    </script>
+    """
+    components.html(script, height=0, width=0)
 
 
 WEEKDAY_OPTIONS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -1967,6 +1991,8 @@ if active_tab == "Edit":
                         )
 
                 st.divider()
+
+            _scroll_to_editor_row(query_row)
 
         ingested_rows = [
             r for r in editor_rows
