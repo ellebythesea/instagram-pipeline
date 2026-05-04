@@ -729,9 +729,10 @@ def _render_workspace_link_dialog(row: dict) -> None:
     else:
         if link_comment_key not in st.session_state:
             st.session_state[link_comment_key] = selected_top_comment
-        st.text_input(
+        st.text_area(
             "Top comment",
             key=link_comment_key,
+            height=180,
         )
 
     if st.button("Add", key=f"workspace_link_add_{row_num}", type="primary", width="stretch"):
