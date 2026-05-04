@@ -135,6 +135,78 @@ div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) {
     font-size: 0.92rem;
     margin-bottom: 0.2rem;
 }
+.workspace-view-toggle {
+    margin: 0.25rem 0 0.85rem;
+}
+.workspace-grid-card {
+    position: relative;
+    display: block;
+    aspect-ratio: 1 / 1;
+    overflow: hidden;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: 14px;
+    background: #f8fafc;
+    text-decoration: none;
+    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+}
+.workspace-grid-card img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+.workspace-grid-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    color: #475569;
+    background: #f1f5f9;
+    text-align: center;
+    font-size: 0.9rem;
+    line-height: 1.25;
+}
+.workspace-grid-badges {
+    position: absolute;
+    top: 0.5rem;
+    left: 0.5rem;
+    right: 0.5rem;
+    display: flex;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+}
+.workspace-grid-badge {
+    min-width: 1.45rem;
+    height: 1.45rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.82);
+    color: #fff;
+    font-size: 0.66rem;
+    font-weight: 700;
+    line-height: 1;
+    padding: 0 0.4rem;
+}
+.workspace-grid-meta {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 1.45rem 0.6rem 0.55rem;
+    color: #fff;
+    background: linear-gradient(to top, rgba(15, 23, 42, 0.82), rgba(15, 23, 42, 0));
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+.workspace-list-row-anchor {
+    display: block;
+    height: 0;
+    overflow: hidden;
+}
 .workspace-section-label {
     font-size: 0.8rem;
     font-weight: 700;
