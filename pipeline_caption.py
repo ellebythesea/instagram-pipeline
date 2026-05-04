@@ -6,7 +6,7 @@ import openai
 
 from config import DEFAULT_POST_FOOTER, OPENAI_API_KEY
 
-client = openai.OpenAI(api_key=OPENAI_API_KEY)
+client = openai.OpenAI(api_key=OPENAI_API_KEY, timeout=45.0, max_retries=1)
 PINNED_TOP_COMMENT_PREFIX = "[[TOP]] "
 
 SYS_PROMPT = (

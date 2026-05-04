@@ -68,6 +68,8 @@ def describe_error(error: Exception) -> str:
         if any(token in lowered for token in ["please enable js", "ad blocker", "captcha", "paywall", "forbidden"]):
             return "Article access blocked or paywalled (403). Open the link manually or use another source."
         return "Article access forbidden (403). Open the link manually or use another source."
+    if any(token in lowered for token in ["article request timed out", "read timed out", "connect timeout", "connection timed out"]):
+        return "Article request timed out. Open the link manually or use another source."
     if any(token in lowered for token in ["please enable js", "disable any ad blocker", "captcha-delivery.com"]):
         return "Article access blocked by a bot check. Open the link manually or use another source."
 

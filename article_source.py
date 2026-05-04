@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import multiprocessing
 import re
 from html import unescape
 from html.parser import HTMLParser
+from queue import Empty
 from urllib.parse import urljoin, urlparse
 
 import requests
@@ -14,6 +16,9 @@ _USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0 Safari/537.36"
 )
+_REQUEST_TIMEOUT = (5, 15)
+_ARTICLE_TIMEOUT_SECONDS = 25
+_MAX_HTML_BYTES = 3 * 1024 * 1024
 
 _NOISE_PATTERNS = [
     r"^copyright\s+\d{4}.*all rights reserved\.?$",
@@ -163,15 +168,31 @@ def _compose_source_text(title: str, description: str, paragraphs: list[str]) ->
     return source_text
 
 
-def fetch_article_source(url: str) -> dict:
-    response = requests.get(
+def _fetch_article_html(url: str) -> tuple[str, str]:
+    with requests.get(
         url,
-        timeout=20,
+        timeout=_REQUEST_TIMEOUT,
         headers={"User-Agent": _USER_AGENT},
         allow_redirects=True,
-    )
-    response.raise_for_status()
-    html = response.text or ""
+        stream=True,
+    ) as response:
+        response.raise_for_status()
+        chunks: list[bytes] = []
+        total_bytes = 0
+        for chunk in response.iter_content(chunk_size=65536):
+            if not chunk:
+                continue
+            chunks.append(chunk)
+            total_bytes += len(chunk)
+            if total_bytes >= _MAX_HTML_BYTES:
+                break
+        encoding = response.encoding or "utf-8"
+        html = b"".join(chunks).decode(encoding, errors="replace")
+        return response.url or url, html
+
+
+def _fetch_article_source_inner(url: str) -> dict:
+    final_url, html = _fetch_article_html(url)
 
     og_title = _extract_meta(html, "property", "og:title")
     og_description = _extract_meta(html, "property", "og:description")
@@ -188,16 +209,50 @@ def fetch_article_source(url: str) -> dict:
     if not source_text:
         raise ValueError("Could not extract enough article text from that link.")
 
-    parsed = urlparse(response.url or url)
+    parsed = urlparse(final_url)
     domain = parsed.netloc.replace("www.", "")
     image_url = og_image or twitter_image
     if image_url:
-        image_url = urljoin(response.url or url, image_url)
+        image_url = urljoin(final_url, image_url)
     return {
-        "url": response.url or url,
+        "url": final_url,
         "domain": domain,
         "title": title,
         "description": description,
         "image_url": image_url,
         "source_text": source_text,
     }
+
+
+def _article_source_worker(url: str, output_queue) -> None:
+    try:
+        output_queue.put(("ok", _fetch_article_source_inner(url)))
+    except Exception as error:
+        status = getattr(getattr(error, "response", None), "status_code", None)
+        output_queue.put(("error", error.__class__.__name__, str(error), status))
+
+
+def fetch_article_source(url: str) -> dict:
+    context = multiprocessing.get_context("spawn")
+    output_queue = context.Queue(maxsize=1)
+    process = context.Process(target=_article_source_worker, args=(url, output_queue))
+    process.daemon = True
+    process.start()
+    process.join(_ARTICLE_TIMEOUT_SECONDS)
+
+    if process.is_alive():
+        process.terminate()
+        process.join(2)
+        raise TimeoutError(f"Article request timed out after {_ARTICLE_TIMEOUT_SECONDS} seconds.")
+
+    try:
+        result = output_queue.get_nowait()
+    except Empty:
+        raise RuntimeError("Article extraction failed before returning a result.")
+
+    if result[0] == "ok":
+        return result[1]
+
+    _, error_name, message, status = result
+    status_label = f" ({status})" if status else ""
+    raise RuntimeError(f"{error_name}{status_label}: {message}")

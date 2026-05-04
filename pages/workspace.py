@@ -51,7 +51,7 @@ ORG_HASHTAG_MAP = {
 
 EDITABLE_STATUSES = {"ingested", "done"}
 TRANSCRIPT_SIZE_WARNING_BYTES = 100 * 1024 * 1024
-client = openai.OpenAI(api_key=OPENAI_API_KEY)
+client = openai.OpenAI(api_key=OPENAI_API_KEY, timeout=45.0, max_retries=1)
 PINNED_TOP_COMMENT_PREFIX = "[[TOP]] "
 
 get_all_rows = sheet_ops.get_all_rows
