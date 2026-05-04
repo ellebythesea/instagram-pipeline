@@ -51,6 +51,7 @@ ORG_HASHTAG_MAP = {
 
 EDITABLE_STATUSES = {"ingested", "done"}
 TRANSCRIPT_SIZE_WARNING_BYTES = 100 * 1024 * 1024
+EDITOR_INITIAL_RENDER_LIMIT = 12
 client = openai.OpenAI(api_key=OPENAI_API_KEY, timeout=45.0, max_retries=1)
 PINNED_TOP_COMMENT_PREFIX = "[[TOP]] "
 
@@ -405,7 +406,7 @@ def _render_editor_grid(editor_rows: list[dict]) -> None:
         label = f"@{username}" if username else f"Row {row_num}"
         href = f"?workspace_row={row_num}#workspace-row-{row_num}"
         if image_url:
-            media_html = f'<img src="{html.escape(image_url)}" alt="{html.escape(label)}">'
+            media_html = f'<img src="{html.escape(image_url)}" alt="{html.escape(label)}" loading="lazy" decoding="async">'
         else:
             media_html = (
                 '<div class="workspace-grid-placeholder">'
@@ -1724,8 +1725,20 @@ if active_tab == "Home":
         if query_row and st.session_state.get("workspace_target_row") != query_row:
             st.session_state["workspace_target_row"] = query_row
         _render_editor_grid(editor_rows)
-        st.caption("Rows stay here until you delete them from the sheet.")
-        for row in editor_rows:
+        show_full_list = st.checkbox(
+            "Show full list",
+            key="workspace_show_full_list",
+        )
+        visible_editor_rows = editor_rows if show_full_list else editor_rows[:EDITOR_INITIAL_RENDER_LIMIT]
+        if query_row and not show_full_list:
+            target_row = next((row for row in editor_rows if str(row.get("row_number", "")) == query_row), None)
+            if target_row and all(row.get("row_number") != target_row.get("row_number") for row in visible_editor_rows):
+                visible_editor_rows = [*visible_editor_rows, target_row]
+        if len(visible_editor_rows) < len(editor_rows):
+            st.caption(f"Showing {len(visible_editor_rows)} of {len(editor_rows)} rows. Rows stay here until you delete them from the sheet.")
+        else:
+            st.caption("Rows stay here until you delete them from the sheet.")
+        for row in visible_editor_rows:
             _sync_workspace_row_state(row)
             row_num = row["row_number"]
             speaker_key = _workspace_key(row, "speaker")
