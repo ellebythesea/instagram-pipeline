@@ -746,9 +746,15 @@ def _apply_top_comment_to_caption(
     updated_row["Speaker Name"] = current_speaker
     updated_row["Required Hashtags"] = current_hashtags
     updated_row["Top Comment"] = top_comment
-    caption = generate_row_caption(updated_row)
     current_status = (row.get("Status") or "").strip() or "done"
-    if update_caption_and_metadata is not None:
+    existing_caption = (row.get("Generated Caption") or "").strip()
+    if existing_caption:
+        caption = _strip_top_comment_paragraphs(existing_caption, top_comment)
+        caption = f"{caption}\n\n{top_comment}".strip()
+    else:
+        caption = ""
+
+    if caption and update_caption_and_metadata is not None:
         update_caption_and_metadata(
             GOOGLE_SHEET_ID,
             row_num,
@@ -770,7 +776,8 @@ def _apply_top_comment_to_caption(
             top_comment,
             "",
         )
-        update_caption(GOOGLE_SHEET_ID, row_num, caption, current_status)
+        if caption:
+            update_caption(GOOGLE_SHEET_ID, row_num, caption, current_status)
     st.session_state[_workspace_key(row, "top")] = top_comment
 
 
@@ -1332,26 +1339,6 @@ def _redo_caption_from_image_text(row: dict) -> None:
     update_caption(GOOGLE_SHEET_ID, row_num, caption, next_status)
 
 
-def _generate_caption_for_row(row: dict) -> None:
-    row_num = row["row_number"]
-    current_inputs = _current_row_caption_inputs(row)
-    update_metadata(
-        GOOGLE_SHEET_ID,
-        row_num,
-        current_inputs["Caption Context"],
-        current_inputs["Speaker Name"],
-        current_inputs["Required Hashtags"],
-        current_inputs["Top Comment"],
-        "",
-    )
-    updated_row = dict(row)
-    updated_row.update(current_inputs)
-    updated_row["Transcript"] = ""
-    caption = generate_row_caption(updated_row)
-    next_status = "skipped" if (row.get("Status", "") or "").strip().lower() == "skipped" else "done"
-    update_caption(GOOGLE_SHEET_ID, row_num, caption, next_status)
-
-
 def _queue_workspace_action(row_number: int, action: str) -> None:
     queue = st.session_state.setdefault("workspace_action_queue", [])
     queue.append({"row_number": row_number, "action": action})
@@ -1400,10 +1387,6 @@ def _process_next_workspace_action() -> None:
             with st.spinner(f"Refreshing row {row_number} with transcript..."):
                 _rerun_with_transcript(row, force_remote=True)
             st.session_state["workspace_success"] = f"Row {row_number}: transcript rerun complete."
-        elif action == "generate_caption":
-            with st.spinner(f"Generating caption for row {row_number}..."):
-                _generate_caption_for_row(row)
-            st.session_state["workspace_success"] = f"Row {row_number}: caption generated."
         elif action == "image_text":
             with st.spinner(f"Extracting image text for row {row_number}..."):
                 _redo_caption_from_image_text(row)
@@ -1880,15 +1863,6 @@ if active_tab == "Home":
                                 _close_workspace_menu(row)
                                 _queue_workspace_action(row_num, primary_action)
                                 _rerun_workspace("Edit")
-                            if st.button(
-                                "Generate caption",
-                                key=f"workspace_menu_generate_{row_num}",
-                                width="stretch",
-                                help="Generate a caption for this row.",
-                            ):
-                                _close_workspace_menu(row)
-                                _queue_workspace_action(row_num, "generate_caption")
-                                _rerun_workspace("Edit")
                             if url and st.button("Add Watch", key=f"workspace_watch_add_{row_num}", width="stretch"):
                                 top_comment = _build_watch_cta(username or speaker_name, url)
                                 try:
@@ -1968,90 +1942,6 @@ if active_tab == "Home":
             st.divider()
 
         _scroll_to_editor_row(query_row)
-
-        ingested_rows = [
-            r for r in editor_rows
-            if (r.get("Status", "").strip().lower() in {"ingested", "skipped"})
-        ]
-        sticky_container = st.container()
-        with sticky_container:
-            st.markdown('<div class="workspace-generate-anchor"></div>', unsafe_allow_html=True)
-            info_col, button_col = st.columns([3, 1])
-            with info_col:
-                if ingested_rows:
-                    st.caption(f"{len(ingested_rows)} post(s) are ready for caption generation.")
-                else:
-                    st.caption("No ingested posts are ready for caption generation.")
-            with button_col:
-                generate_btn = st.button(
-                    "Generate captions",
-                    type="primary",
-                    width="stretch",
-                    disabled=not ingested_rows,
-                    key="workspace_generate_captions",
-                )
-
-        if generate_btn:
-            progress = st.progress(0)
-            for i, row in enumerate(ingested_rows):
-                row_num = row["row_number"]
-                url = row["Instagram URL"]
-                label = url[:60] + "..." if len(url) > 60 else url
-                current_context = st.session_state.get(_workspace_key(row, "context"), row.get("Caption Context", "")).strip()
-                current_top = st.session_state.get(_workspace_key(row, "top"), row.get("Top Comment", "")).strip()
-                current_speaker = st.session_state.get(_workspace_key(row, "speaker"), row.get("Speaker Name", "")).strip()
-                current_hashtags = st.session_state.get(_workspace_key(row, "hashtags"), row.get("Required Hashtags", "")).strip()
-                current_username = (row.get("Source Username") or "").strip()
-                if _is_instagram_url(url) and not current_top:
-                    current_top = _build_watch_cta(current_username or current_speaker, url)
-                elif _is_article_url(url) and not current_top:
-                    current_top = _build_read_cta(url)
-                row_for_caption = dict(row)
-                row_for_caption["Caption Context"] = current_context
-                row_for_caption["Top Comment"] = current_top
-                row_for_caption["Speaker Name"] = current_speaker
-                row_for_caption["Required Hashtags"] = current_hashtags
-                is_instagram = _is_instagram_url(url)
-
-                with st.status(f"Row {row_num}: {label}", expanded=False) as status_box:
-                    try:
-                        update_metadata(
-                            GOOGLE_SHEET_ID,
-                            row_num,
-                            current_context,
-                            current_speaker,
-                            current_hashtags,
-                            current_top,
-                            "",
-                        )
-                        caption = _build_original_caption_preview(
-                            row_for_caption.get("Original Caption", ""),
-                            row_for_caption.get("Source Username", ""),
-                            current_top,
-                            current_hashtags,
-                            is_instagram=is_instagram,
-                        )
-                        status_value = "skipped" if (row.get("Status", "") or "").strip().lower() == "skipped" else "done"
-                    except Exception as e:
-                        caption = ""
-                        status_value = f"error: caption - {describe_error(e)}"
-
-                    try:
-                        update_caption(GOOGLE_SHEET_ID, row_num, caption, status_value)
-                    except Exception as e:
-                        status_box.update(label=f"Row {row_num}: error writing to sheet - {describe_error(e)}", state="error")
-                        progress.progress((i + 1) / len(ingested_rows))
-                        continue
-
-                    if status_value.startswith("error"):
-                        status_box.update(label=f"Row {row_num}: {status_value}", state="error")
-                    else:
-                        status_box.update(label=f"Row {row_num}: original caption prepared", state="complete")
-
-                progress.progress((i + 1) / len(ingested_rows))
-
-            st.session_state["workspace_success"] = f"Prepared original captions for {len(ingested_rows)} row(s)."
-            _rerun_workspace("Edit")
 
         queue = st.session_state.get("workspace_action_queue", [])
         if queue:
