@@ -1236,6 +1236,7 @@ def _generate_caption_for_row(row: dict) -> None:
     )
     updated_row = dict(row)
     updated_row.update(current_inputs)
+    updated_row["Transcript"] = ""
     caption = generate_row_caption(updated_row)
     next_status = "skipped" if (row.get("Status", "") or "").strip().lower() == "skipped" else "done"
     update_caption(GOOGLE_SHEET_ID, row_num, caption, next_status)

@@ -16,10 +16,47 @@ import sys
 from pathlib import Path
 
 
-DEFAULT_SPLIT_DIR = Path(
-    "/Users/lisamollica/Library/CloudStorage/GoogleDrive-voteinorout@gmail.com/"
-    "My Drive/_apps/vioo instagram pipeline/instagram pipeline media/splits"
+SPLIT_DIR_SUFFIX = (
+    Path("_apps")
+    / "vioo instagram pipeline"
+    / "instagram pipeline media"
+    / "splits"
 )
+
+SPLIT_DIR_CANDIDATES = [
+    Path.home()
+    / "Library"
+    / "CloudStorage"
+    / "GoogleDrive-voteinorout@gmail.com"
+    / "My Drive"
+    / SPLIT_DIR_SUFFIX,
+    Path("/Users/lisa")
+    / "Library"
+    / "CloudStorage"
+    / "GoogleDrive-voteinorout@gmail.com"
+    / "My Drive"
+    / SPLIT_DIR_SUFFIX,
+    Path("/Users/lisamollica")
+    / "Library"
+    / "CloudStorage"
+    / "GoogleDrive-voteinorout@gmail.com"
+    / "My Drive"
+    / SPLIT_DIR_SUFFIX,
+]
+
+
+def default_split_dir() -> Path:
+    for candidate in SPLIT_DIR_CANDIDATES:
+        if candidate.exists():
+            return candidate
+
+    cloud_storage = Path.home() / "Library" / "CloudStorage"
+    if cloud_storage.exists():
+        matches = sorted(cloud_storage.glob(f"GoogleDrive-*/My Drive/{SPLIT_DIR_SUFFIX}"))
+        if matches:
+            return matches[0]
+
+    return SPLIT_DIR_CANDIDATES[0]
 
 VIDEO_SUFFIXES = {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm"}
 NUMBER_WORDS = [
@@ -192,7 +229,8 @@ def split_folder(folder: Path) -> int:
 
 
 def main() -> int:
-    target = Path(sys.argv[1]).expanduser() if len(sys.argv) > 1 else DEFAULT_SPLIT_DIR
+    target = Path(sys.argv[1]).expanduser() if len(sys.argv) > 1 else default_split_dir()
+    print(f"Using split folder: {target}")
     split_folder(target)
     return 0
 

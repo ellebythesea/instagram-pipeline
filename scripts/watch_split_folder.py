@@ -14,7 +14,7 @@ import sys
 import time
 from pathlib import Path
 
-from split_video_minutes import DEFAULT_SPLIT_DIR, VIDEO_SUFFIXES, output_dir_for_video, split_video_file
+from split_video_minutes import VIDEO_SUFFIXES, default_split_dir, output_dir_for_video, split_video_file
 
 
 POLL_SECONDS = 5
@@ -72,7 +72,7 @@ def watch_folder(folder: Path) -> int:
 
 
 def main() -> int:
-    target = Path(sys.argv[1]).expanduser() if len(sys.argv) > 1 else DEFAULT_SPLIT_DIR
+    target = Path(sys.argv[1]).expanduser() if len(sys.argv) > 1 else default_split_dir()
     watch_folder(target)
     return 0
 

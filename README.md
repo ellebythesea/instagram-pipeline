@@ -130,9 +130,10 @@ The script tries `faster-whisper` first, then falls back to `openai-whisper`.
 
 ## Local One-Minute Video Splitter
 
-This script only works on files that are already downloaded locally. By default it scans:
+This script only works on files that are already downloaded locally. By default it auto-detects common Google Drive split folders, including:
 
 ```text
+/Users/lisa/Library/CloudStorage/GoogleDrive-voteinorout@gmail.com/My Drive/_apps/vioo instagram pipeline/instagram pipeline media/splits
 /Users/lisamollica/Library/CloudStorage/GoogleDrive-voteinorout@gmail.com/My Drive/_apps/vioo instagram pipeline/instagram pipeline media/splits
 ```
 
@@ -170,9 +171,10 @@ If you want the split to happen automatically whenever you drag a video into the
 .venv/bin/python scripts/watch_split_folder.py
 ```
 
-By default it watches:
+By default it watches the same auto-detected split folder, including:
 
 ```text
+/Users/lisa/Library/CloudStorage/GoogleDrive-voteinorout@gmail.com/My Drive/_apps/vioo instagram pipeline/instagram pipeline media/splits
 /Users/lisamollica/Library/CloudStorage/GoogleDrive-voteinorout@gmail.com/My Drive/_apps/vioo instagram pipeline/instagram pipeline media/splits
 ```
 
