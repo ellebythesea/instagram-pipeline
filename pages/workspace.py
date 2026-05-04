@@ -1206,10 +1206,6 @@ def _redo_caption_from_image_text(row: dict) -> None:
 
 def _generate_caption_for_row(row: dict) -> None:
     row_num = row["row_number"]
-    url = (row.get("Instagram URL") or "").strip()
-    transcript = (row.get("Transcript") or "").strip()
-    if _is_reel_url(url) and not transcript:
-        raise ValueError("Generate caption is only available for reels after a transcript exists.")
     current_inputs = _current_row_caption_inputs(row)
     update_metadata(
         GOOGLE_SHEET_ID,
@@ -1782,13 +1778,8 @@ if active_tab == "Edit":
                             if st.button(
                                 "Generate caption",
                                 key=f"workspace_menu_generate_{row_num}",
-                                disabled=_is_reel_url(url) and not transcript,
                                 width="stretch",
-                                help=(
-                                    "Generate a caption from the saved transcript."
-                                    if _is_reel_url(url)
-                                    else "Generate a caption for this row."
-                                ),
+                                help="Generate a caption for this row.",
                             ):
                                 _close_workspace_menu(row)
                                 _queue_workspace_action(row_num, "generate_caption")
