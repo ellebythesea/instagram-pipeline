@@ -2029,21 +2029,18 @@ if active_tab in {"Grid", "Edit"}:
             st.selectbox(
                 "Day",
                 WEEKDAY_OPTIONS,
-                index=WEEKDAY_OPTIONS.index(st.session_state.get("workspace_schedule_day", default_day)),
                 key="workspace_schedule_day",
             )
         with schedule_cols[1]:
             st.selectbox(
                 "Hour",
                 list(range(1, 13)),
-                index=list(range(1, 13)).index(st.session_state.get("workspace_schedule_hour", default_hour)),
                 key="workspace_schedule_hour",
             )
         with schedule_cols[2]:
             st.selectbox(
                 "Minute",
                 list(range(60)),
-                index=list(range(60)).index(st.session_state.get("workspace_schedule_minute", default_minute)),
                 key="workspace_schedule_minute",
                 format_func=lambda value: f"{value:02d}",
             )
@@ -2051,7 +2048,6 @@ if active_tab in {"Grid", "Edit"}:
             st.selectbox(
                 "AM/PM",
                 ["am", "pm"],
-                index=["am", "pm"].index(st.session_state.get("workspace_schedule_suffix", default_suffix)),
                 key="workspace_schedule_suffix",
             )
         with schedule_cols[4]:
