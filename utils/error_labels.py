@@ -53,6 +53,17 @@ def describe_error(error: Exception) -> str:
         return "Google auth failed. GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_CREDENTIALS_BASE64 is missing from Streamlit secrets."
     if "GOOGLE_OAUTH_TOKEN_JSON" in message:
         return f"Google OAuth token error. Check or regenerate GOOGLE_OAUTH_TOKEN_JSON. Raw error: {message}"
+    if "no audio stream to transcribe" in lowered:
+        return "Local media file has no audio track, so there is nothing to transcribe."
+    if "tuple index out of range" in lowered:
+        return (
+            "Local transcription backend failed with an internal tuple index error. "
+            "The script will retry from extracted audio when possible; rerun with --debug if it still fails."
+        )
+    if "ffmpeg could not extract audio" in lowered:
+        return f"Local media decode failed. ffmpeg could not extract audio from the video. Raw error: {message}"
+    if "could not decode the video directly or from extracted audio" in lowered:
+        return f"Local media decode failed. The video may be unsupported, corrupt, or partially synced. Raw error: {message}"
 
     if "openai" in exc_name:
         if status == 401 or any(token in lowered for token in ["incorrect api key", "invalid_api_key", "unauthorized"]):

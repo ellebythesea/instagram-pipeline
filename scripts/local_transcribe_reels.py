@@ -16,7 +16,10 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import subprocess
 import sys
+import tempfile
+import traceback
 from pathlib import Path
 from typing import Callable, Optional
 from urllib.parse import parse_qs, urlparse
@@ -55,6 +58,10 @@ MEDIA_DIR_CANDIDATES = [
     / "My Drive"
     / MEDIA_DIR_SUFFIX,
 ]
+
+
+class NoTranscribableAudioError(RuntimeError):
+    """Raised when a local media file has no audio stream for Whisper."""
 
 
 def _default_media_dir() -> Path:
@@ -121,18 +128,102 @@ def _find_local_media_path(media_root: Path, filename: str) -> Path:
     raise FileNotFoundError(f"Could not find {filename!r} under {str(media_root)!r}")
 
 
+def _get_ffmpeg_path() -> str:
+    try:
+        import imageio_ffmpeg  # type: ignore
+
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return "ffmpeg"
+
+
+def _extract_audio_for_transcription(video_path: str) -> str:
+    fd, audio_path = tempfile.mkstemp(suffix=".wav")
+    os.close(fd)
+    command = [
+        _get_ffmpeg_path(),
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        video_path,
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
+        audio_path,
+    ]
+    result = subprocess.run(command, capture_output=True, text=True)
+    if result.returncode != 0:
+        try:
+            os.unlink(audio_path)
+        except Exception:
+            pass
+        stderr = (result.stderr or result.stdout or "").strip()
+        if len(stderr) > 1000:
+            stderr = stderr[-1000:]
+        if "does not contain any stream" in stderr.lower():
+            raise NoTranscribableAudioError("Local media file has no audio stream to transcribe.")
+        raise RuntimeError(f"ffmpeg could not extract audio for local transcription. {stderr}".strip())
+    return audio_path
+
+
+def _is_media_decode_error(error: Exception) -> bool:
+    message = str(error or "").lower()
+    exc_name = f"{error.__class__.__module__}.{error.__class__.__name__}".lower()
+    return (
+        isinstance(error, IndexError)
+        or "tuple index out of range" in message
+        or "av." in exc_name
+        or "pyav" in message
+        or "invalid data found" in message
+        or "error opening input" in message
+        or "could not open" in message
+    )
+
+
+def _transcribe_with_audio_fallback(path: str, transcribe_file: Callable[[str], str]) -> str:
+    try:
+        return transcribe_file(path)
+    except Exception as first_error:
+        if not _is_media_decode_error(first_error):
+            raise
+        audio_path = None
+        try:
+            audio_path = _extract_audio_for_transcription(path)
+            return transcribe_file(audio_path)
+        except NoTranscribableAudioError:
+            raise
+        except Exception as retry_error:
+            raise RuntimeError(
+                f"Local transcription could not decode the video directly or from extracted audio. "
+                f"Original error: {first_error}. Retry error: {retry_error}"
+            ) from retry_error
+        finally:
+            if audio_path:
+                try:
+                    os.unlink(audio_path)
+                except Exception:
+                    pass
+
+
 def _get_local_transcriber(model_name: str) -> Callable[[str], str]:
     try:
         from faster_whisper import WhisperModel  # type: ignore
 
         model = WhisperModel(model_name, device="cpu", compute_type="int8")
 
-        def transcribe(path: str) -> str:
+        def transcribe_file(path: str) -> str:
             segments, _info = model.transcribe(path, vad_filter=True)
             text = " ".join(segment.text.strip() for segment in segments if segment.text.strip()).strip()
             if not text:
                 raise ValueError("Local transcription returned no text.")
             return text
+
+        def transcribe(path: str) -> str:
+            return _transcribe_with_audio_fallback(path, transcribe_file)
 
         return transcribe
     except ImportError:
@@ -143,12 +234,15 @@ def _get_local_transcriber(model_name: str) -> Callable[[str], str]:
 
         model = whisper.load_model(model_name)
 
-        def transcribe(path: str) -> str:
+        def transcribe_file(path: str) -> str:
             result = model.transcribe(path, fp16=False)
             text = (result.get("text") or "").strip()
             if not text:
                 raise ValueError("Local transcription returned no text.")
             return text
+
+        def transcribe(path: str) -> str:
+            return _transcribe_with_audio_fallback(path, transcribe_file)
 
         return transcribe
     except ImportError as exc:
@@ -217,6 +311,17 @@ def main() -> int:
         default=0,
         help="Optional max number of rows to process.",
     )
+    parser.add_argument(
+        "--row",
+        type=int,
+        default=0,
+        help="Optional Google Sheet row number to process by itself.",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Print full tracebacks for failed rows.",
+    )
     args = parser.parse_args()
 
     media_root = Path(args.media_dir).expanduser() if args.media_dir else _default_media_dir()
@@ -226,6 +331,8 @@ def main() -> int:
 
     rows = get_all_rows(GOOGLE_SHEET_ID)
     targets = _eligible_rows(rows)
+    if args.row > 0:
+        targets = [row for row in targets if row.get("row_number") == args.row]
     if args.limit > 0:
         targets = targets[: args.limit]
 
@@ -244,15 +351,28 @@ def main() -> int:
         if not media_links:
             print(f"Row {row_num}: skipped, no Drive media link.")
             continue
+        step = "starting"
         try:
+            step = "looking up Drive filename"
             filename = _drive_filename(service, media_links[0])
+            if not filename:
+                raise ValueError(f"Drive file did not return a filename for {media_links[0]!r}")
+            step = "finding local media file"
             local_path = _find_local_media_path(media_root, filename)
+            step = f"transcribing {local_path.name}"
             transcript = transcribe(str(local_path))
+            step = "writing transcript to Google Sheets"
             update_transcript(GOOGLE_SHEET_ID, row_num, transcript)
+            step = "regenerating caption with OpenAI"
             _update_caption_from_transcript(row, transcript)
             print(f"Row {row_num}: transcribed and regenerated caption for {filename} ({url})")
         except Exception as exc:
-            print(f"Row {row_num}: failed - {describe_error(exc)}")
+            if isinstance(exc, NoTranscribableAudioError):
+                print(f"Row {row_num}: skipped while {step} - {describe_error(exc)}")
+                continue
+            print(f"Row {row_num}: failed while {step} - {describe_error(exc)}")
+            if args.debug:
+                traceback.print_exc()
 
     print("Done.")
     return 0
