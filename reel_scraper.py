@@ -36,6 +36,8 @@ def process_url(url: str, include_transcript: bool = False) -> dict:
         original_caption, transcript, photo_count, post_id, post_date
     Raises RuntimeError on failure.
     """
+    if not APIFY_API_TOKEN:
+        raise RuntimeError("APIFY_API_TOKEN is not configured.")
     client = ApifyClient(APIFY_API_TOKEN)
     actor = client.actor(APIFY_REEL_ACTOR_ID)
 

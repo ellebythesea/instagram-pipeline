@@ -21,12 +21,21 @@ _SCOPES = ["https://www.googleapis.com/auth/drive"]
 
 def _get_service():
     if GOOGLE_OAUTH_TOKEN_JSON:
-        creds = UserCredentials.from_authorized_user_info(
-            json.loads(GOOGLE_OAUTH_TOKEN_JSON),
-            scopes=_SCOPES,
-        )
+        try:
+            oauth_info = json.loads(GOOGLE_OAUTH_TOKEN_JSON)
+            creds = UserCredentials.from_authorized_user_info(
+                oauth_info,
+                scopes=_SCOPES,
+            )
+        except JSONDecodeError as exc:
+            raise RuntimeError("GOOGLE_OAUTH_TOKEN_JSON is not valid JSON.") from exc
+        except Exception as exc:
+            raise RuntimeError("GOOGLE_OAUTH_TOKEN_JSON is malformed or incomplete.") from exc
         if creds.expired and creds.refresh_token:
-            creds.refresh(Request())
+            try:
+                creds.refresh(Request())
+            except Exception as exc:
+                raise RuntimeError("Google OAuth refresh failed. Regenerate GOOGLE_OAUTH_TOKEN_JSON.") from exc
         return build("drive", "v3", credentials=creds)
 
     creds_src = GOOGLE_SERVICE_ACCOUNT_JSON

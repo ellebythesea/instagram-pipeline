@@ -107,6 +107,9 @@ def _decode_top_comment(value: str) -> tuple[str, bool]:
 
 def generate_row_caption(row: dict) -> str:
     """Generate a final caption string for one sheet row."""
+    if not OPENAI_API_KEY:
+        raise RuntimeError("OPENAI_API_KEY is not configured.")
+
     transcript = row.get("Transcript", "").strip()
     original_caption = row.get("Original Caption", "").strip()
     caption_context = row.get("Caption Context", "").strip()

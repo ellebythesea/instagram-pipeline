@@ -30,6 +30,7 @@ from config import GOOGLE_SHEET_ID  # noqa: E402
 from drive import _get_service  # noqa: E402
 from pipeline_caption import generate_row_caption  # noqa: E402
 from sheets import get_all_rows, update_caption, update_metadata, update_transcript  # noqa: E402
+from utils.error_labels import describe_error  # noqa: E402
 
 
 MEDIA_DIR_SUFFIX = Path("_apps") / "vioo instagram pipeline" / "instagram pipeline media"
@@ -251,7 +252,7 @@ def main() -> int:
             _update_caption_from_transcript(row, transcript)
             print(f"Row {row_num}: transcribed and regenerated caption for {filename} ({url})")
         except Exception as exc:
-            print(f"Row {row_num}: failed - {exc}")
+            print(f"Row {row_num}: failed - {describe_error(exc)}")
 
     print("Done.")
     return 0

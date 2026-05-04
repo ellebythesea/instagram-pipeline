@@ -471,6 +471,8 @@ def _fetch_link_data(url: str) -> dict:
 
 
 def _generate_headlines(source_text: str) -> list[str]:
+    if not OPENAI_API_KEY:
+        raise RuntimeError("OPENAI_API_KEY is not configured.")
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=[
@@ -766,9 +768,13 @@ def _render_workspace_link_dialog(row: dict) -> None:
             else st.session_state.get(link_comment_key, selected_top_comment).strip()
         )
         top_comment = _encode_top_comment(addition, pinned=(selected_source != "Custom"))
-        _apply_top_comment_to_caption(row, row_num, speaker_name, top_comment)
+        try:
+            _apply_top_comment_to_caption(row, row_num, speaker_name, top_comment)
+        except Exception as e:
+            st.session_state["workspace_error"] = f"Row {row_num}: could not save link CTA - {describe_error(e)}"
+        else:
+            st.session_state["workspace_success"] = f"Row {row_num}: link CTA saved to generated caption."
         _close_workspace_link_dialog(row)
-        st.session_state["workspace_success"] = f"Row {row_num}: link CTA saved to generated caption."
         _rerun_workspace("Edit")
 
     if st.button("Cancel", key=f"workspace_link_cancel_{row_num}", width="stretch"):
@@ -1196,6 +1202,8 @@ def _extract_image_text(row: dict) -> str:
     if len(content) == 1:
         raise ValueError("Could not build image URLs for OCR.")
 
+    if not OPENAI_API_KEY:
+        raise RuntimeError("OPENAI_API_KEY is not configured.")
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=[{"role": "user", "content": content}],
@@ -1805,9 +1813,13 @@ if active_tab == "Edit":
                                 _rerun_workspace("Edit")
                             if url and st.button("Add Watch", key=f"workspace_watch_add_{row_num}", width="stretch"):
                                 top_comment = _build_watch_cta(username or speaker_name, url)
-                                _apply_top_comment_to_caption(row, row_num, speaker_name, top_comment)
+                                try:
+                                    _apply_top_comment_to_caption(row, row_num, speaker_name, top_comment)
+                                except Exception as e:
+                                    st.session_state["workspace_error"] = f"Row {row_num}: could not save watch CTA - {describe_error(e)}"
+                                else:
+                                    st.session_state["workspace_success"] = f"Row {row_num}: watch CTA saved to generated caption."
                                 _close_workspace_menu(row)
-                                st.session_state["workspace_success"] = f"Row {row_num}: watch CTA saved to generated caption."
                                 _rerun_workspace("Edit")
                             skip_label = "Unskip" if status.strip().lower() == "skipped" else "Skip"
                             if st.button(

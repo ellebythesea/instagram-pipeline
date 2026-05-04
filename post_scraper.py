@@ -104,6 +104,8 @@ def process_url(url: str) -> dict:
         original_caption, transcript, photo_count, post_id, post_date
     Raises RuntimeError on failure.
     """
+    if not APIFY_API_TOKEN:
+        raise RuntimeError("APIFY_API_TOKEN is not configured.")
     client = ApifyClient(APIFY_API_TOKEN)
     run = client.actor(APIFY_POST_ACTOR_ID).call(
         run_input={

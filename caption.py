@@ -75,6 +75,8 @@ def _extract_audio(video_path: str) -> Optional[str]:
 
 def transcribe_video(video_path: str) -> Optional[str]:
     """Send video audio to Whisper and return the transcript text."""
+    if not OPENAI_API_KEY:
+        raise RuntimeError("OPENAI_API_KEY is not configured.")
     processed = None
     try:
         processed = _extract_audio(video_path)
@@ -205,6 +207,8 @@ def generate_caption(
 ) -> str:
     """Generate a social-media caption from a transcript."""
     try:
+        if not OPENAI_API_KEY:
+            raise RuntimeError("OPENAI_API_KEY is not configured.")
         news_context = get_latest_news_summary(transcript)
         if news_context.startswith("LATEST NEWS CONTEXT:\nNo recent news") or news_context.startswith("LATEST NEWS CONTEXT:\nUnable"):
             news_context = "LATEST NEWS CONTEXT:\nNo external news context available. Focus solely on the transcript for analysis.\n\n"
