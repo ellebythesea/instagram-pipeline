@@ -64,6 +64,12 @@ def describe_error(error: Exception) -> str:
         return f"Local media decode failed. ffmpeg could not extract audio from the video. Raw error: {message}"
     if "could not decode the video directly or from extracted audio" in lowered:
         return f"Local media decode failed. The video may be unsupported, corrupt, or partially synced. Raw error: {message}"
+    if status == 403 and "for url:" in lowered:
+        if any(token in lowered for token in ["please enable js", "ad blocker", "captcha", "paywall", "forbidden"]):
+            return "Article access blocked or paywalled (403). Open the link manually or use another source."
+        return "Article access forbidden (403). Open the link manually or use another source."
+    if any(token in lowered for token in ["please enable js", "disable any ad blocker", "captcha-delivery.com"]):
+        return "Article access blocked by a bot check. Open the link manually or use another source."
 
     if "openai" in exc_name:
         if status == 401 or any(token in lowered for token in ["incorrect api key", "invalid_api_key", "unauthorized"]):
