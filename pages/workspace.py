@@ -422,7 +422,7 @@ def _render_editor_grid(editor_rows: list[dict]) -> None:
             """
         )
     grid_html = "".join(cards)
-    st.markdown(f'<div class="workspace-grid">{grid_html}</div>', unsafe_allow_html=True)
+    st.html(f'<div class="workspace-grid">{grid_html}</div>')
 
 
 def _scroll_to_editor_row(row_number: str) -> None:
