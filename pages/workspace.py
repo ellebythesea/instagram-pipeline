@@ -820,13 +820,17 @@ def _current_row_caption_inputs(row: dict) -> dict:
     }
 
 
-def _save_workspace_speaker_name(row: dict) -> None:
-    speaker_key = _workspace_key(row, "speaker")
-    current_speaker = st.session_state.get(speaker_key, "").strip()
-    current_context = st.session_state.get(_workspace_key(row, "context"), row.get("Caption Context", "")).strip()
-    current_hashtags = st.session_state.get(_workspace_key(row, "hashtags"), row.get("Required Hashtags", "")).strip()
-    current_top = st.session_state.get(_workspace_key(row, "top"), row.get("Top Comment", "")).strip()
-    try:
+def _save_all_workspace_speaker_names(rows: list[dict]) -> int:
+    updated_count = 0
+    for row in rows:
+        speaker_key = _workspace_key(row, "speaker")
+        current_speaker = st.session_state.get(speaker_key, row.get("Speaker Name", "")).strip()
+        saved_speaker = (row.get("Speaker Name") or "").strip()
+        if current_speaker == saved_speaker:
+            continue
+        current_context = st.session_state.get(_workspace_key(row, "context"), row.get("Caption Context", "")).strip()
+        current_hashtags = st.session_state.get(_workspace_key(row, "hashtags"), row.get("Required Hashtags", "")).strip()
+        current_top = st.session_state.get(_workspace_key(row, "top"), row.get("Top Comment", "")).strip()
         update_metadata(
             GOOGLE_SHEET_ID,
             row["row_number"],
@@ -836,8 +840,8 @@ def _save_workspace_speaker_name(row: dict) -> None:
             current_top,
             "",
         )
-    except Exception as e:
-        st.session_state["workspace_error"] = f"Row {row['row_number']}: could not save speaker name - {describe_error(e)}"
+        updated_count += 1
+    return updated_count
     else:
         row["Speaker Name"] = current_speaker
 
@@ -1849,8 +1853,6 @@ if active_tab == "Home":
                         value=speaker_name,
                         key=speaker_key,
                         placeholder="Enter name",
-                        on_change=_save_workspace_speaker_name,
-                        args=(row,),
                     )
                     if _is_reel_url(url):
                         pending_transcribe_resets = st.session_state.setdefault("workspace_transcribe_reset_rows", [])
@@ -1864,26 +1866,6 @@ if active_tab == "Home":
                             value=bool(st.session_state.get(transcribe_key, False)),
                             key=transcribe_key,
                         )
-                    if st.session_state.get(speaker_key, speaker_name).strip() != (speaker_name or "").strip():
-                        if st.button(
-                            "Update",
-                            key=f"workspace_update_{row_num}",
-                            type="primary",
-                            width="stretch",
-                        ):
-                            current_speaker = st.session_state.get(speaker_key, speaker_name).strip()
-                            update_metadata(
-                                GOOGLE_SHEET_ID,
-                                row_num,
-                                row.get("Caption Context", ""),
-                                current_speaker,
-                                row.get("Required Hashtags", ""),
-                                row.get("Top Comment", ""),
-                                "",
-                            )
-                            st.session_state["workspace_success"] = f"Row {row_num}: metadata updated."
-                            _rerun_workspace("Edit")
-
                     if url:
                         st.link_button("Open in Instagram" if is_instagram else "Open source link", url, width="stretch")
                         menu_nonce = st.session_state.get(menu_nonce_key, 0)
@@ -2006,6 +1988,32 @@ if active_tab == "Home":
                 f'<div class="workspace-action-note">{len(queue)} queued action(s) waiting to run.</div>',
                 unsafe_allow_html=True,
             )
+
+        dirty_name_rows = [
+            r for r in editor_rows
+            if st.session_state.get(_workspace_key(r, "speaker"), r.get("Speaker Name", "")).strip()
+            != (r.get("Speaker Name") or "").strip()
+        ]
+        if dirty_name_rows:
+            st.caption(f"{len(dirty_name_rows)} unsaved name(s).")
+        if st.button(
+            "Update names",
+            key="workspace_update_names",
+            type="primary",
+            width="stretch",
+            disabled=not dirty_name_rows,
+        ):
+            try:
+                updated_count = _save_all_workspace_speaker_names(editor_rows)
+            except Exception as e:
+                st.session_state["workspace_error"] = f"Could not save names: {describe_error(e)}"
+            else:
+                st.session_state["workspace_success"] = (
+                    f"Updated {updated_count} speaker name(s)."
+                    if updated_count
+                    else "No name changes to save."
+                )
+            _rerun_workspace("Edit")
 
     with st.expander("Set times", expanded=False):
         st.markdown('<div class="workspace-schedule-anchor"></div>', unsafe_allow_html=True)
