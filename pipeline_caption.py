@@ -7,6 +7,7 @@ import openai
 from config import DEFAULT_POST_FOOTER, OPENAI_API_KEY
 
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
+PINNED_TOP_COMMENT_PREFIX = "[[TOP]] "
 
 SYS_PROMPT = (
     "You are a sharp political analyst. Rewrite the source material into a short, clear social post "
@@ -97,6 +98,13 @@ def _strip_top_comment_paragraphs(text: str, top_comment: str) -> str:
     return "\n\n".join(cleaned).strip()
 
 
+def _decode_top_comment(value: str) -> tuple[str, bool]:
+    cleaned = (value or "").strip()
+    if cleaned.startswith(PINNED_TOP_COMMENT_PREFIX):
+        return cleaned[len(PINNED_TOP_COMMENT_PREFIX):].strip(), True
+    return cleaned, False
+
+
 def generate_row_caption(row: dict) -> str:
     """Generate a final caption string for one sheet row."""
     transcript = row.get("Transcript", "").strip()
@@ -139,12 +147,15 @@ def generate_row_caption(row: dict) -> str:
     )
     caption = response.choices[0].message.content.strip()
 
-    top_comment = row.get("Top Comment", "").strip()
+    top_comment, pin_top_comment = _decode_top_comment(row.get("Top Comment", ""))
     if top_comment:
         caption = _strip_top_comment_paragraphs(caption, top_comment)
         original_caption = _strip_top_comment_paragraphs(original_caption, top_comment)
     if top_comment:
-        caption = f"{caption}\n\n{top_comment}"
+        if pin_top_comment:
+            caption = f"{top_comment}\n\n{caption}"
+        else:
+            caption = f"{caption}\n\n{top_comment}"
 
     media_type = (row.get("Media Type", "") or "").strip().lower()
 

@@ -51,6 +51,7 @@ ORG_HASHTAG_MAP = {
 EDITABLE_STATUSES = {"ingested", "done"}
 TRANSCRIPT_SIZE_WARNING_BYTES = 100 * 1024 * 1024
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
+PINNED_TOP_COMMENT_PREFIX = "[[TOP]] "
 
 get_all_rows = sheet_ops.get_all_rows
 get_pending_rows = sheet_ops.get_pending_rows
@@ -522,6 +523,7 @@ def _build_original_caption_preview(
     required_hashtags: str = "",
     is_instagram: bool = True,
 ) -> str:
+    top_comment, _ = _decode_top_comment(top_comment)
     original_with_username = (original_caption or "").strip()
     cleaned_username = (username or "").strip().lstrip("@")
     if is_instagram and cleaned_username and original_with_username:
@@ -598,6 +600,20 @@ def _append_top_comment(existing: str, addition: str) -> str:
     return f"{existing}\n\n{addition}"
 
 
+def _encode_top_comment(value: str, pinned: bool = False) -> str:
+    cleaned = (value or "").strip()
+    if not cleaned:
+        return ""
+    return f"{PINNED_TOP_COMMENT_PREFIX}{cleaned}" if pinned else cleaned
+
+
+def _decode_top_comment(value: str) -> tuple[str, bool]:
+    cleaned = (value or "").strip()
+    if cleaned.startswith(PINNED_TOP_COMMENT_PREFIX):
+        return cleaned[len(PINNED_TOP_COMMENT_PREFIX):].strip(), True
+    return cleaned, False
+
+
 def _close_workspace_menu(row: dict) -> None:
     nonce_key = _workspace_key(row, "menu_nonce")
     st.session_state[nonce_key] = st.session_state.get(nonce_key, 0) + 1
@@ -671,6 +687,7 @@ def _current_row_caption_inputs(row: dict) -> dict:
         _workspace_key(row, "top"),
         row.get("Top Comment", ""),
     ).strip()
+    current_top, _ = _decode_top_comment(current_top)
     url = (row.get("Instagram URL") or "").strip()
     current_username = (row.get("Source Username") or "").strip()
 
@@ -748,7 +765,7 @@ def _render_workspace_link_dialog(row: dict) -> None:
             if selected_source == "Custom"
             else st.session_state.get(link_comment_key, selected_top_comment).strip()
         )
-        top_comment = _append_top_comment(current_top_comment, addition)
+        top_comment = _encode_top_comment(addition, pinned=(selected_source != "Custom"))
         _apply_top_comment_to_caption(row, row_num, speaker_name, top_comment)
         _close_workspace_link_dialog(row)
         st.session_state["workspace_success"] = f"Row {row_num}: link CTA saved to generated caption."
@@ -1849,7 +1866,7 @@ if active_tab == "Edit":
                         original_caption,
                         transcript,
                         username,
-                        st.session_state.get(top_key, row.get("Top Comment", "")).strip(),
+                        _decode_top_comment(st.session_state.get(top_key, row.get("Top Comment", "")).strip())[0],
                         st.session_state.get(hashtags_key, row.get("Required Hashtags", "")).strip(),
                         row.get("Media Drive Link", ""),
                         media_type,
