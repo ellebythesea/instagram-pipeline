@@ -1662,40 +1662,7 @@ if active_tab == "Edit":
     st.session_state.setdefault("workspace_schedule_minute", default_minute)
     st.session_state.setdefault("workspace_schedule_suffix", default_suffix)
 
-    with st.expander("Set times", expanded=False):
-        st.markdown('<div class="workspace-schedule-anchor"></div>', unsafe_allow_html=True)
-        schedule_cols = st.columns([1, 0.7, 0.7, 0.7, 0.4], vertical_alignment="bottom")
-        with schedule_cols[0]:
-            st.selectbox(
-                "Day",
-                WEEKDAY_OPTIONS,
-                index=WEEKDAY_OPTIONS.index(st.session_state.get("workspace_schedule_day", default_day)),
-                key="workspace_schedule_day",
-            )
-        with schedule_cols[1]:
-            st.selectbox(
-                "Hour",
-                list(range(1, 13)),
-                index=list(range(1, 13)).index(st.session_state.get("workspace_schedule_hour", default_hour)),
-                key="workspace_schedule_hour",
-            )
-        with schedule_cols[2]:
-            st.selectbox(
-                "Minute",
-                list(range(60)),
-                index=list(range(60)).index(st.session_state.get("workspace_schedule_minute", default_minute)),
-                key="workspace_schedule_minute",
-                format_func=lambda value: f"{value:02d}",
-            )
-        with schedule_cols[3]:
-            st.selectbox(
-                "AM/PM",
-                ["am", "pm"],
-                index=["am", "pm"].index(st.session_state.get("workspace_schedule_suffix", default_suffix)),
-                key="workspace_schedule_suffix",
-            )
-        with schedule_cols[4]:
-            schedule_apply_requested = st.button("Set", key="workspace_schedule_set", type="primary", width="stretch")
+    schedule_apply_requested = False
 
     try:
         pending_edit_rows = _run_with_sheet_quota_countdown(
@@ -1745,27 +1712,6 @@ if active_tab == "Edit":
     if not editor_rows:
         st.info("No rows yet. Add a link on Actions or process new rows on Data.")
     else:
-        if schedule_apply_requested:
-            start_day = st.session_state.get("workspace_schedule_day", default_day)
-            start_time = _time_from_parts(
-                int(st.session_state.get("workspace_schedule_hour", default_hour)),
-                int(st.session_state.get("workspace_schedule_minute", default_minute)),
-                st.session_state.get("workspace_schedule_suffix", default_suffix),
-            )
-            schedule_rows = sorted(editor_rows, key=lambda row: row.get("row_number", 0))
-            assignments = _build_schedule_labels(schedule_rows, start_day, start_time)
-            try:
-                update_scheduled_times(GOOGLE_SHEET_ID, assignments)
-                if assignments:
-                    latest_entry = list(assignments.values())[-1]
-                    existing_entries = get_last_scheduled_times(GOOGLE_SHEET_ID)
-                    update_last_scheduled_times(GOOGLE_SHEET_ID, [latest_entry, *existing_entries][:3])
-            except Exception as e:
-                st.session_state["workspace_error"] = f"Could not save schedule: {describe_error(e)}"
-            else:
-                row_word = "row" if len(assignments) == 1 else "rows"
-                st.session_state["workspace_success"] = f"Updated schedule for {len(assignments)} {row_word}."
-            _rerun_workspace("Edit")
 
         query_row = str(st.query_params.get("workspace_row", "") or "")
         if query_row and st.session_state.get("workspace_target_row") != query_row:
@@ -2084,6 +2030,63 @@ if active_tab == "Edit":
                 f'<div class="workspace-action-note">{len(queue)} queued action(s) waiting to run.</div>',
                 unsafe_allow_html=True,
             )
+
+    with st.expander("Set times", expanded=False):
+        st.markdown('<div class="workspace-schedule-anchor"></div>', unsafe_allow_html=True)
+        schedule_cols = st.columns([1, 0.7, 0.7, 0.7, 0.4], vertical_alignment="bottom")
+        with schedule_cols[0]:
+            st.selectbox(
+                "Day",
+                WEEKDAY_OPTIONS,
+                index=WEEKDAY_OPTIONS.index(st.session_state.get("workspace_schedule_day", default_day)),
+                key="workspace_schedule_day",
+            )
+        with schedule_cols[1]:
+            st.selectbox(
+                "Hour",
+                list(range(1, 13)),
+                index=list(range(1, 13)).index(st.session_state.get("workspace_schedule_hour", default_hour)),
+                key="workspace_schedule_hour",
+            )
+        with schedule_cols[2]:
+            st.selectbox(
+                "Minute",
+                list(range(60)),
+                index=list(range(60)).index(st.session_state.get("workspace_schedule_minute", default_minute)),
+                key="workspace_schedule_minute",
+                format_func=lambda value: f"{value:02d}",
+            )
+        with schedule_cols[3]:
+            st.selectbox(
+                "AM/PM",
+                ["am", "pm"],
+                index=["am", "pm"].index(st.session_state.get("workspace_schedule_suffix", default_suffix)),
+                key="workspace_schedule_suffix",
+            )
+        with schedule_cols[4]:
+            schedule_apply_requested = st.button("Set", key="workspace_schedule_set", type="primary", width="stretch")
+
+        if schedule_apply_requested:
+            start_day = st.session_state.get("workspace_schedule_day", default_day)
+            start_time = _time_from_parts(
+                int(st.session_state.get("workspace_schedule_hour", default_hour)),
+                int(st.session_state.get("workspace_schedule_minute", default_minute)),
+                st.session_state.get("workspace_schedule_suffix", default_suffix),
+            )
+            schedule_rows = sorted(editor_rows, key=lambda row: row.get("row_number", 0))
+            assignments = _build_schedule_labels(schedule_rows, start_day, start_time)
+            try:
+                update_scheduled_times(GOOGLE_SHEET_ID, assignments)
+                if assignments:
+                    latest_entry = list(assignments.values())[-1]
+                    existing_entries = get_last_scheduled_times(GOOGLE_SHEET_ID)
+                    update_last_scheduled_times(GOOGLE_SHEET_ID, [latest_entry, *existing_entries][:3])
+            except Exception as e:
+                st.session_state["workspace_error"] = f"Could not save schedule: {describe_error(e)}"
+            else:
+                row_word = "row" if len(assignments) == 1 else "rows"
+                st.session_state["workspace_success"] = f"Updated schedule for {len(assignments)} {row_word}."
+            _rerun_workspace("Edit")
 
     if last_scheduled_times:
         schedule_summary = " · ".join(last_scheduled_times)
