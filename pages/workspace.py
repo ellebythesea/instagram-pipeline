@@ -403,7 +403,7 @@ def _render_editor_grid(editor_rows: list[dict]) -> None:
             for label, title in _grid_badges(row)
         )
         label = f"@{username}" if username else f"Row {row_num}"
-        href = f"?workspace_active_tab=Edit&workspace_row={row_num}#workspace-row-{row_num}"
+        href = f"?workspace_row={row_num}#workspace-row-{row_num}"
         if image_url:
             media_html = f'<img src="{html.escape(image_url)}" alt="{html.escape(label)}">'
         else:
@@ -1341,6 +1341,8 @@ def _queue_workspace_action(row_number: int, action: str) -> None:
 
 def _rerun_workspace(tab: str | None = None) -> None:
     if tab:
+        if tab in {"Edit", "Grid"}:
+            tab = "Home"
         st.session_state["_workspace_pending_tab"] = tab
     st.rerun()
 
@@ -1508,15 +1510,17 @@ if error_message:
 
 pending_tab = st.session_state.pop("_workspace_pending_tab", None)
 if pending_tab:
+    if pending_tab in {"Edit", "Grid"}:
+        pending_tab = "Home"
     st.session_state["workspace_active_tab"] = pending_tab
 elif "workspace_active_tab" not in st.session_state:
     st.session_state["workspace_active_tab"] = "Home"
-elif st.session_state["workspace_active_tab"] == "Grid":
+elif st.session_state["workspace_active_tab"] in {"Edit", "Grid"}:
     st.session_state["workspace_active_tab"] = "Home"
 
 active_tab = st.radio(
     "Workspace section",
-    ["Home", "Edit", "Actions", "Data"],
+    ["Home", "Actions", "Data"],
     horizontal=True,
     key="workspace_active_tab",
     label_visibility="collapsed",
@@ -1657,7 +1661,7 @@ if active_tab == "Actions":
                     st.write(f"Thumbnail: {item['thumbnail_link']}")
         if home_notice:
             st.caption(home_notice)
-if active_tab in {"Home", "Edit"}:
+if active_tab == "Home":
     default_day, default_time = _schedule_day_defaults()
     default_hour, default_minute, default_suffix = _time_parts(default_time)
     st.session_state.setdefault("workspace_schedule_day", default_day)
@@ -1719,219 +1723,217 @@ if active_tab in {"Home", "Edit"}:
         query_row = str(st.query_params.get("workspace_row", "") or "")
         if query_row and st.session_state.get("workspace_target_row") != query_row:
             st.session_state["workspace_target_row"] = query_row
-        if active_tab == "Home":
-            _render_editor_grid(editor_rows)
-        else:
-            st.caption("Rows stay here until you delete them from the sheet.")
-            for row in editor_rows:
-                _sync_workspace_row_state(row)
-                row_num = row["row_number"]
-                speaker_key = _workspace_key(row, "speaker")
-                hashtags_key = _workspace_key(row, "hashtags")
-                top_key = _workspace_key(row, "top")
-                context_key = _workspace_key(row, "context")
-                warning_key = _workspace_key(row, "transcript_warning")
-                transcribe_key = _workspace_key(row, "transcribe")
-                menu_nonce_key = _workspace_key(row, "menu_nonce")
-                username = (row.get("Source Username") or "").strip()
-                url = (row.get("Instagram URL") or "").strip()
-                is_instagram = _is_instagram_url(url)
-                is_article = _is_article_url(url)
-                media_type = (row.get("Media Type") or "").strip().lower()
-                generated = (row.get("Generated Caption") or "").strip()
-                original_caption = (row.get("Original Caption") or "").strip()
-                transcript = (row.get("Transcript") or "").strip()
-                speaker_name = row.get("Speaker Name", "")
-                status = (row.get("Status") or "").strip()
+        _render_editor_grid(editor_rows)
+        st.caption("Rows stay here until you delete them from the sheet.")
+        for row in editor_rows:
+            _sync_workspace_row_state(row)
+            row_num = row["row_number"]
+            speaker_key = _workspace_key(row, "speaker")
+            hashtags_key = _workspace_key(row, "hashtags")
+            top_key = _workspace_key(row, "top")
+            context_key = _workspace_key(row, "context")
+            warning_key = _workspace_key(row, "transcript_warning")
+            transcribe_key = _workspace_key(row, "transcribe")
+            menu_nonce_key = _workspace_key(row, "menu_nonce")
+            username = (row.get("Source Username") or "").strip()
+            url = (row.get("Instagram URL") or "").strip()
+            is_instagram = _is_instagram_url(url)
+            is_article = _is_article_url(url)
+            media_type = (row.get("Media Type") or "").strip().lower()
+            generated = (row.get("Generated Caption") or "").strip()
+            original_caption = (row.get("Original Caption") or "").strip()
+            transcript = (row.get("Transcript") or "").strip()
+            speaker_name = row.get("Speaker Name", "")
+            status = (row.get("Status") or "").strip()
 
-                row_container = st.container()
-                with row_container:
+            row_container = st.container()
+            with row_container:
+                st.markdown(
+                    f'<span id="workspace-row-{row_num}" class="workspace-list-row-anchor"></span>'
+                    '<div class="workspace-edit-main-anchor"></div>',
+                    unsafe_allow_html=True,
+                )
+                top_left, top_right = st.columns([0.9, 1.1], vertical_alignment="top")
+                with top_left:
+                    thumb_link = (row.get("Thumbnail Drive Link") or "").strip()
+                    if thumb_link:
+                        image_url = _drive_image_url(thumb_link) or thumb_link
+                        st.image(image_url, width="stretch")
+                    elif is_article:
+                        st.info("Article link")
+                        if original_caption:
+                            st.caption(original_caption[:260] + ("..." if len(original_caption) > 260 else ""))
+                    else:
+                        st.info("Thumbnail will appear here after ingest.")
+
+                with top_right:
+                    menu_label = "Photo run" if not _is_reel_url(url) else "Transcribe"
+                    schedule_suffix = (row.get("Scheduled Time", "") or "").strip()
+                    status_line = f"Row {row_num} · {media_type or 'pending'} · {status or 'blank'}"
+                    if schedule_suffix:
+                        status_line = f"{status_line} · {schedule_suffix}"
                     st.markdown(
-                        f'<span id="workspace-row-{row_num}" class="workspace-list-row-anchor"></span>'
-                        '<div class="workspace-edit-main-anchor"></div>',
+                        f'<div class="workspace-status-line">{status_line}</div>',
                         unsafe_allow_html=True,
                     )
-                    top_left, top_right = st.columns([0.9, 1.1], vertical_alignment="top")
-                    with top_left:
-                        thumb_link = (row.get("Thumbnail Drive Link") or "").strip()
-                        if thumb_link:
-                            image_url = _drive_image_url(thumb_link) or thumb_link
-                            st.image(image_url, width="stretch")
-                        elif is_article:
-                            st.info("Article link")
-                            if original_caption:
-                                st.caption(original_caption[:260] + ("..." if len(original_caption) > 260 else ""))
-                        else:
-                            st.info("Thumbnail will appear here after ingest.")
+                    if username:
+                        st.markdown(f"#### @{username}" if is_instagram else f"#### {username}")
+                    else:
+                        st.markdown(f"#### Row {row_num}")
 
-                    with top_right:
-                        menu_label = "Photo run" if not _is_reel_url(url) else "Transcribe"
-                        schedule_suffix = (row.get("Scheduled Time", "") or "").strip()
-                        status_line = f"Row {row_num} · {media_type or 'pending'} · {status or 'blank'}"
-                        if schedule_suffix:
-                            status_line = f"{status_line} · {schedule_suffix}"
-                        st.markdown(
-                            f'<div class="workspace-status-line">{status_line}</div>',
-                            unsafe_allow_html=True,
+                    st.text_input(
+                        "Speaker Name",
+                        value=speaker_name,
+                        key=speaker_key,
+                        placeholder="Enter name",
+                    )
+                    if _is_reel_url(url):
+                        pending_transcribe_resets = st.session_state.setdefault("workspace_transcribe_reset_rows", [])
+                        if transcribe_key in pending_transcribe_resets:
+                            st.session_state.pop(transcribe_key, None)
+                            st.session_state["workspace_transcribe_reset_rows"] = [
+                                pending for pending in pending_transcribe_resets if pending != transcribe_key
+                            ]
+                        st.checkbox(
+                            "Check to transcribe",
+                            value=bool(st.session_state.get(transcribe_key, False)),
+                            key=transcribe_key,
                         )
-                        if username:
-                            st.markdown(f"#### @{username}" if is_instagram else f"#### {username}")
-                        else:
-                            st.markdown(f"#### Row {row_num}")
-
-                        st.text_input(
-                            "Speaker Name",
-                            value=speaker_name,
-                            key=speaker_key,
-                            placeholder="Enter name",
-                        )
-                        if _is_reel_url(url):
-                            pending_transcribe_resets = st.session_state.setdefault("workspace_transcribe_reset_rows", [])
-                            if transcribe_key in pending_transcribe_resets:
-                                st.session_state.pop(transcribe_key, None)
-                                st.session_state["workspace_transcribe_reset_rows"] = [
-                                    pending for pending in pending_transcribe_resets if pending != transcribe_key
-                                ]
-                            st.checkbox(
-                                "Check to transcribe",
-                                value=bool(st.session_state.get(transcribe_key, False)),
-                                key=transcribe_key,
+                    if st.session_state.get(speaker_key, speaker_name).strip() != (speaker_name or "").strip():
+                        if st.button(
+                            "Update",
+                            key=f"workspace_update_{row_num}",
+                            type="primary",
+                            width="stretch",
+                        ):
+                            current_speaker = st.session_state.get(speaker_key, speaker_name).strip()
+                            update_metadata(
+                                GOOGLE_SHEET_ID,
+                                row_num,
+                                row.get("Caption Context", ""),
+                                current_speaker,
+                                row.get("Required Hashtags", ""),
+                                row.get("Top Comment", ""),
+                                "",
                             )
-                        if st.session_state.get(speaker_key, speaker_name).strip() != (speaker_name or "").strip():
+                            st.session_state["workspace_success"] = f"Row {row_num}: metadata updated."
+                            _rerun_workspace("Edit")
+
+                    if url:
+                        st.link_button("Open in Instagram" if is_instagram else "Open source link", url, width="stretch")
+                        menu_nonce = st.session_state.get(menu_nonce_key, 0)
+                        with st.popover(f"Actions{'\u200b' * menu_nonce}", use_container_width=True):
+                            primary_action = "transcript" if _is_reel_url(url) else "image_text"
+                            primary_help = "Fetch transcript and regenerate caption." if _is_reel_url(url) else "Extract text from images and regenerate caption."
+                            if is_instagram and st.button(
+                                menu_label,
+                                key=f"workspace_menu_primary_{row_num}",
+                                disabled=not url,
+                                width="stretch",
+                                help=primary_help,
+                            ):
+                                if primary_action == "transcript" and not transcript:
+                                    try:
+                                        warning = _check_reel_transcript_risk(row)
+                                    except Exception as e:
+                                        st.session_state["workspace_error"] = f"Row {row_num}: could not check reel size - {describe_error(e)}"
+                                        _close_workspace_menu(row)
+                                        _rerun_workspace("Edit")
+                                    if warning:
+                                        st.session_state[warning_key] = warning
+                                        _close_workspace_menu(row)
+                                        _rerun_workspace("Edit")
+                                _close_workspace_menu(row)
+                                _queue_workspace_action(row_num, primary_action)
+                                _rerun_workspace("Edit")
                             if st.button(
-                                "Update",
-                                key=f"workspace_update_{row_num}",
-                                type="primary",
+                                "Generate caption",
+                                key=f"workspace_menu_generate_{row_num}",
+                                width="stretch",
+                                help="Generate a caption for this row.",
+                            ):
+                                _close_workspace_menu(row)
+                                _queue_workspace_action(row_num, "generate_caption")
+                                _rerun_workspace("Edit")
+                            if url and st.button("Add Watch", key=f"workspace_watch_add_{row_num}", width="stretch"):
+                                top_comment = _build_watch_cta(username or speaker_name, url)
+                                try:
+                                    _apply_top_comment_to_caption(row, row_num, speaker_name, top_comment)
+                                except Exception as e:
+                                    st.session_state["workspace_error"] = f"Row {row_num}: could not save watch CTA - {describe_error(e)}"
+                                else:
+                                    st.session_state["workspace_success"] = f"Row {row_num}: watch CTA saved to generated caption."
+                                _close_workspace_menu(row)
+                                _rerun_workspace("Edit")
+                            skip_label = "Unskip" if status.strip().lower() == "skipped" else "Skip"
+                            if st.button(
+                                skip_label,
+                                key=f"workspace_menu_skip_{row_num}",
                                 width="stretch",
                             ):
-                                current_speaker = st.session_state.get(speaker_key, speaker_name).strip()
-                                update_metadata(
-                                    GOOGLE_SHEET_ID,
-                                    row_num,
-                                    row.get("Caption Context", ""),
-                                    current_speaker,
-                                    row.get("Required Hashtags", ""),
-                                    row.get("Top Comment", ""),
-                                    "",
+                                next_status = _default_editor_status(row) if status.strip().lower() == "skipped" else "skipped"
+                                update_status(GOOGLE_SHEET_ID, row_num, next_status)
+                                _close_workspace_menu(row)
+                                st.session_state["workspace_success"] = (
+                                    f"Row {row_num}: moved back into the main edit list."
+                                    if next_status != "skipped"
+                                    else f"Row {row_num}: skipped and moved to the bottom."
                                 )
-                                st.session_state["workspace_success"] = f"Row {row_num}: metadata updated."
                                 _rerun_workspace("Edit")
-
-                        if url:
-                            st.link_button("Open in Instagram" if is_instagram else "Open source link", url, width="stretch")
-                            menu_nonce = st.session_state.get(menu_nonce_key, 0)
-                            with st.popover(f"Actions{'\u200b' * menu_nonce}", use_container_width=True):
-                                primary_action = "transcript" if _is_reel_url(url) else "image_text"
-                                primary_help = "Fetch transcript and regenerate caption." if _is_reel_url(url) else "Extract text from images and regenerate caption."
-                                if is_instagram and st.button(
-                                    menu_label,
-                                    key=f"workspace_menu_primary_{row_num}",
-                                    disabled=not url,
-                                    width="stretch",
-                                    help=primary_help,
-                                ):
-                                    if primary_action == "transcript" and not transcript:
-                                        try:
-                                            warning = _check_reel_transcript_risk(row)
-                                        except Exception as e:
-                                            st.session_state["workspace_error"] = f"Row {row_num}: could not check reel size - {describe_error(e)}"
-                                            _close_workspace_menu(row)
-                                            _rerun_workspace("Edit")
-                                        if warning:
-                                            st.session_state[warning_key] = warning
-                                            _close_workspace_menu(row)
-                                            _rerun_workspace("Edit")
-                                    _close_workspace_menu(row)
-                                    _queue_workspace_action(row_num, primary_action)
-                                    _rerun_workspace("Edit")
-                                if st.button(
-                                    "Generate caption",
-                                    key=f"workspace_menu_generate_{row_num}",
-                                    width="stretch",
-                                    help="Generate a caption for this row.",
-                                ):
-                                    _close_workspace_menu(row)
-                                    _queue_workspace_action(row_num, "generate_caption")
-                                    _rerun_workspace("Edit")
-                                if url and st.button("Add Watch", key=f"workspace_watch_add_{row_num}", width="stretch"):
-                                    top_comment = _build_watch_cta(username or speaker_name, url)
-                                    try:
-                                        _apply_top_comment_to_caption(row, row_num, speaker_name, top_comment)
-                                    except Exception as e:
-                                        st.session_state["workspace_error"] = f"Row {row_num}: could not save watch CTA - {describe_error(e)}"
-                                    else:
-                                        st.session_state["workspace_success"] = f"Row {row_num}: watch CTA saved to generated caption."
-                                    _close_workspace_menu(row)
-                                    _rerun_workspace("Edit")
-                                skip_label = "Unskip" if status.strip().lower() == "skipped" else "Skip"
-                                if st.button(
-                                    skip_label,
-                                    key=f"workspace_menu_skip_{row_num}",
-                                    width="stretch",
-                                ):
-                                    next_status = _default_editor_status(row) if status.strip().lower() == "skipped" else "skipped"
-                                    update_status(GOOGLE_SHEET_ID, row_num, next_status)
-                                    _close_workspace_menu(row)
-                                    st.session_state["workspace_success"] = (
-                                        f"Row {row_num}: moved back into the main edit list."
-                                        if next_status != "skipped"
-                                        else f"Row {row_num}: skipped and moved to the bottom."
-                                    )
-                                    _rerun_workspace("Edit")
-                                if st.button("Add link", key=f"workspace_link_open_{row_num}", width="stretch"):
-                                    _close_workspace_menu(row)
-                                    st.session_state["workspace_link_dialog_row"] = row_num
-                                    _rerun_workspace("Edit")
-                                if st.button(
-                                    "Delete row",
-                                    key=f"workspace_menu_delete_{row_num}",
-                                    width="stretch",
-                                ):
-                                    try:
-                                        _delete_workspace_row(row)
-                                    except Exception as e:
-                                        st.session_state["workspace_error"] = f"Row {row_num}: could not delete row - {describe_error(e)}"
-                                    else:
-                                        st.session_state["workspace_success"] = f"Row {row_num}: deleted from the sheet."
-                                    _close_workspace_menu(row)
-                                    _rerun_workspace("Edit")
-
-                        transcript_warning = st.session_state.get(warning_key)
-                        if transcript_warning:
-                            size_label = _format_bytes(transcript_warning["size_bytes"])
-                            threshold_label = _format_bytes(transcript_warning["threshold_bytes"])
-                            st.warning(
-                                f"This reel is {size_label}, which is over the {threshold_label} transcript warning limit. "
-                                "Transcription may cost more than usual."
-                            )
+                            if st.button("Add link", key=f"workspace_link_open_{row_num}", width="stretch"):
+                                _close_workspace_menu(row)
+                                st.session_state["workspace_link_dialog_row"] = row_num
+                                _rerun_workspace("Edit")
                             if st.button(
-                                "Transcribe anyway",
-                                key=f"workspace_warning_transcribe_{row_num}",
-                                type="primary",
+                                "Delete row",
+                                key=f"workspace_menu_delete_{row_num}",
                                 width="stretch",
                             ):
-                                st.session_state.pop(warning_key, None)
-                                _queue_workspace_action(row_num, "transcript")
+                                try:
+                                    _delete_workspace_row(row)
+                                except Exception as e:
+                                    st.session_state["workspace_error"] = f"Row {row_num}: could not delete row - {describe_error(e)}"
+                                else:
+                                    st.session_state["workspace_success"] = f"Row {row_num}: deleted from the sheet."
+                                _close_workspace_menu(row)
                                 _rerun_workspace("Edit")
 
-                        st.markdown('<div class="workspace-section-label workspace-content-tabs">Content</div>', unsafe_allow_html=True)
-                        _copy_tabs(
-                            row_num,
-                            generated,
-                            original_caption,
-                            transcript,
-                            username,
-                            _decode_top_comment(st.session_state.get(top_key, row.get("Top Comment", "")).strip())[0],
-                            st.session_state.get(hashtags_key, row.get("Required Hashtags", "")).strip(),
-                            row.get("Media Drive Link", ""),
-                            media_type,
-                            url,
-                            is_instagram,
+                    transcript_warning = st.session_state.get(warning_key)
+                    if transcript_warning:
+                        size_label = _format_bytes(transcript_warning["size_bytes"])
+                        threshold_label = _format_bytes(transcript_warning["threshold_bytes"])
+                        st.warning(
+                            f"This reel is {size_label}, which is over the {threshold_label} transcript warning limit. "
+                            "Transcription may cost more than usual."
                         )
+                        if st.button(
+                            "Transcribe anyway",
+                            key=f"workspace_warning_transcribe_{row_num}",
+                            type="primary",
+                            width="stretch",
+                        ):
+                            st.session_state.pop(warning_key, None)
+                            _queue_workspace_action(row_num, "transcript")
+                            _rerun_workspace("Edit")
 
-                st.divider()
+                    st.markdown('<div class="workspace-section-label workspace-content-tabs">Content</div>', unsafe_allow_html=True)
+                    _copy_tabs(
+                        row_num,
+                        generated,
+                        original_caption,
+                        transcript,
+                        username,
+                        _decode_top_comment(st.session_state.get(top_key, row.get("Top Comment", "")).strip())[0],
+                        st.session_state.get(hashtags_key, row.get("Required Hashtags", "")).strip(),
+                        row.get("Media Drive Link", ""),
+                        media_type,
+                        url,
+                        is_instagram,
+                    )
 
-            _scroll_to_editor_row(query_row)
+            st.divider()
+
+        _scroll_to_editor_row(query_row)
 
         ingested_rows = [
             r for r in editor_rows
