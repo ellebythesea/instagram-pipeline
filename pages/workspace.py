@@ -820,6 +820,28 @@ def _current_row_caption_inputs(row: dict) -> dict:
     }
 
 
+def _save_workspace_speaker_name(row: dict) -> None:
+    speaker_key = _workspace_key(row, "speaker")
+    current_speaker = st.session_state.get(speaker_key, "").strip()
+    current_context = st.session_state.get(_workspace_key(row, "context"), row.get("Caption Context", "")).strip()
+    current_hashtags = st.session_state.get(_workspace_key(row, "hashtags"), row.get("Required Hashtags", "")).strip()
+    current_top = st.session_state.get(_workspace_key(row, "top"), row.get("Top Comment", "")).strip()
+    try:
+        update_metadata(
+            GOOGLE_SHEET_ID,
+            row["row_number"],
+            current_context,
+            current_speaker,
+            current_hashtags,
+            current_top,
+            "",
+        )
+    except Exception as e:
+        st.session_state["workspace_error"] = f"Row {row['row_number']}: could not save speaker name - {describe_error(e)}"
+    else:
+        row["Speaker Name"] = current_speaker
+
+
 def _fundraising_preset_map() -> dict[str, str]:
     presets = get_fundraising_links(GOOGLE_SHEET_ID)
     mapping: dict[str, str] = {"Custom": ""}
@@ -1827,6 +1849,8 @@ if active_tab == "Home":
                         value=speaker_name,
                         key=speaker_key,
                         placeholder="Enter name",
+                        on_change=_save_workspace_speaker_name,
+                        args=(row,),
                     )
                     if _is_reel_url(url):
                         pending_transcribe_resets = st.session_state.setdefault("workspace_transcribe_reset_rows", [])

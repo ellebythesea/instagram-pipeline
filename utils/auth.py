@@ -37,12 +37,23 @@ def _set_auth_cookie() -> None:
     )
 
 
+def _native_cookie_value() -> str:
+    try:
+        return st.context.cookies.get(COOKIE_NAME, "")
+    except Exception:
+        return ""
+
+
 def require_auth() -> bool:
     if not APP_PASSWORD:
         st.session_state[SESSION_KEY] = True
         return True
 
     if st.session_state.get(SESSION_KEY):
+        return True
+
+    if _native_cookie_value() == _cookie_value():
+        st.session_state[SESSION_KEY] = True
         return True
 
     cookies = _cookie_manager().get_all() or {}
