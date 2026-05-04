@@ -51,6 +51,7 @@ ORG_HASHTAG_MAP = {
 
 EDITABLE_STATUSES = {"ingested", "done"}
 TRANSCRIPT_SIZE_WARNING_BYTES = 100 * 1024 * 1024
+GRID_INITIAL_RENDER_LIMIT = 60
 EDITOR_INITIAL_RENDER_LIMIT = 12
 client = openai.OpenAI(api_key=OPENAI_API_KEY, timeout=45.0, max_retries=1)
 PINNED_TOP_COMMENT_PREFIX = "[[TOP]] "
@@ -392,9 +393,23 @@ def _grid_preview_url(row: dict) -> str:
     return ""
 
 
-def _render_editor_grid(editor_rows: list[dict]) -> None:
+def _visible_rows_with_target(rows: list[dict], limit: int, target_row_number: str = "") -> list[dict]:
+    visible_rows = rows[:limit]
+    if target_row_number:
+        target_row = next((row for row in rows if str(row.get("row_number", "")) == target_row_number), None)
+        if target_row and all(row.get("row_number") != target_row.get("row_number") for row in visible_rows):
+            visible_rows = [*visible_rows, target_row]
+    return visible_rows
+
+
+def _render_editor_grid(editor_rows: list[dict], show_all: bool = False, target_row_number: str = "") -> None:
+    visible_rows = editor_rows if show_all else _visible_rows_with_target(
+        editor_rows,
+        GRID_INITIAL_RENDER_LIMIT,
+        target_row_number,
+    )
     cards = []
-    for row in editor_rows:
+    for row in visible_rows:
         row_num = row.get("row_number")
         username = (row.get("Source Username") or "").strip().lstrip("@")
         media_type = (row.get("Media Type") or "").strip().lower() or "post"
@@ -424,6 +439,8 @@ def _render_editor_grid(editor_rows: list[dict]) -> None:
         )
     grid_html = "".join(cards)
     st.html(f'<div class="workspace-grid">{grid_html}</div>')
+    if len(visible_rows) < len(editor_rows):
+        st.caption(f"Showing {len(visible_rows)} of {len(editor_rows)} thumbnails.")
 
 
 def _scroll_to_editor_row(row_number: str) -> None:
@@ -1724,16 +1741,20 @@ if active_tab == "Home":
         query_row = str(st.query_params.get("workspace_row", "") or "")
         if query_row and st.session_state.get("workspace_target_row") != query_row:
             st.session_state["workspace_target_row"] = query_row
-        _render_editor_grid(editor_rows)
+        show_all_thumbnails = st.checkbox(
+            "Show all thumbnails",
+            key="workspace_show_all_thumbnails",
+        )
+        _render_editor_grid(editor_rows, show_all_thumbnails, query_row)
         show_full_list = st.checkbox(
             "Show full list",
             key="workspace_show_full_list",
         )
-        visible_editor_rows = editor_rows if show_full_list else editor_rows[:EDITOR_INITIAL_RENDER_LIMIT]
-        if query_row and not show_full_list:
-            target_row = next((row for row in editor_rows if str(row.get("row_number", "")) == query_row), None)
-            if target_row and all(row.get("row_number") != target_row.get("row_number") for row in visible_editor_rows):
-                visible_editor_rows = [*visible_editor_rows, target_row]
+        visible_editor_rows = editor_rows if show_full_list else _visible_rows_with_target(
+            editor_rows,
+            EDITOR_INITIAL_RENDER_LIMIT,
+            query_row,
+        )
         if len(visible_editor_rows) < len(editor_rows):
             st.caption(f"Showing {len(visible_editor_rows)} of {len(editor_rows)} rows. Rows stay here until you delete them from the sheet.")
         else:
