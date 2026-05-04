@@ -206,7 +206,7 @@ div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) {
     color: #fff;
     background: linear-gradient(to top, rgba(15, 23, 42, 0.82), rgba(15, 23, 42, 0));
     font-size: 0.82rem;
-    font-weight: 700;
+    font-weight: 400;
 }
 .workspace-list-row-anchor {
     display: block;

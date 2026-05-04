@@ -1510,11 +1510,13 @@ pending_tab = st.session_state.pop("_workspace_pending_tab", None)
 if pending_tab:
     st.session_state["workspace_active_tab"] = pending_tab
 elif "workspace_active_tab" not in st.session_state:
-    st.session_state["workspace_active_tab"] = "Grid"
+    st.session_state["workspace_active_tab"] = "Home"
+elif st.session_state["workspace_active_tab"] == "Grid":
+    st.session_state["workspace_active_tab"] = "Home"
 
 active_tab = st.radio(
     "Workspace section",
-    ["Grid", "Edit", "Actions", "Data"],
+    ["Home", "Edit", "Actions", "Data"],
     horizontal=True,
     key="workspace_active_tab",
     label_visibility="collapsed",
@@ -1655,7 +1657,7 @@ if active_tab == "Actions":
                     st.write(f"Thumbnail: {item['thumbnail_link']}")
         if home_notice:
             st.caption(home_notice)
-if active_tab in {"Grid", "Edit"}:
+if active_tab in {"Home", "Edit"}:
     default_day, default_time = _schedule_day_defaults()
     default_hour, default_minute, default_suffix = _time_parts(default_time)
     st.session_state.setdefault("workspace_schedule_day", default_day)
@@ -1717,7 +1719,7 @@ if active_tab in {"Grid", "Edit"}:
         query_row = str(st.query_params.get("workspace_row", "") or "")
         if query_row and st.session_state.get("workspace_target_row") != query_row:
             st.session_state["workspace_target_row"] = query_row
-        if active_tab == "Grid":
+        if active_tab == "Home":
             _render_editor_grid(editor_rows)
         else:
             st.caption("Rows stay here until you delete them from the sheet.")
