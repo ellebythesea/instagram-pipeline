@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Split locally downloaded videos into exact one-minute 4:6 segments.
+"""Split locally downloaded videos into exact one-minute 4:5 segments.
 
 Usage:
     .venv/bin/python scripts/split_video_minutes.py
@@ -59,7 +59,7 @@ def default_split_dir() -> Path:
     return SPLIT_DIR_CANDIDATES[0]
 
 VIDEO_SUFFIXES = {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm"}
-TARGET_ASPECT_RATIO = "2/3"
+TARGET_ASPECT_RATIO = "4/5"
 NUMBER_WORDS = [
     "one",
     "two",

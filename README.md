@@ -153,7 +153,7 @@ What it does:
 
 - looks for local video files already in that folder
 - splits them into exact one-minute `.mp4` segments using `ffmpeg`
-- center-crops each segment to `4:6` (`2:3`) before saving
+- center-crops each segment to `4:5` before saving
 - creates a sibling output folder like `my_video_segments/`
 - names the segments `one.mp4`, `two.mp4`, `three.mp4`, and so on
 - skips any source video that already has segments created
@@ -189,7 +189,7 @@ What it does:
 
 - watches the folder continuously
 - waits until a newly dropped video stops changing size
-- splits it into one-minute segments and center-crops them to `4:6`
+- splits it into one-minute segments and center-crops them to `4:5`
 - automatically runs the one-minute split
 - skips files that already have a `*_segments` folder with output files
 
