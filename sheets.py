@@ -1,15 +1,7 @@
 """Google Sheets helper — read rows and write pipeline results.
 
-Column order is fixed per spec. Headers are used for reads (get_all_records),
-column letter ranges are used for writes since ranges are inherently positional.
-
-Sheet layout:
-  A  Instagram URL      B  Source Username    C  Generated Caption
-  D  Media Type         E  Photo Count        F  Media Drive Link
-  G  Thumbnail Drive Link
-  H  Original Caption   I  Transcript         J  Top Comment
-  K  Required Hashtags  L  Speaker Name       M  Footer
-  N  Status             O  Caption Context   P  Scheduled Time
+Rows are read and written by header name so users can reorder columns in the
+worksheet without breaking the app.
 """
 
 import json
@@ -20,6 +12,7 @@ from json import JSONDecodeError
 
 import gspread
 from google.oauth2.service_account import Credentials
+from gspread.utils import rowcol_to_a1
 
 from config import GOOGLE_SERVICE_ACCOUNT_JSON, GOOGLE_WORKSHEET_NAME
 
@@ -41,25 +34,6 @@ _EXPECTED_HEADERS = [
     "Top Comment",
     "Required Hashtags",
     "Speaker Name",
-    "Footer",
-    "Status",
-    "Caption Context",
-    "Scheduled Time",
-]
-
-_LEGACY_HEADERS = [
-    "Instagram URL",
-    "Source Username",
-    "Generated Caption",
-    "Media Type",
-    "Photo Count",
-    "Media Drive Link",
-    "Thumbnail Drive Link",
-    "Original Caption",
-    "Transcript",
-    "Top Comment",
-    "Speaker Name",
-    "Required Hashtags",
     "Footer",
     "Status",
     "Caption Context",
@@ -154,26 +128,43 @@ def _optional_worksheet(sheet_id: str, title: str) -> gspread.Worksheet | None:
 
 
 def _ensure_headers(sheet_id: str, ws: gspread.Worksheet) -> None:
-    """Restore the expected header row if it is missing or incorrect."""
+    """Ensure the worksheet has the required headers without forcing their order."""
     cache_key = (sheet_id, ws.title)
     if cache_key in _headers_checked:
         return
     current = _with_backoff(ws.row_values, 1)
-    normalized = current[:len(_EXPECTED_HEADERS)]
-    if normalized == _EXPECTED_HEADERS:
+    normalized = [value.strip() for value in current if value.strip()]
+    if not normalized:
+        _with_backoff(ws.update, "A1:P1", [_EXPECTED_HEADERS])
         _headers_checked.add(cache_key)
         return
-    if normalized == _LEGACY_HEADERS:
-        existing = _with_backoff(ws.get, f"K2:L{ws.row_count}")
-        if existing:
-            swapped = []
-            for row in existing:
-                speaker = row[0] if len(row) > 0 else ""
-                hashtags = row[1] if len(row) > 1 else ""
-                swapped.append([hashtags, speaker])
-            _with_backoff(ws.update, f"K2:L{ws.row_count}", swapped)
-    _with_backoff(ws.update, "A1:P1", [_EXPECTED_HEADERS])
+
+    missing_headers = [header for header in _EXPECTED_HEADERS if header not in normalized]
+    if missing_headers:
+        raise RuntimeError(
+            f"Worksheet '{ws.title}' is missing required header(s): {', '.join(missing_headers)}"
+        )
     _headers_checked.add(cache_key)
+
+
+def _header_map(ws: gspread.Worksheet) -> dict[str, int]:
+    headers = _with_backoff(ws.row_values, 1)
+    mapping: dict[str, int] = {}
+    for index, header in enumerate(headers, start=1):
+        cleaned = header.strip()
+        if cleaned:
+            mapping[cleaned] = index
+    missing = [header for header in _EXPECTED_HEADERS if header not in mapping]
+    if missing:
+        raise RuntimeError(
+            f"Worksheet '{ws.title}' is missing required header(s): {', '.join(missing)}"
+        )
+    return mapping
+
+
+def _header_cell(ws: gspread.Worksheet, row_number: int, header: str) -> str:
+    header_index = _header_map(ws)[header]
+    return rowcol_to_a1(row_number, header_index)
 
 
 def _invalidate_rows_cache(sheet_id: str) -> None:
@@ -218,11 +209,13 @@ def append_link_rows(sheet_id: str, urls: list[str], required_hashtags: str = ""
         return
 
     ws = _worksheet(sheet_id)
+    header_map = _header_map(ws)
+    width = max(header_map.values())
     rows = []
     for url in cleaned_urls:
-        row = [""] * len(_EXPECTED_HEADERS)
-        row[0] = url
-        row[10] = required_hashtags.strip()
+        row = [""] * width
+        row[header_map["Instagram URL"] - 1] = url
+        row[header_map["Required Hashtags"] - 1] = required_hashtags.strip()
         rows.append(row)
     _with_backoff(ws.append_rows, rows, value_input_option="USER_ENTERED")
     _invalidate_rows_cache(sheet_id)
@@ -240,30 +233,58 @@ def update_ingest_result(
     transcript: str,
     status: str,
 ) -> None:
-    """Write ingest results to cols B and D-I, and status to N."""
+    """Write ingest results by header name."""
     ws = _worksheet(sheet_id)
-    _with_backoff(ws.update, f"B{row_number}", [[username]])
     _with_backoff(
-        ws.update,
-        f"D{row_number}:I{row_number}",
-        [[
-            media_type,
-            str(photo_count) if photo_count else "",
-            media_link,
-            thumbnail_link,
-            original_caption,
-            transcript,
-        ]],
+        ws.batch_update,
+        [
+            {
+                "range": _header_cell(ws, row_number, "Source Username"),
+                "values": [[username]],
+            },
+            {
+                "range": _header_cell(ws, row_number, "Media Type"),
+                "values": [[media_type]],
+            },
+            {
+                "range": _header_cell(ws, row_number, "Photo Count"),
+                "values": [[str(photo_count) if photo_count else ""]],
+            },
+            {
+                "range": _header_cell(ws, row_number, "Media Drive Link"),
+                "values": [[media_link]],
+            },
+            {
+                "range": _header_cell(ws, row_number, "Thumbnail Drive Link"),
+                "values": [[thumbnail_link]],
+            },
+            {
+                "range": _header_cell(ws, row_number, "Original Caption"),
+                "values": [[original_caption]],
+            },
+            {
+                "range": _header_cell(ws, row_number, "Transcript"),
+                "values": [[transcript]],
+            },
+            {
+                "range": _header_cell(ws, row_number, "Status"),
+                "values": [[status]],
+            },
+        ],
     )
-    _with_backoff(ws.update, f"N{row_number}", [[status]])
     _invalidate_rows_cache(sheet_id)
 
 
 def update_caption(sheet_id: str, row_number: int, caption: str, status: str) -> None:
-    """Write generated caption to col C and status to col N."""
+    """Write generated caption and status by header name."""
     ws = _worksheet(sheet_id)
-    _with_backoff(ws.update, f"C{row_number}", [[caption]])
-    _with_backoff(ws.update, f"N{row_number}", [[status]])
+    _with_backoff(
+        ws.batch_update,
+        [
+            {"range": _header_cell(ws, row_number, "Generated Caption"), "values": [[caption]]},
+            {"range": _header_cell(ws, row_number, "Status"), "values": [[status]]},
+        ],
+    )
     _invalidate_rows_cache(sheet_id)
 
 
@@ -283,42 +304,46 @@ def update_caption_and_metadata(
     _with_backoff(
         ws.batch_update,
         [
-            {"range": f"C{row_number}", "values": [[caption]]},
-            {"range": f"J{row_number}:M{row_number}", "values": [[top_comment, hashtags, speaker_name, footer]]},
-            {"range": f"N{row_number}:O{row_number}", "values": [[status, caption_context]]},
+            {"range": _header_cell(ws, row_number, "Generated Caption"), "values": [[caption]]},
+            {"range": _header_cell(ws, row_number, "Top Comment"), "values": [[top_comment]]},
+            {"range": _header_cell(ws, row_number, "Required Hashtags"), "values": [[hashtags]]},
+            {"range": _header_cell(ws, row_number, "Speaker Name"), "values": [[speaker_name]]},
+            {"range": _header_cell(ws, row_number, "Footer"), "values": [[footer]]},
+            {"range": _header_cell(ws, row_number, "Status"), "values": [[status]]},
+            {"range": _header_cell(ws, row_number, "Caption Context"), "values": [[caption_context]]},
         ],
     )
     _invalidate_rows_cache(sheet_id)
 
 
 def update_status(sheet_id: str, row_number: int, status: str) -> None:
-    """Write status to col N for a single row."""
+    """Write status for a single row."""
     ws = _worksheet(sheet_id)
-    _with_backoff(ws.update, f"N{row_number}", [[status]])
+    _with_backoff(ws.update, _header_cell(ws, row_number, "Status"), [[status]])
     _invalidate_rows_cache(sheet_id)
 
 
 def update_transcript(sheet_id: str, row_number: int, transcript: str) -> None:
-    """Write transcript to col I for a single row."""
+    """Write transcript for a single row."""
     ws = _worksheet(sheet_id)
-    _with_backoff(ws.update, f"I{row_number}", [[transcript]])
+    _with_backoff(ws.update, _header_cell(ws, row_number, "Transcript"), [[transcript]])
     _invalidate_rows_cache(sheet_id)
 
 
 def update_caption_context(sheet_id: str, row_number: int, caption_context: str) -> None:
-    """Write caption context to col O for a single row."""
+    """Write caption context for a single row."""
     ws = _worksheet(sheet_id)
-    _with_backoff(ws.update, f"O{row_number}", [[caption_context]])
+    _with_backoff(ws.update, _header_cell(ws, row_number, "Caption Context"), [[caption_context]])
     _invalidate_rows_cache(sheet_id)
 
 
 def update_scheduled_times(sheet_id: str, assignments: dict[int, str]) -> None:
-    """Write scheduled time values to col P for multiple rows."""
+    """Write scheduled time values for multiple rows."""
     if not assignments:
         return
     ws = _worksheet(sheet_id)
     for row_number, scheduled_time in assignments.items():
-        _with_backoff(ws.update, f"P{row_number}", [[scheduled_time]])
+        _with_backoff(ws.update, _header_cell(ws, row_number, "Scheduled Time"), [[scheduled_time]])
     _invalidate_rows_cache(sheet_id)
 
 
@@ -397,14 +422,18 @@ def update_metadata(
     top_comment: str,
     footer: str,
 ) -> None:
-    """Write user metadata to cols J-M and caption context to O."""
+    """Write user metadata and caption context by header name."""
     ws = _worksheet(sheet_id)
     _with_backoff(
-        ws.update,
-        f"J{row_number}:M{row_number}",
-        [[top_comment, hashtags, speaker_name, footer]],
+        ws.batch_update,
+        [
+            {"range": _header_cell(ws, row_number, "Top Comment"), "values": [[top_comment]]},
+            {"range": _header_cell(ws, row_number, "Required Hashtags"), "values": [[hashtags]]},
+            {"range": _header_cell(ws, row_number, "Speaker Name"), "values": [[speaker_name]]},
+            {"range": _header_cell(ws, row_number, "Footer"), "values": [[footer]]},
+            {"range": _header_cell(ws, row_number, "Caption Context"), "values": [[caption_context]]},
+        ],
     )
-    _with_backoff(ws.update, f"O{row_number}", [[caption_context]])
     _invalidate_rows_cache(sheet_id)
 
 
