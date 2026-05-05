@@ -658,6 +658,38 @@ def _build_original_caption_preview(
     )
 
 
+def _ensure_required_hashtags_text(value: str, required_hashtags: str) -> str:
+    caption = (value or "").strip()
+    required = re.findall(r"#\w+", required_hashtags or "")
+    if not caption or not required:
+        return caption
+    existing = {tag.lower() for tag in re.findall(r"#\w+", caption)}
+    missing = [tag for tag in required if tag.lower() not in existing]
+    if missing:
+        caption = f"{caption}\n\n{' '.join(missing)}"
+    return caption
+
+
+def _caption_tab_value(
+    generated: str,
+    original_caption: str,
+    username: str,
+    top_comment: str,
+    required_hashtags: str,
+    is_instagram: bool,
+) -> str:
+    generated = (generated or "").strip()
+    if generated:
+        return _ensure_required_hashtags_text(generated, required_hashtags)
+    return _build_original_caption_preview(
+        original_caption,
+        username,
+        top_comment,
+        required_hashtags,
+        is_instagram=is_instagram,
+    )
+
+
 def _drive_image_url(drive_link: str) -> str:
     m = re.search(r"/d/([a-zA-Z0-9_-]+)/", drive_link or "")
     if m:
@@ -802,6 +834,7 @@ def _apply_top_comment_to_caption(
                     caption = f"{clean_top_comment}\n\n{caption}".strip()
                 else:
                     caption = f"{caption}\n\n{clean_top_comment}".strip()
+        caption = _ensure_required_hashtags_text(caption, current_hashtags)
     else:
         caption = ""
 
@@ -870,13 +903,13 @@ def _save_all_workspace_speaker_names(rows: list[dict]) -> int:
     updated_count = 0
     for row in rows:
         speaker_key = _workspace_key(row, "speaker")
-        current_speaker = st.session_state.get(speaker_key, row.get("Speaker Name", "")).strip()
-        saved_speaker = (row.get("Speaker Name") or "").strip()
+        current_speaker = _cell_text(st.session_state.get(speaker_key, row.get("Speaker Name", ""))).strip()
+        saved_speaker = _cell_text(row.get("Speaker Name")).strip()
         if current_speaker == saved_speaker:
             continue
-        current_context = st.session_state.get(_workspace_key(row, "context"), row.get("Caption Context", "")).strip()
-        current_hashtags = st.session_state.get(_workspace_key(row, "hashtags"), row.get("Required Hashtags", "")).strip()
-        current_top = st.session_state.get(_workspace_key(row, "top"), row.get("Top Comment", "")).strip()
+        current_context = _cell_text(st.session_state.get(_workspace_key(row, "context"), row.get("Caption Context", ""))).strip()
+        current_hashtags = _cell_text(st.session_state.get(_workspace_key(row, "hashtags"), row.get("Required Hashtags", ""))).strip()
+        current_top = _cell_text(st.session_state.get(_workspace_key(row, "top"), row.get("Top Comment", ""))).strip()
         update_metadata(
             GOOGLE_SHEET_ID,
             row["row_number"],
@@ -888,6 +921,14 @@ def _save_all_workspace_speaker_names(rows: list[dict]) -> int:
         )
         updated_count += 1
     return updated_count
+
+
+def _dirty_workspace_speaker_rows(rows: list[dict]) -> list[dict]:
+    return [
+        row for row in rows
+        if _cell_text(st.session_state.get(_workspace_key(row, "speaker"), row.get("Speaker Name", ""))).strip()
+        != _cell_text(row.get("Speaker Name")).strip()
+    ]
 
 
 def _fundraising_preset_map() -> dict[str, str]:
@@ -1031,18 +1072,26 @@ def _copy_tabs(
     if media_links:
         tab_labels.append("Media")
     text_tabs = st.tabs(tab_labels)
+    original_preview = _build_original_caption_preview(
+        original_caption,
+        username,
+        top_comment,
+        required_hashtags,
+        is_instagram=is_instagram,
+    )
     with text_tabs[0]:
-        _tab_copy_preview(generated)
-    with text_tabs[1]:
         _tab_copy_preview(
-            _build_original_caption_preview(
+            _caption_tab_value(
+                generated,
                 original_caption,
                 username,
                 top_comment,
                 required_hashtags,
-                is_instagram=is_instagram,
+                is_instagram,
             )
         )
+    with text_tabs[1]:
+        _tab_copy_preview(original_preview)
     next_tab_index = 2
     if is_instagram:
         with text_tabs[next_tab_index]:
@@ -1949,6 +1998,26 @@ if active_tab == "Home":
                                 _close_workspace_menu(row)
                                 _queue_workspace_action(row_num, "generate_caption")
                                 _rerun_workspace("Edit")
+                            dirty_name_count = len(_dirty_workspace_speaker_rows(editor_rows))
+                            if st.button(
+                                "Update all names",
+                                key=f"workspace_menu_update_names_{row_num}",
+                                width="stretch",
+                                disabled=dirty_name_count == 0,
+                                help="Save all edited speaker names to the sheet.",
+                            ):
+                                try:
+                                    updated_count = _save_all_workspace_speaker_names(editor_rows)
+                                except Exception as e:
+                                    st.session_state["workspace_error"] = f"Could not save names: {describe_error(e)}"
+                                else:
+                                    st.session_state["workspace_success"] = (
+                                        f"Updated {updated_count} speaker name(s)."
+                                        if updated_count
+                                        else "No name changes to save."
+                                    )
+                                _close_workspace_menu(row)
+                                _rerun_workspace("Edit")
                             if url and st.button("Add Watch", key=f"workspace_watch_add_{row_num}", width="stretch"):
                                 top_comment = _build_watch_cta(username or speaker_name, url)
                                 try:
@@ -2036,31 +2105,9 @@ if active_tab == "Home":
                 unsafe_allow_html=True,
             )
 
-        dirty_name_rows = [
-            r for r in editor_rows
-            if st.session_state.get(_workspace_key(r, "speaker"), r.get("Speaker Name", "")).strip()
-            != (r.get("Speaker Name") or "").strip()
-        ]
+        dirty_name_rows = _dirty_workspace_speaker_rows(editor_rows)
         if dirty_name_rows:
             st.caption(f"{len(dirty_name_rows)} unsaved name(s).")
-        if st.button(
-            "Update names",
-            key="workspace_update_names",
-            type="primary",
-            width="stretch",
-            disabled=not dirty_name_rows,
-        ):
-            try:
-                updated_count = _save_all_workspace_speaker_names(editor_rows)
-            except Exception as e:
-                st.session_state["workspace_error"] = f"Could not save names: {describe_error(e)}"
-            else:
-                st.session_state["workspace_success"] = (
-                    f"Updated {updated_count} speaker name(s)."
-                    if updated_count
-                    else "No name changes to save."
-                )
-            _rerun_workspace("Edit")
 
     with st.expander("Set times", expanded=False):
         st.markdown('<div class="workspace-schedule-anchor"></div>', unsafe_allow_html=True)
