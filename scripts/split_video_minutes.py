@@ -142,8 +142,12 @@ def _run_ffmpeg(input_path: Path, output_dir: Path) -> list[Path]:
     if not ffmpeg_path:
         raise RuntimeError("ffmpeg is not installed or not on PATH.")
 
-    crop_width = f"if(gte(iw/ih,{TARGET_ASPECT_RATIO}),trunc(ih*{TARGET_ASPECT_RATIO}/2)*2,iw)"
-    crop_height = f"if(gte(iw/ih,{TARGET_ASPECT_RATIO}),ih,trunc(iw/({TARGET_ASPECT_RATIO})/2)*2)"
+    crop_width = (
+        f"if(gte(iw/ih\\,{TARGET_ASPECT_RATIO})\\,trunc(ih*{TARGET_ASPECT_RATIO}/2)*2\\,iw)"
+    )
+    crop_height = (
+        f"if(gte(iw/ih\\,{TARGET_ASPECT_RATIO})\\,ih\\,trunc(iw/({TARGET_ASPECT_RATIO})/2)*2)"
+    )
     video_filter = (
         f"crop={crop_width}:{crop_height}:(iw-ow)/2:(ih-oh)/2,"
         "scale=trunc(iw/2)*2:trunc(ih/2)*2"
