@@ -118,6 +118,14 @@ def _is_reel_url(url: str) -> bool:
     return "/reel/" in lowered or "/reels/" in lowered
 
 
+def _cell_text(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    return str(value)
+
+
 def _is_instagram_url(url: str) -> bool:
     return "instagram.com/" in (url or "").lower()
 
@@ -381,11 +389,11 @@ def _sort_editor_rows(rows: list[dict]) -> list[dict]:
 
 def _grid_badges(row: dict) -> list[tuple[str, str]]:
     badges = []
-    media_type = (row.get("Media Type") or "").strip().lower()
-    status = (row.get("Status") or "").strip().lower()
-    if (row.get("Generated Caption") or "").strip():
+    media_type = _cell_text(row.get("Media Type")).strip().lower()
+    status = _cell_text(row.get("Status")).strip().lower()
+    if _cell_text(row.get("Generated Caption")).strip():
         badges.append(("C", "Has caption"))
-    if (row.get("Transcript") or "").strip():
+    if _cell_text(row.get("Transcript")).strip():
         badges.append(("T", "Transcribed"))
     if status == "skipped":
         badges.append(("S", "Skipped"))
@@ -399,7 +407,7 @@ def _grid_badges(row: dict) -> list[tuple[str, str]]:
 
 
 def _grid_preview_url(row: dict) -> str:
-    thumb_link = (row.get("Thumbnail Drive Link") or "").strip()
+    thumb_link = _cell_text(row.get("Thumbnail Drive Link")).strip()
     if thumb_link:
         return _drive_image_url(thumb_link) or thumb_link
     return ""
@@ -418,8 +426,8 @@ def _render_editor_grid(editor_rows: list[dict]) -> None:
     cards = []
     for row in editor_rows:
         row_num = row.get("row_number")
-        username = (row.get("Source Username") or "").strip().lstrip("@")
-        media_type = (row.get("Media Type") or "").strip().lower() or "post"
+        username = _cell_text(row.get("Source Username")).strip().lstrip("@")
+        media_type = _cell_text(row.get("Media Type")).strip().lower() or "post"
         image_url = _grid_preview_url(row)
         badge_html = "".join(
             f'<span class="workspace-grid-badge" title="{html.escape(title)}">{html.escape(label)}</span>'
