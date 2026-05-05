@@ -21,9 +21,9 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from article_source import fetch_article_source
-from config import GOOGLE_SHEET_ID, OPENAI_API_KEY
+from config import DEFAULT_POST_FOOTER, GOOGLE_SHEET_ID, OPENAI_API_KEY
 from ingest_helpers import upload_media_bundle
-from pipeline_caption import generate_row_caption
+from pipeline_caption import generate_row_caption, _strip_top_comment_paragraphs
 from post_scraper import process_url as process_post_url
 from reel_scraper import process_url as process_reel_url
 import sheets as sheet_ops
@@ -753,9 +753,42 @@ def _apply_top_comment_to_caption(
     updated_row["Top Comment"] = top_comment
     current_status = (row.get("Status") or "").strip() or "done"
     existing_caption = (row.get("Generated Caption") or "").strip()
+    previous_top_comment = (row.get("Top Comment") or "").strip()
+    clean_top_comment, pin_top_comment = _decode_top_comment(top_comment)
     if existing_caption:
-        caption = _strip_top_comment_paragraphs(existing_caption, top_comment)
-        caption = f"{caption}\n\n{top_comment}".strip()
+        caption = existing_caption
+        for removable in (previous_top_comment, top_comment):
+            removable_text, _ = _decode_top_comment(removable)
+            if removable_text:
+                caption = _strip_top_comment_paragraphs(caption, removable_text)
+
+        media_type = (row.get("Media Type") or "").strip().lower()
+        if media_type != "article" and "\n\n--\n\n" in caption:
+            before_divider, after_divider = caption.split("\n\n--\n\n", 1)
+            before_divider = before_divider.strip()
+            after_divider = after_divider.strip()
+            if clean_top_comment:
+                if pin_top_comment:
+                    before_divider = f"{clean_top_comment}\n\n{before_divider}".strip()
+                else:
+                    before_divider = f"{before_divider}\n\n{clean_top_comment}".strip()
+            caption = f"{before_divider}\n\n--\n\n{after_divider}".strip()
+        elif clean_top_comment:
+            footer_text = DEFAULT_POST_FOOTER.strip()
+            if footer_text and footer_text in caption:
+                body, _, trailing = caption.rpartition(footer_text)
+                body = body.strip()
+                trailing = trailing.strip()
+                if pin_top_comment:
+                    body = f"{clean_top_comment}\n\n{body}".strip()
+                else:
+                    body = f"{body}\n\n{clean_top_comment}".strip()
+                caption = f"{body}\n\n{footer_text}{trailing}".strip()
+            else:
+                if pin_top_comment:
+                    caption = f"{clean_top_comment}\n\n{caption}".strip()
+                else:
+                    caption = f"{caption}\n\n{clean_top_comment}".strip()
     else:
         caption = ""
 
@@ -899,7 +932,6 @@ def _render_workspace_link_dialog(row: dict) -> None:
             st.session_state["workspace_error"] = f"Row {row_num}: link must start with https://"
             _rerun_workspace("Edit")
 
-        current_top_comment = _current_row_caption_inputs(row)["Top Comment"]
         addition = (
             _build_link_cta(full_link)
             if selected_source == "Custom"
@@ -1867,7 +1899,8 @@ if active_tab == "Home":
                     if url:
                         st.link_button("Open in Instagram" if is_instagram else "Open source link", url, width="stretch")
                         menu_nonce = st.session_state.get(menu_nonce_key, 0)
-                        with st.popover(f"Actions{'\u200b' * menu_nonce}", use_container_width=True):
+                        menu_label_with_nonce = f"Actions{chr(0x200B) * menu_nonce}"
+                        with st.popover(menu_label_with_nonce, use_container_width=True):
                             primary_action = "transcript" if _is_reel_url(url) else "image_text"
                             primary_help = "Fetch transcript and regenerate caption." if _is_reel_url(url) else "Extract text from images and regenerate caption."
                             if is_instagram and st.button(
