@@ -669,6 +669,11 @@ def _drive_image_url(drive_link: str) -> str:
     return ""
 
 
+def _safe_image_url(raw_value: str) -> str:
+    candidate = _drive_image_url(raw_value) or _cell_text(raw_value).strip()
+    return candidate if _is_https_url(candidate) else ""
+
+
 def _drive_view_url(drive_link: str) -> str:
     m = re.search(r"/d/([a-zA-Z0-9_-]+)/", drive_link or "")
     if m:
@@ -1860,10 +1865,13 @@ if active_tab == "Home":
                 )
                 top_left, top_right = st.columns([0.9, 1.1], vertical_alignment="top")
                 with top_left:
-                    thumb_link = (row.get("Thumbnail Drive Link") or "").strip()
+                    thumb_link = _cell_text(row.get("Thumbnail Drive Link")).strip()
                     if thumb_link:
-                        image_url = _drive_image_url(thumb_link) or thumb_link
-                        st.image(image_url, width="stretch")
+                        image_url = _safe_image_url(thumb_link)
+                        if image_url:
+                            st.image(image_url, width="stretch")
+                        else:
+                            st.info("Thumbnail link is unavailable.")
                     elif is_article:
                         st.info("Article link")
                         if original_caption:
