@@ -137,11 +137,40 @@ def _video_files(folder: Path) -> list[Path]:
     )
 
 
-def _run_ffmpeg(input_path: Path, output_dir: Path) -> list[Path]:
+def _ffmpeg_path() -> str:
     ffmpeg_path = shutil.which("ffmpeg")
     if not ffmpeg_path:
         raise RuntimeError("ffmpeg is not installed or not on PATH.")
+    return ffmpeg_path
 
+
+def _ffprobe_path() -> str:
+    ffprobe_path = shutil.which("ffprobe")
+    if not ffprobe_path:
+        raise RuntimeError("ffprobe is not installed or not on PATH.")
+    return ffprobe_path
+
+
+def _video_duration_seconds(input_path: Path) -> float:
+    command = [
+        _ffprobe_path(),
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        str(input_path),
+    ]
+    result = subprocess.run(command, capture_output=True, text=True, check=True)
+    duration_text = result.stdout.strip()
+    if not duration_text:
+        raise RuntimeError(f"Could not determine duration for {input_path.name}.")
+    return float(duration_text)
+
+
+def _run_ffmpeg(input_path: Path, output_dir: Path) -> list[Path]:
+    ffmpeg_path = _ffmpeg_path()
     crop_width = (
         f"if(gte(iw/ih\\,{TARGET_ASPECT_RATIO})\\,trunc(ih*{TARGET_ASPECT_RATIO}/2)*2\\,iw)"
     )
@@ -152,48 +181,48 @@ def _run_ffmpeg(input_path: Path, output_dir: Path) -> list[Path]:
         f"crop={crop_width}:{crop_height}:(iw-ow)/2:(ih-oh)/2,"
         "scale=trunc(iw/2)*2:trunc(ih/2)*2"
     )
-    tmp_pattern = output_dir / "segment_%03d.mp4"
-    command = [
-        ffmpeg_path,
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-y",
-        "-i",
-        str(input_path),
-        "-vf",
-        video_filter,
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-crf",
-        "18",
-        "-force_key_frames",
-        "expr:gte(t,n_forced*60)",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "192k",
-        "-f",
-        "segment",
-        "-segment_time",
-        "60",
-        "-reset_timestamps",
-        "1",
-        str(tmp_pattern),
-    ]
-    subprocess.run(command, check=True)
-    return sorted(output_dir.glob("segment_*.mp4"))
+    duration = _video_duration_seconds(input_path)
+    if duration <= 0:
+        raise RuntimeError(f"Invalid duration for {input_path.name}: {duration}")
 
+    segments: list[Path] = []
+    start_seconds = 0.0
+    segment_index = 0
+    while start_seconds < duration - 0.01:
+        output_path = output_dir / f"{_segment_name(segment_index)}.mp4"
+        clip_duration = min(60.0, duration - start_seconds)
+        command = [
+            ffmpeg_path,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-i",
+            str(input_path),
+            "-ss",
+            f"{start_seconds:.3f}",
+            "-t",
+            f"{clip_duration:.3f}",
+            "-vf",
+            video_filter,
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "18",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            str(output_path),
+        ]
+        subprocess.run(command, check=True)
+        segments.append(output_path)
+        start_seconds += 60.0
+        segment_index += 1
 
-def _rename_segments(output_dir: Path, segments: list[Path]) -> list[Path]:
-    renamed: list[Path] = []
-    for index, segment_path in enumerate(segments):
-        target = output_dir / f"{_segment_name(index)}.mp4"
-        segment_path.rename(target)
-        renamed.append(target)
-    return renamed
+    return segments
 
 
 def output_dir_for_video(folder: Path, video_path: Path) -> Path:
@@ -210,13 +239,12 @@ def split_video_file(video_path: Path, base_folder: Path | None = None) -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
     try:
         segments = _run_ffmpeg(video_path, output_dir)
-        renamed = _rename_segments(output_dir, segments)
     except Exception:
         shutil.rmtree(output_dir, ignore_errors=True)
         raise
 
-    print(f"Split {video_path.name} into {len(renamed)} segment(s) in {output_dir.name}")
-    return len(renamed)
+    print(f"Split {video_path.name} into {len(segments)} segment(s) in {output_dir.name}")
+    return len(segments)
 
 
 def split_folder(folder: Path) -> int:
