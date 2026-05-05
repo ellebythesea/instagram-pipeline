@@ -210,9 +210,9 @@ def _mark_transcribe_checkbox_for_reset(row: dict) -> None:
 
 def _workspace_row_identity(row: dict) -> str:
     return "||".join([
-        (row.get("Instagram URL") or "").strip(),
-        (row.get("Media Type") or "").strip(),
-        (row.get("Source Username") or "").strip(),
+        _cell_text(row.get("Instagram URL")).strip(),
+        _cell_text(row.get("Media Type")).strip(),
+        _cell_text(row.get("Source Username")).strip(),
     ])
 
 
@@ -323,30 +323,30 @@ def _row_is_dirty(row: dict) -> bool:
     context_key = _workspace_key(row, "context")
     return any(
         [
-            st.session_state.get(speaker_key, row.get("Speaker Name", "")).strip()
-            != (row.get("Speaker Name", "") or "").strip(),
-            st.session_state.get(hashtags_key, row.get("Required Hashtags", "")).strip()
-            != (row.get("Required Hashtags", "") or "").strip(),
-            st.session_state.get(top_key, row.get("Top Comment", "")).strip()
-            != (row.get("Top Comment", "") or "").strip(),
-            st.session_state.get(context_key, row.get("Caption Context", "")).strip()
-            != (row.get("Caption Context", "") or "").strip(),
+            _cell_text(st.session_state.get(speaker_key, row.get("Speaker Name", ""))).strip()
+            != _cell_text(row.get("Speaker Name")).strip(),
+            _cell_text(st.session_state.get(hashtags_key, row.get("Required Hashtags", ""))).strip()
+            != _cell_text(row.get("Required Hashtags")).strip(),
+            _cell_text(st.session_state.get(top_key, row.get("Top Comment", ""))).strip()
+            != _cell_text(row.get("Top Comment")).strip(),
+            _cell_text(st.session_state.get(context_key, row.get("Caption Context", ""))).strip()
+            != _cell_text(row.get("Caption Context")).strip(),
         ]
     )
 
 
 def _is_editable_row(row: dict) -> bool:
-    if not row.get("Instagram URL", "").strip():
+    if not _cell_text(row.get("Instagram URL")).strip():
         return False
 
-    status = row.get("Status", "").strip().lower()
+    status = _cell_text(row.get("Status")).strip().lower()
     if status in EDITABLE_STATUSES:
         return True
 
     # Some rows may already be effectively ingested even if the status field
     # is not one of the editor-specific values yet.
     return any(
-        (row.get(field, "") or "").strip()
+        _cell_text(row.get(field, "")).strip()
         for field in [
             "Source Username",
             "Media Type",
