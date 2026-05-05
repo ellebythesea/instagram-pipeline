@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Split locally downloaded videos into exact one-minute segments.
+"""Split locally downloaded videos into exact one-minute 4:6 segments.
 
 Usage:
     .venv/bin/python scripts/split_video_minutes.py
@@ -59,6 +59,7 @@ def default_split_dir() -> Path:
     return SPLIT_DIR_CANDIDATES[0]
 
 VIDEO_SUFFIXES = {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm"}
+TARGET_ASPECT_RATIO = "2/3"
 NUMBER_WORDS = [
     "one",
     "two",
@@ -141,6 +142,12 @@ def _run_ffmpeg(input_path: Path, output_dir: Path) -> list[Path]:
     if not ffmpeg_path:
         raise RuntimeError("ffmpeg is not installed or not on PATH.")
 
+    crop_width = f"if(gte(iw/ih,{TARGET_ASPECT_RATIO}),trunc(ih*{TARGET_ASPECT_RATIO}/2)*2,iw)"
+    crop_height = f"if(gte(iw/ih,{TARGET_ASPECT_RATIO}),ih,trunc(iw/({TARGET_ASPECT_RATIO})/2)*2)"
+    video_filter = (
+        f"crop={crop_width}:{crop_height}:(iw-ow)/2:(ih-oh)/2,"
+        "scale=trunc(iw/2)*2:trunc(ih/2)*2"
+    )
     tmp_pattern = output_dir / "segment_%03d.mp4"
     command = [
         ffmpeg_path,
@@ -151,7 +158,7 @@ def _run_ffmpeg(input_path: Path, output_dir: Path) -> list[Path]:
         "-i",
         str(input_path),
         "-vf",
-        "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+        video_filter,
         "-c:v",
         "libx264",
         "-preset",
