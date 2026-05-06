@@ -16,8 +16,16 @@ _USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0 Safari/537.36"
 )
-_REQUEST_TIMEOUT = (5, 15)
-_ARTICLE_TIMEOUT_SECONDS = 25
+_REQUEST_HEADERS = {
+    "User-Agent": _USER_AGENT,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache",
+    "Upgrade-Insecure-Requests": "1",
+}
+_REQUEST_TIMEOUT = (8, 25)
+_ARTICLE_TIMEOUT_SECONDS = 40
 _MAX_HTML_BYTES = 3 * 1024 * 1024
 
 _NOISE_PATTERNS = [
@@ -168,27 +176,40 @@ def _compose_source_text(title: str, description: str, paragraphs: list[str]) ->
     return source_text
 
 
+def _fallback_source_text(title: str, description: str) -> str:
+    parts: list[str] = []
+    cleaned_title = _clean_text(title)
+    cleaned_description = _clean_text(description)
+    if cleaned_title:
+        parts.append(cleaned_title)
+    if cleaned_description and cleaned_description.lower() != cleaned_title.lower():
+        parts.append(cleaned_description)
+    return "\n\n".join(parts).strip()
+
+
 def _fetch_article_html(url: str) -> tuple[str, str]:
-    with requests.get(
-        url,
-        timeout=_REQUEST_TIMEOUT,
-        headers={"User-Agent": _USER_AGENT},
-        allow_redirects=True,
-        stream=True,
-    ) as response:
-        response.raise_for_status()
-        chunks: list[bytes] = []
-        total_bytes = 0
-        for chunk in response.iter_content(chunk_size=65536):
-            if not chunk:
-                continue
-            chunks.append(chunk)
-            total_bytes += len(chunk)
-            if total_bytes >= _MAX_HTML_BYTES:
-                break
-        encoding = response.encoding or "utf-8"
-        html = b"".join(chunks).decode(encoding, errors="replace")
-        return response.url or url, html
+    with requests.Session() as session:
+        with session.get(
+            url,
+            timeout=_REQUEST_TIMEOUT,
+            headers=_REQUEST_HEADERS,
+            allow_redirects=True,
+            stream=True,
+        ) as response:
+            final_url = response.url or url
+            response.raise_for_status()
+            chunks: list[bytes] = []
+            total_bytes = 0
+            for chunk in response.iter_content(chunk_size=65536):
+                if not chunk:
+                    continue
+                chunks.append(chunk)
+                total_bytes += len(chunk)
+                if total_bytes >= _MAX_HTML_BYTES:
+                    break
+            encoding = response.encoding or "utf-8"
+            html = b"".join(chunks).decode(encoding, errors="replace")
+            return final_url, html
 
 
 def _fetch_article_source_inner(url: str) -> dict:
@@ -206,6 +227,8 @@ def _fetch_article_source_inner(url: str) -> dict:
     title = og_title or twitter_title or parsed_title
     description = og_description or twitter_description or meta_description
     source_text = _compose_source_text(title, description, paragraphs)
+    if not source_text:
+        source_text = _fallback_source_text(title, description)
     if not source_text:
         raise ValueError("Could not extract enough article text from that link.")
 
