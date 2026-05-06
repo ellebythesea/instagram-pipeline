@@ -777,6 +777,7 @@ def _close_workspace_menu(row: dict) -> None:
     st.session_state[nonce_key] = st.session_state.get(nonce_key, 0) + 1
     st.session_state[_workspace_key(row, "link_editor_open")] = False
     st.session_state.pop("workspace_link_dialog_row", None)
+    st.session_state.pop("workspace_delete_dialog_row", None)
 
 
 def _close_workspace_link_dialog(row: dict) -> None:
@@ -784,6 +785,10 @@ def _close_workspace_link_dialog(row: dict) -> None:
     st.session_state.pop(_workspace_key(row, "link_source"), None)
     st.session_state.pop(_workspace_key(row, "link_url"), None)
     st.session_state.pop(_workspace_key(row, "link_comment"), None)
+
+
+def _close_workspace_delete_dialog() -> None:
+    st.session_state.pop("workspace_delete_dialog_row", None)
 
 
 def _apply_top_comment_to_caption(
@@ -1007,6 +1012,28 @@ def _render_workspace_link_dialog(row: dict) -> None:
 
     if st.button("Cancel", key=f"workspace_link_cancel_{row_num}", width="stretch"):
         _close_workspace_link_dialog(row)
+        _rerun_workspace("Edit")
+
+
+@st.dialog("Delete row")
+def _render_workspace_delete_dialog(row: dict) -> None:
+    row_num = row["row_number"]
+    username = _cell_text(row.get("Source Username")).strip()
+    label = f"@{username}" if username else f"Row {row_num}"
+    st.write(f"Delete {label} from the sheet?")
+
+    if st.button("Delete", key=f"workspace_delete_confirm_{row_num}", type="primary", width="stretch"):
+        try:
+            _delete_workspace_row(row)
+        except Exception as e:
+            st.session_state["workspace_error"] = f"Row {row_num}: could not delete row - {describe_error(e)}"
+        else:
+            st.session_state["workspace_success"] = f"Row {row_num}: deleted from the sheet."
+        _close_workspace_delete_dialog()
+        _rerun_workspace("Edit")
+
+    if st.button("Cancel", key=f"workspace_delete_cancel_{row_num}", width="stretch"):
+        _close_workspace_delete_dialog()
         _rerun_workspace("Edit")
 
 
@@ -1906,6 +1933,14 @@ if active_tab == "Home":
         else:
             _render_workspace_link_dialog(dialog_row)
 
+    delete_dialog_row_number = st.session_state.get("workspace_delete_dialog_row")
+    if delete_dialog_row_number is not None:
+        delete_dialog_row = next((row for row in editor_rows if row.get("row_number") == delete_dialog_row_number), None)
+        if delete_dialog_row is None:
+            st.session_state.pop("workspace_delete_dialog_row", None)
+        else:
+            _render_workspace_delete_dialog(delete_dialog_row)
+
     last_scheduled_times = _persisted_last_scheduled_time_labels(editor_rows)
 
     if not editor_rows:
@@ -2097,13 +2132,8 @@ if active_tab == "Home":
                                 key=f"workspace_menu_delete_{row_num}",
                                 width="stretch",
                             ):
-                                try:
-                                    _delete_workspace_row(row)
-                                except Exception as e:
-                                    st.session_state["workspace_error"] = f"Row {row_num}: could not delete row - {describe_error(e)}"
-                                else:
-                                    st.session_state["workspace_success"] = f"Row {row_num}: deleted from the sheet."
                                 _close_workspace_menu(row)
+                                st.session_state["workspace_delete_dialog_row"] = row_num
                                 _rerun_workspace("Edit")
 
                     transcript_warning = st.session_state.get(warning_key)
