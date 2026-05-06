@@ -11,6 +11,7 @@ from config import APP_PASSWORD
 
 COOKIE_NAME = "instagram_pipeline_auth"
 SESSION_KEY = "authenticated"
+LOGIN_ERROR_KEY = "_auth_login_error"
 
 
 def _cookie_manager() -> stx.CookieManager:
@@ -24,6 +25,11 @@ def _cookie_manager() -> stx.CookieManager:
 def _cookie_value() -> str:
     secret = (APP_PASSWORD or "").encode("utf-8")
     return hmac.new(secret, b"instagram-pipeline-auth-v1", hashlib.sha256).hexdigest()
+
+
+def _set_authenticated() -> None:
+    st.session_state[SESSION_KEY] = True
+    st.session_state.pop(LOGIN_ERROR_KEY, None)
 
 
 def _set_auth_cookie() -> None:
@@ -45,20 +51,22 @@ def _native_cookie_value() -> str:
 
 
 def require_auth() -> bool:
+    st.session_state.setdefault(SESSION_KEY, False)
+
     if not APP_PASSWORD:
-        st.session_state[SESSION_KEY] = True
+        _set_authenticated()
         return True
 
     if st.session_state.get(SESSION_KEY):
         return True
 
     if _native_cookie_value() == _cookie_value():
-        st.session_state[SESSION_KEY] = True
+        _set_authenticated()
         return True
 
     cookies = _cookie_manager().get_all() or {}
     if cookies.get(COOKIE_NAME) == _cookie_value():
-        st.session_state[SESSION_KEY] = True
+        _set_authenticated()
         return True
 
     with st.form("auth_login_form", clear_on_submit=False):
@@ -67,10 +75,14 @@ def require_auth() -> bool:
 
     if submitted:
         if password == APP_PASSWORD:
-            st.session_state[SESSION_KEY] = True
+            _set_authenticated()
             _set_auth_cookie()
-            return True
+            st.rerun()
         else:
-            st.error("Incorrect password.")
+            st.session_state[LOGIN_ERROR_KEY] = "Incorrect password."
+
+    error_message = st.session_state.get(LOGIN_ERROR_KEY)
+    if error_message:
+        st.error(error_message)
 
     return False
