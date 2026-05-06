@@ -1223,8 +1223,25 @@ def _process_pending_rows_from_sheet() -> int:
                     result["transcript"],
                     result["status"],
                 )
+                existing_inputs = _current_row_caption_inputs(row)
+                default_top_comment = existing_inputs["Top Comment"]
+                if not default_top_comment and result["status"] == "ingested":
+                    row_url = _cell_text(row.get("Instagram URL")).strip()
+                    if result["media_type"] == "article":
+                        default_top_comment = _build_read_cta(row_url)
+                    elif _is_instagram_url(row_url):
+                        default_top_comment = _build_watch_cta(result["username"], row_url)
+
+                update_metadata(
+                    GOOGLE_SHEET_ID,
+                    row_num,
+                    existing_inputs["Caption Context"],
+                    existing_inputs["Speaker Name"],
+                    existing_inputs["Required Hashtags"],
+                    default_top_comment,
+                    "",
+                )
                 if result["status"] == "ingested" and result["media_type"] == "article":
-                    existing_inputs = _current_row_caption_inputs(row)
                     article_row = dict(row)
                     article_row.update(
                         {
@@ -1239,7 +1256,7 @@ def _process_pending_rows_from_sheet() -> int:
                             "Caption Context": existing_inputs["Caption Context"],
                             "Speaker Name": existing_inputs["Speaker Name"],
                             "Required Hashtags": existing_inputs["Required Hashtags"],
-                            "Top Comment": existing_inputs["Top Comment"],
+                            "Top Comment": default_top_comment,
                             "Footer": "",
                         }
                     )
@@ -1253,19 +1270,10 @@ def _process_pending_rows_from_sheet() -> int:
                             existing_inputs["Caption Context"],
                             existing_inputs["Speaker Name"],
                             existing_inputs["Required Hashtags"],
-                            existing_inputs["Top Comment"],
+                            default_top_comment,
                             "",
                         )
                     else:
-                        update_metadata(
-                            GOOGLE_SHEET_ID,
-                            row_num,
-                            existing_inputs["Caption Context"],
-                            existing_inputs["Speaker Name"],
-                            existing_inputs["Required Hashtags"],
-                            existing_inputs["Top Comment"],
-                            "",
-                        )
                         update_caption(GOOGLE_SHEET_ID, row_num, generated_caption, result["status"])
             except Exception as e:
                 status_box.update(label=f"Row {row_num}: error writing to sheet - {describe_error(e)}", state="error")
