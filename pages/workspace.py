@@ -1630,7 +1630,11 @@ def _run_home_mode(mode: str, urls: list[str], org_hashtag: str) -> tuple[str, l
             source = _fetch_link_data(url)
             row = {
                 "Instagram URL": source["url"],
-                "Source Username": source.get("username", "") if source.get("is_instagram", False) else "",
+                "Source Username": (
+                    source.get("username", "")
+                    if source.get("is_instagram", False)
+                    else source.get("display_name", "")
+                ),
                 "Media Type": "" if source.get("is_instagram", False) else "article",
                 "Original Caption": source.get("source_text", "").strip(),
                 "Transcript": "",
