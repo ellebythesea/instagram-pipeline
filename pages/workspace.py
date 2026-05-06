@@ -225,9 +225,12 @@ def _workspace_stable_row_key(row: dict, name: str) -> str:
     return f"workspace_{name}_row_{row.get('row_number', '')}"
 
 
+def _workspace_speaker_key(row: dict) -> str:
+    return _workspace_stable_row_key(row, "speaker")
+
+
 def _workspace_row_state_keys_for_token(token: str) -> list[str]:
     return [
-        f"workspace_speaker_{token}",
         f"workspace_hashtags_{token}",
         f"workspace_top_{token}",
         f"workspace_context_{token}",
@@ -317,7 +320,7 @@ def _clean_home_links() -> list[str]:
 
 
 def _row_is_dirty(row: dict) -> bool:
-    speaker_key = _workspace_key(row, "speaker")
+    speaker_key = _workspace_speaker_key(row)
     hashtags_key = _workspace_key(row, "hashtags")
     top_key = _workspace_key(row, "top")
     context_key = _workspace_key(row, "context")
@@ -793,7 +796,7 @@ def _apply_top_comment_to_caption(
     top_comment: str,
 ) -> None:
     current_context = st.session_state.get(_workspace_key(row, "context"), row.get("Caption Context", "")).strip()
-    current_speaker = st.session_state.get(_workspace_key(row, "speaker"), speaker_name).strip()
+    current_speaker = st.session_state.get(_workspace_speaker_key(row), speaker_name).strip()
     current_hashtags = st.session_state.get(_workspace_key(row, "hashtags"), row.get("Required Hashtags", "")).strip()
     updated_row = dict(row)
     updated_row["Caption Context"] = current_context
@@ -875,7 +878,7 @@ def _current_row_caption_inputs(row: dict) -> dict:
         row.get("Caption Context", ""),
     ).strip()
     current_speaker = st.session_state.get(
-        _workspace_key(row, "speaker"),
+        _workspace_speaker_key(row),
         row.get("Speaker Name", ""),
     ).strip()
     current_hashtags = st.session_state.get(
@@ -906,7 +909,7 @@ def _current_row_caption_inputs(row: dict) -> dict:
 def _save_all_workspace_speaker_names(rows: list[dict]) -> int:
     updated_count = 0
     for row in rows:
-        speaker_key = _workspace_key(row, "speaker")
+        speaker_key = _workspace_speaker_key(row)
         current_speaker = _cell_text(st.session_state.get(speaker_key, row.get("Speaker Name", ""))).strip()
         saved_speaker = _cell_text(row.get("Speaker Name")).strip()
         if current_speaker == saved_speaker:
@@ -930,7 +933,7 @@ def _save_all_workspace_speaker_names(rows: list[dict]) -> int:
 def _dirty_workspace_speaker_rows(rows: list[dict]) -> list[dict]:
     return [
         row for row in rows
-        if _cell_text(st.session_state.get(_workspace_key(row, "speaker"), row.get("Speaker Name", ""))).strip()
+        if _cell_text(st.session_state.get(_workspace_speaker_key(row), row.get("Speaker Name", ""))).strip()
         != _cell_text(row.get("Speaker Name")).strip()
     ]
 
@@ -1940,7 +1943,7 @@ if active_tab == "Home":
         for row in visible_editor_rows:
             _sync_workspace_row_state(row)
             row_num = row["row_number"]
-            speaker_key = _workspace_key(row, "speaker")
+            speaker_key = _workspace_speaker_key(row)
             hashtags_key = _workspace_key(row, "hashtags")
             top_key = _workspace_key(row, "top")
             context_key = _workspace_key(row, "context")
@@ -2051,26 +2054,6 @@ if active_tab == "Home":
                                 _close_workspace_menu(row)
                                 _queue_workspace_action(row_num, "generate_caption")
                                 _rerun_workspace("Edit")
-                            dirty_name_count = len(_dirty_workspace_speaker_rows(editor_rows))
-                            if st.button(
-                                "Update all names",
-                                key=f"workspace_menu_update_names_{row_num}",
-                                width="stretch",
-                                disabled=dirty_name_count == 0,
-                                help="Save all edited speaker names to the sheet.",
-                            ):
-                                try:
-                                    updated_count = _save_all_workspace_speaker_names(editor_rows)
-                                except Exception as e:
-                                    st.session_state["workspace_error"] = f"Could not save names: {describe_error(e)}"
-                                else:
-                                    st.session_state["workspace_success"] = (
-                                        f"Updated {updated_count} speaker name(s)."
-                                        if updated_count
-                                        else "No name changes to save."
-                                    )
-                                _close_workspace_menu(row)
-                                _rerun_workspace("Edit")
                             if url and st.button("Add Watch", key=f"workspace_watch_add_{row_num}", width="stretch"):
                                 top_comment = _build_watch_cta(username or speaker_name, url)
                                 try:
@@ -2161,6 +2144,24 @@ if active_tab == "Home":
         dirty_name_rows = _dirty_workspace_speaker_rows(editor_rows)
         if dirty_name_rows:
             st.caption(f"{len(dirty_name_rows)} unsaved name(s).")
+            if st.button(
+                "Update all names",
+                key="workspace_update_all_names_bottom",
+                type="primary",
+                width="stretch",
+                help="Save all edited speaker names to the sheet.",
+            ):
+                try:
+                    updated_count = _save_all_workspace_speaker_names(editor_rows)
+                except Exception as e:
+                    st.session_state["workspace_error"] = f"Could not save names: {describe_error(e)}"
+                else:
+                    st.session_state["workspace_success"] = (
+                        f"Updated {updated_count} speaker name(s)."
+                        if updated_count
+                        else "No name changes to save."
+                    )
+                _rerun_workspace("Edit")
 
     with st.expander("Set times", expanded=False):
         st.markdown('<div class="workspace-schedule-anchor"></div>', unsafe_allow_html=True)
