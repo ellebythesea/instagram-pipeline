@@ -1840,9 +1840,9 @@ if active_tab == "Actions":
                 headline_tabs = st.tabs(["Headline 1", "Headline 2", "Headline 3", "Caption"])
                 for tab_idx, headline in enumerate(item.get("headlines", [])[:3]):
                     with headline_tabs[tab_idx]:
-                        st.code(headline or "(none)", language=None)
+                        _tab_copy_preview(headline or "(none)")
                 with headline_tabs[3]:
-                    st.code(item.get("caption", "") or "(none)", language=None)
+                    _tab_copy_preview(item.get("caption", "") or "(none)")
 
         if home_results and home_results.get("mode") == "Caption this":
             for idx, item in enumerate(home_results.get("items", []), start=1):
