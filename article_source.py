@@ -187,6 +187,85 @@ def _fallback_source_text(title: str, description: str) -> str:
     return "\n\n".join(parts).strip()
 
 
+def _reader_fallback_candidates(url: str) -> list[str]:
+    parsed = urlparse(url)
+    query = f"?{parsed.query}" if parsed.query else ""
+
+    hosts: list[str] = []
+    if parsed.netloc:
+        hosts.append(parsed.netloc)
+        if not parsed.netloc.startswith("www."):
+            hosts.append(f"www.{parsed.netloc}")
+
+    candidates: list[str] = []
+    for host in hosts:
+        candidates.append(f"https://r.jina.ai/http://{host}{parsed.path}{query}")
+    candidates.append(f"https://r.jina.ai/http://{url}")
+
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        deduped.append(candidate)
+    return deduped
+
+
+def _parse_reader_fallback(text: str) -> dict:
+    title = ""
+    collected_lines: list[str] = []
+    for raw_line in (text or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            collected_lines.append("")
+            continue
+        if line.startswith("Title:") and not title:
+            title = _clean_text(line.partition(":")[2])
+            continue
+        if line.startswith("URL Source:"):
+            continue
+        if line.startswith("Markdown Content:"):
+            continue
+        collected_lines.append(line)
+
+    body = "\n".join(collected_lines).strip()
+    paragraphs = [_clean_text(p) for p in re.split(r"\n\s*\n", body) if _clean_text(p)]
+    description = paragraphs[0] if paragraphs else ""
+    source_text = _compose_source_text(title, description, paragraphs)
+    if not source_text:
+        source_text = _fallback_source_text(title, description)
+    if not source_text and paragraphs:
+        source_text = paragraphs[0]
+    return {
+        "title": title,
+        "description": description,
+        "source_text": source_text,
+    }
+
+
+def _fetch_reader_fallback(url: str) -> dict:
+    last_error: Exception | None = None
+    for fallback_url in _reader_fallback_candidates(url):
+        try:
+            response = requests.get(
+                fallback_url,
+                timeout=_REQUEST_TIMEOUT,
+                headers=_REQUEST_HEADERS,
+                allow_redirects=True,
+            )
+            response.raise_for_status()
+            parsed = _parse_reader_fallback(response.text)
+            if parsed.get("source_text"):
+                return parsed
+        except Exception as error:
+            last_error = error
+            continue
+    if last_error:
+        raise last_error
+    raise RuntimeError("Reader fallback did not return any article text.")
+
+
 def _fetch_article_html(url: str) -> tuple[str, str]:
     with requests.Session() as session:
         with session.get(
@@ -213,7 +292,24 @@ def _fetch_article_html(url: str) -> tuple[str, str]:
 
 
 def _fetch_article_source_inner(url: str) -> dict:
-    final_url, html = _fetch_article_html(url)
+    try:
+        final_url, html = _fetch_article_html(url)
+    except requests.RequestException:
+        fallback = _fetch_reader_fallback(url)
+        parsed = urlparse(url)
+        domain = parsed.netloc.replace("www.", "")
+        return {
+            "url": url,
+            "domain": domain,
+            "title": fallback.get("title", ""),
+            "description": fallback.get("description", ""),
+            "image_url": "",
+            "summary_text": _fallback_source_text(
+                fallback.get("title", ""),
+                fallback.get("description", ""),
+            ),
+            "source_text": fallback.get("source_text", ""),
+        }
 
     og_title = _extract_meta(html, "property", "og:title")
     og_description = _extract_meta(html, "property", "og:description")
