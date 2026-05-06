@@ -576,11 +576,15 @@ def _fetch_link_data(url: str) -> dict:
         }
 
     article = fetch_article_source(url)
+    article_source_text = (
+        (article.get("source_text") or "").strip()
+        or (article.get("summary_text") or "").strip()
+    )
     return {
         "url": article.get("url", url),
         "username": "",
         "display_name": article.get("domain", ""),
-        "source_text": (article.get("source_text") or "").strip(),
+        "source_text": article_source_text,
         "is_instagram": False,
     }
 
@@ -1254,13 +1258,17 @@ def _ingest_row(row: dict) -> dict:
     try:
         if _is_article_url(url):
             article = fetch_article_source(url)
+            article_source_text = (
+                (article.get("source_text") or "").strip()
+                or (article.get("summary_text") or "").strip()
+            )
             return {
                 "username": article.get("domain", ""),
                 "media_type": "article",
                 "photo_count": "",
                 "media_link": "",
                 "thumbnail_link": article.get("image_url", ""),
-                "original_caption": article.get("source_text", ""),
+                "original_caption": article_source_text,
                 "transcript": "",
                 "status": "ingested",
             }

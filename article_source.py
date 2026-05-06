@@ -226,9 +226,10 @@ def _fetch_article_source_inner(url: str) -> dict:
     parsed_title, paragraphs = _extract_title_and_body(html)
     title = og_title or twitter_title or parsed_title
     description = og_description or twitter_description or meta_description
+    summary_text = _fallback_source_text(title, description)
     source_text = _compose_source_text(title, description, paragraphs)
     if not source_text:
-        source_text = _fallback_source_text(title, description)
+        source_text = summary_text
     if not source_text:
         raise ValueError("Could not extract enough article text from that link.")
 
@@ -243,6 +244,7 @@ def _fetch_article_source_inner(url: str) -> dict:
         "title": title,
         "description": description,
         "image_url": image_url,
+        "summary_text": summary_text,
         "source_text": source_text,
     }
 
