@@ -1225,22 +1225,55 @@ def _process_pending_rows_from_sheet() -> int:
                 )
                 if result["status"] == "ingested" and result["media_type"] == "article":
                     existing_inputs = _current_row_caption_inputs(row)
-                    update_metadata(
-                        GOOGLE_SHEET_ID,
-                        row_num,
-                        existing_inputs["Caption Context"],
-                        existing_inputs["Speaker Name"],
-                        existing_inputs["Required Hashtags"],
-                        existing_inputs["Top Comment"],
-                        "",
+                    article_row = dict(row)
+                    article_row.update(
+                        {
+                            "Source Username": result["username"],
+                            "Media Type": result["media_type"],
+                            "Photo Count": result["photo_count"],
+                            "Media Drive Link": result["media_link"],
+                            "Thumbnail Drive Link": result["thumbnail_link"],
+                            "Original Caption": result["original_caption"],
+                            "Transcript": result["transcript"],
+                            "Status": result["status"],
+                            "Caption Context": existing_inputs["Caption Context"],
+                            "Speaker Name": existing_inputs["Speaker Name"],
+                            "Required Hashtags": existing_inputs["Required Hashtags"],
+                            "Top Comment": existing_inputs["Top Comment"],
+                            "Footer": "",
+                        }
                     )
+                    generated_caption = generate_row_caption(article_row)
+                    if update_caption_and_metadata is not None:
+                        update_caption_and_metadata(
+                            GOOGLE_SHEET_ID,
+                            row_num,
+                            generated_caption,
+                            result["status"],
+                            existing_inputs["Caption Context"],
+                            existing_inputs["Speaker Name"],
+                            existing_inputs["Required Hashtags"],
+                            existing_inputs["Top Comment"],
+                            "",
+                        )
+                    else:
+                        update_metadata(
+                            GOOGLE_SHEET_ID,
+                            row_num,
+                            existing_inputs["Caption Context"],
+                            existing_inputs["Speaker Name"],
+                            existing_inputs["Required Hashtags"],
+                            existing_inputs["Top Comment"],
+                            "",
+                        )
+                        update_caption(GOOGLE_SHEET_ID, row_num, generated_caption, result["status"])
             except Exception as e:
                 status_box.update(label=f"Row {row_num}: error writing to sheet - {describe_error(e)}", state="error")
             else:
                 if result["status"].startswith("error"):
                     status_box.update(label=f"Row {row_num}: {result['status']}", state="error")
                 else:
-                    action_word = "ingested"
+                    action_word = "ingested + captioned" if result["media_type"] == "article" else "ingested"
                     display_name = f"@{result['username']}" if result["username"] and result["media_type"] != "article" else result["username"]
                     status_box.update(
                         label=f"Row {row_num}: {action_word} - {display_name} ({result['media_type']})",
