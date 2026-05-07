@@ -1,6 +1,7 @@
 """Unified workspace shell for the next UI redesign."""
 
 from datetime import datetime, time as dt_time, timedelta
+import ast
 import hashlib
 import os
 import re
@@ -1797,13 +1798,99 @@ def _extract_json_payload(raw_text: str):
     text = (raw_text or "").strip()
     if not text:
         raise ValueError("Paste a JSON result first.")
+
+    def _strip_comments(candidate: str) -> str:
+        without_block_comments = re.sub(r"/\*[\s\S]*?\*/", "", candidate)
+        return re.sub(r"(?m)^\s*//.*$", "", without_block_comments)
+
+    def _extract_block(candidate: str) -> str:
+        candidate = re.sub(r"^```(?:json)?\s*|\s*```$", "", candidate.strip(), flags=re.IGNORECASE | re.MULTILINE)
+        candidate = _strip_comments(candidate)
+        match = re.search(r"(\[[\s\S]*\]|\{[\s\S]*\})", candidate)
+        return match.group(1) if match else candidate
+
+    def _repair_jsonish(candidate: str) -> str:
+        repaired = candidate.strip()
+        repaired = repaired.replace("\u201c", '"').replace("\u201d", '"').replace("\u2018", "'").replace("\u2019", "'")
+        repaired = _strip_comments(repaired)
+        repaired = re.sub(r",\s*([}\]])", r"\1", repaired)
+        repaired = re.sub(
+            r'([{\[,]\s*)(#?[A-Za-z_][A-Za-z0-9_#]*)(\s*:)',
+            lambda m: f'{m.group(1)}"{m.group(2)}"{m.group(3)}',
+            repaired,
+        )
+        repaired = re.sub(
+            r'(?m)^(\s*)(#?[A-Za-z_][A-Za-z0-9_#]*)(\s*:)',
+            lambda m: f'{m.group(1)}"{m.group(2)}"{m.group(3)}',
+            repaired,
+        )
+        repaired = re.sub(
+            r'([^\s{\[,])(\s*\n\s*)(?=(?:"?#?[A-Za-z_][A-Za-z0-9_#]*"|#?[A-Za-z_][A-Za-z0-9_#]*)\s*:)',
+            r"\1,\2",
+            repaired,
+        )
+        repaired = re.sub(r"}\s*\n\s*{", "},\n{", repaired)
+        if repaired.startswith("{") and repaired.endswith("}") and re.search(r"}\s*,\s*{", repaired):
+            repaired = f"[{repaired}]"
+        return repaired
+
+    def _parse_linewise_payload(candidate: str):
+        lines = [line.rstrip() for line in candidate.splitlines() if line.strip()]
+        if not lines or not any(":" in line for line in lines):
+            raise ValueError("No linewise payload to parse.")
+
+        items: list[dict] = []
+        current: dict[str, object] = {}
+        for raw_line in lines:
+            line = raw_line.strip()
+            if line.startswith("- "):
+                if current:
+                    items.append(current)
+                    current = {}
+                line = line[2:].strip()
+            if not line or ":" not in line:
+                continue
+            key, value = line.split(":", 1)
+            key = key.strip().strip("\"'")
+            value = value.strip().rstrip(",")
+            if not key:
+                continue
+            if not value:
+                parsed_value = ""
+            else:
+                normalized = value.replace("\u201c", '"').replace("\u201d", '"').replace("\u2018", "'").replace("\u2019", "'")
+                try:
+                    parsed_value = ast.literal_eval(normalized)
+                except Exception:
+                    parsed_value = normalized.strip("\"'")
+            current[key] = parsed_value
+
+        if current:
+            items.append(current)
+        if not items:
+            raise ValueError("No linewise payload to parse.")
+        return items if len(items) > 1 else items[0]
+
+    text_block = _extract_block(text)
     try:
-        return json.loads(text)
+        return json.loads(text_block)
     except json.JSONDecodeError:
-        match = re.search(r"(\[[\s\S]*\]|\{[\s\S]*\})", text)
-        if not match:
-            raise
-        return json.loads(match.group(1))
+        repaired = _repair_jsonish(text_block)
+        try:
+            return json.loads(repaired)
+        except json.JSONDecodeError:
+            pythonish = re.sub(r"\btrue\b", "True", repaired, flags=re.IGNORECASE)
+            pythonish = re.sub(r"\bfalse\b", "False", pythonish, flags=re.IGNORECASE)
+            pythonish = re.sub(r"\bnull\b", "None", pythonish, flags=re.IGNORECASE)
+            try:
+                return ast.literal_eval(pythonish)
+            except Exception as exc:
+                try:
+                    return _parse_linewise_payload(text_block)
+                except Exception:
+                    raise ValueError(
+                        "Slide results must be valid JSON or near-JSON with quoted keys."
+                    ) from exc
 
 
 def _apply_chatgpt_handoff_results(sheet_id: str, raw_text: str) -> int:
