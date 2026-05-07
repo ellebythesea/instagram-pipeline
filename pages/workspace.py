@@ -2377,13 +2377,19 @@ if active_tab == "Home":
     schedule_apply_requested = False
 
     try:
-        pending_edit_rows = _run_with_sheet_quota_countdown(
-            lambda: get_pending_rows(GOOGLE_SHEET_ID),
+        _all_rows = _run_with_sheet_quota_countdown(
+            lambda: get_all_rows(GOOGLE_SHEET_ID),
             "Checking for new rows paused:",
         )
+        pending_edit_rows = [
+            r for r in _all_rows
+            if not r.get("Status", "").strip() and r.get("Instagram URL", "").strip()
+        ]
+        editor_rows = _sort_editor_rows([r for r in _all_rows if _is_editable_row(r)])
     except Exception as e:
-        st.error(f"Could not check for new rows: {describe_error(e)}")
+        st.error(f"Could not load rows: {describe_error(e)}")
         pending_edit_rows = []
+        editor_rows = []
 
     if pending_edit_rows:
         row_word = "row" if len(pending_edit_rows) == 1 else "rows"
@@ -2399,17 +2405,6 @@ if active_tab == "Home":
                 else:
                     st.session_state["workspace_success"] = "No new rows to process."
                 _rerun_workspace("Edit")
-    try:
-        editor_rows = _sort_editor_rows(_run_with_sheet_quota_countdown(
-            lambda: [
-                r for r in get_all_rows(GOOGLE_SHEET_ID)
-                if _is_editable_row(r)
-            ],
-            "Loading editor rows paused:",
-        ))
-    except Exception as e:
-        st.error(f"Could not load edit rows: {describe_error(e)}")
-        editor_rows = []
 
     dialog_row_number = st.session_state.get("workspace_link_dialog_row")
     if dialog_row_number is not None:
