@@ -1085,6 +1085,10 @@ def _tab_copy_preview(value: str, show_plain_text: bool = True) -> None:
         )
 
 
+def _build_single_row_chatgpt_prompt(row: dict) -> str:
+    return _build_chatgpt_handoff_prompt([row])
+
+
 def _copy_tabs(
     row_num: int,
     generated: str,
@@ -1097,10 +1101,16 @@ def _copy_tabs(
     media_type: str = "",
     source_url: str = "",
     is_instagram: bool = True,
+    slide_name: str = "",
+    slide_text1: str = "",
+    slide_text2: str = "",
+    slide_text3: str = "",
+    prompt_row: dict | None = None,
 ) -> None:
     tab_labels = ["Caption", "Original caption"]
     if is_instagram:
         tab_labels.append("Transcript")
+    tab_labels.append("Slides")
     media_links = [link.strip() for link in (media_link or "").split(",") if link.strip()]
     if media_links:
         tab_labels.append("Media")
@@ -1130,6 +1140,24 @@ def _copy_tabs(
         with text_tabs[next_tab_index]:
             _tab_copy_preview(transcript)
         next_tab_index += 1
+    prompt_key = f"workspace_row_slides_prompt_{row_num}"
+    with text_tabs[next_tab_index]:
+        st.caption("#name")
+        st.code(slide_name or "(none)", language=None)
+        st.caption("#text1")
+        st.code(slide_text1 or "(none)", language=None)
+        st.caption("#text2")
+        st.code(slide_text2 or "(none)", language=None)
+        st.caption("#text3")
+        st.code(slide_text3 or "(none)", language=None)
+        if st.button("Generate prompt", key=f"workspace_row_slides_build_{row_num}", width="stretch"):
+            st.session_state[prompt_key] = _build_single_row_chatgpt_prompt(prompt_row or {})
+            _rerun_workspace("Edit")
+        row_prompt = st.session_state.get(prompt_key, "")
+        if row_prompt:
+            st.caption("Slide prompt")
+            st.code(row_prompt, language=None)
+    next_tab_index += 1
     if media_links:
         with text_tabs[next_tab_index]:
             _one_line_copy_preview("media", "\n".join(media_links), f"workspace_media_links_{row_num}")
@@ -2387,6 +2415,11 @@ if active_tab == "Home":
                         media_type,
                         url,
                         is_instagram,
+                        _cell_text(row.get("#name")).strip(),
+                        _cell_text(row.get("#text1")).strip(),
+                        _cell_text(row.get("#text2")).strip(),
+                        _cell_text(row.get("#text3")).strip(),
+                        row,
                     )
 
             st.divider()
