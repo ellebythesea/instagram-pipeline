@@ -22,7 +22,7 @@ import streamlit.components.v1 as components
 
 from article_source import fetch_article_source
 from config import DEFAULT_POST_FOOTER, GOOGLE_SHEET_ID, OPENAI_API_KEY
-from ingest_helpers import upload_media_bundle
+from ingest_helpers import build_filename_prefix, upload_media_bundle
 import pipeline_caption as pipeline_caption_ops
 from post_scraper import process_url as process_post_url
 from reel_scraper import process_url as process_reel_url
@@ -1352,7 +1352,8 @@ def _ingest_row(row: dict) -> dict:
             data = process_reel_url(url, include_transcript=False)
         else:
             data = process_post_url(url)
-        uploaded = upload_media_bundle(data)
+        filename_prefix = build_filename_prefix(row.get("row_number"), data.get("username", ""))
+        uploaded = upload_media_bundle(data, filename_prefix=filename_prefix)
         tmp_dir = uploaded["tmp_dir"]
 
         return {
@@ -1416,7 +1417,8 @@ def _fetch_row_with_transcript(row: dict, download_media: bool = False, force_re
             raise ValueError("Apify did not return a transcript for this reel.")
 
         if download_media:
-            uploaded = upload_media_bundle(refreshed)
+            filename_prefix = build_filename_prefix(row_num, refreshed.get("username") or row.get("Source Username", ""))
+            uploaded = upload_media_bundle(refreshed, filename_prefix=filename_prefix)
             tmp_dir = uploaded["tmp_dir"]
             status_value = (row.get("Status") or "").strip() or "ingested"
             update_ingest_result(
@@ -1463,7 +1465,8 @@ def _download_media_to_drive(row: dict) -> None:
             data = process_reel_url(url, include_transcript=False)
         else:
             data = process_post_url(url)
-        uploaded = upload_media_bundle(data)
+        filename_prefix = build_filename_prefix(row.get("row_number"), data.get("username", ""))
+        uploaded = upload_media_bundle(data, filename_prefix=filename_prefix)
         tmp_dir = uploaded["tmp_dir"]
         update_ingest_result(
             GOOGLE_SHEET_ID,

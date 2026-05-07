@@ -2,6 +2,7 @@
 
 import io
 import os
+import re
 import tempfile
 import zipfile
 import mimetypes
@@ -26,6 +27,17 @@ def make_filename(post_id: str, post_date: str, ext: str, index: int = 0) -> str
     return f"{post_date}_{post_id}{suffix}{ext}"
 
 
+def build_filename_prefix(row_number: int | str | None, username: str) -> str:
+    row_text = str(row_number or "").strip()
+    username_text = re.sub(r"[^A-Za-z0-9._-]+", "_", (username or "").strip().lstrip("@")).strip("._-")
+    parts = []
+    if row_text:
+        parts.append(f"row{row_text}")
+    if username_text:
+        parts.append(username_text)
+    return "_".join(parts) + ("_" if parts else "")
+
+
 def _ext_from_url(url: str, fallback: str) -> str:
     path = urlparse(url).path or ""
     ext = os.path.splitext(path)[1].lower()
@@ -46,7 +58,7 @@ def _media_ext(data: dict, media_url: str, index: int) -> str:
     return _ext_from_url(media_url, ".mp4" if data["media_type"] == "reel" else ".jpg")
 
 
-def upload_media_bundle(data: dict) -> dict:
+def upload_media_bundle(data: dict, filename_prefix: str = "") -> dict:
     """Download media locally, upload to Drive, and return Drive links."""
     tmp_dir = tempfile.mkdtemp(prefix="ig_")
     post_id = data["post_id"]
@@ -60,7 +72,7 @@ def upload_media_bundle(data: dict) -> dict:
     media_paths = []
     for i, media_url in enumerate(data["media_urls"]):
         ext = _media_ext(data, media_url, i)
-        filename = make_filename(post_id, post_date, ext, index=i)
+        filename = f"{filename_prefix}{make_filename(post_id, post_date, ext, index=i)}"
         local_path = os.path.join(tmp_dir, filename)
         download_file(media_url, local_path)
         media_paths.append(local_path)
