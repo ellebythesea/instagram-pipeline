@@ -1955,7 +1955,8 @@ def _apply_chatgpt_handoff_results(sheet_id: str, raw_text: str) -> tuple[int, l
             continue
         row_number = item.get("row_number")
         if row_number is None:
-            issues.append(f"Item {index}: missing row_number.")
+            found_keys = ", ".join(list(item.keys())[:6]) or "(none)"
+            issues.append(f"Item {index}: missing row_number (found keys: {found_keys}).")
             continue
         try:
             row_number = int(row_number)
