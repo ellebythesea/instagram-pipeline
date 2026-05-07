@@ -52,8 +52,6 @@ _EXPECTED_HEADERS = [
     "#text3",
 ]
 
-_ROWS_CACHE_TTL_SECONDS = 10
-_rows_cache: dict[str, tuple[float, list[dict]]] = {}
 _headers_checked: set[tuple[str, str]] = set()
 _METADATA_SHEET_TITLE = "__workspace_meta__"
 _LAST_SCHEDULED_TIMES_KEY = "last_scheduled_times"
@@ -152,21 +150,15 @@ def _ensure_headers(sheet_id: str, ws: gspread.Worksheet) -> None:
 
 
 def _invalidate_rows_cache(sheet_id: str) -> None:
-    _rows_cache.pop(sheet_id, None)
+    return None
 
 
 def get_all_rows(sheet_id: str) -> list[dict]:
     """Return all data rows as dicts keyed by header name, plus row_number."""
-    cached = _rows_cache.get(sheet_id)
-    now = time.time()
-    if cached and now - cached[0] < _ROWS_CACHE_TTL_SECONDS:
-        return [dict(r) for r in cached[1]]
-
     ws = _worksheet(sheet_id)
     records = _with_backoff(ws.get_all_records, default_blank="")
     for i, r in enumerate(records):
         r["row_number"] = i + 2  # header is row 1
-    _rows_cache[sheet_id] = (now, [dict(r) for r in records])
     return records
 
 

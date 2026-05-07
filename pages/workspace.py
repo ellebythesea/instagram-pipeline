@@ -1893,25 +1893,30 @@ def _extract_json_payload(raw_text: str):
                     ) from exc
 
 
-def _apply_chatgpt_handoff_results(sheet_id: str, raw_text: str) -> int:
+def _apply_chatgpt_handoff_results(sheet_id: str, raw_text: str) -> tuple[int, list[str]]:
     payload = _extract_json_payload(raw_text)
     items = payload if isinstance(payload, list) else [payload]
     rows = get_all_rows(sheet_id)
     row_map = {int(row["row_number"]): row for row in rows if row.get("row_number")}
     updated_count = 0
+    issues: list[str] = []
 
-    for item in items:
+    for index, item in enumerate(items, start=1):
         if not isinstance(item, dict):
+            issues.append(f"Item {index}: result is not an object.")
             continue
         row_number = item.get("row_number")
         if row_number is None:
+            issues.append(f"Item {index}: missing row_number.")
             continue
         try:
             row_number = int(row_number)
         except Exception:
+            issues.append(f"Item {index}: row_number {row_number!r} is not numeric.")
             continue
         row = row_map.get(row_number)
         if row is None:
+            issues.append(f"Item {index}: row {row_number} was not found in the sheet.")
             continue
 
         caption = _cell_text(item.get("generated_caption") or item.get("caption")).strip()
@@ -1920,15 +1925,20 @@ def _apply_chatgpt_handoff_results(sheet_id: str, raw_text: str) -> int:
         text2 = _cell_text(item.get("#text2") or item.get("text2")).strip()
         text3 = _cell_text(item.get("#text3") or item.get("text3")).strip()
 
+        if not (caption or name or text1 or text2 or text3):
+            issues.append(
+                f"Item {index} / row {row_number}: no generated_caption, #name, #text1, #text2, or #text3 values were provided."
+            )
+            continue
+
         if caption:
             next_status = "skipped" if _cell_text(row.get("Status")).strip().lower() == "skipped" else "done"
             update_caption(sheet_id, row_number, caption, next_status)
         if update_carousel_fields is not None and (name or text1 or text2 or text3):
             update_carousel_fields(sheet_id, row_number, name, text1, text2, text3)
-        if caption or name or text1 or text2 or text3:
-            updated_count += 1
+        updated_count += 1
 
-    return updated_count
+    return updated_count, issues
 
 
 def _run_home_mode(mode: str, urls: list[str], org_hashtag: str) -> tuple[str, list[dict]]:
@@ -2217,14 +2227,20 @@ if active_tab == "Slides":
     )
     if st.button("Apply slide results", key="workspace_slides_apply", type="primary", width="stretch"):
         try:
-            updated_count = _apply_chatgpt_handoff_results(GOOGLE_SHEET_ID, pasted_results)
+            updated_count, issues = _apply_chatgpt_handoff_results(GOOGLE_SHEET_ID, pasted_results)
         except Exception as e:
             st.error(f"Could not apply slide results: {describe_error(e)}")
         else:
             if updated_count:
-                st.session_state["workspace_success"] = f"Applied slide results to {updated_count} row(s)."
+                message = f"Applied slide results to {updated_count} row(s)."
+                if issues:
+                    message += f" Skipped {len(issues)} item(s): " + " | ".join(issues[:3])
+                st.session_state["workspace_success"] = message
             else:
-                st.session_state["workspace_error"] = "No valid slide results were found to apply."
+                st.session_state["workspace_error"] = (
+                    "No valid slide results were found to apply."
+                    + (f" {' | '.join(issues[:3])}" if issues else "")
+                )
             _rerun_workspace("Slides")
 
     if st.button("Generate slides prompt", key="workspace_slides_build_prompt", type="primary", width="stretch"):
