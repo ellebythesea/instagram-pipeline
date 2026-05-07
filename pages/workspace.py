@@ -1891,7 +1891,7 @@ def _extract_json_payload(raw_text: str):
             if not line or ":" not in line:
                 continue
             key, value = line.split(":", 1)
-            key = key.strip().strip(_QUOTES)
+            key = key.strip().strip("\"'")
             value = value.strip().rstrip(",")
             if not key:
                 continue
