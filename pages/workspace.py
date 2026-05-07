@@ -36,7 +36,6 @@ MODE_OPTIONS = [
     "Generate headline",
     "Caption this",
     "Download media",
-    "ChatGPT handoff",
 ]
 
 ORG_HASHTAG_OPTIONS = [
@@ -310,7 +309,6 @@ def _action_label(mode: str) -> str:
         "Generate headline": "Generate",
         "Caption this": "Caption",
         "Download media": "Download",
-        "ChatGPT handoff": "Build prompt",
     }.get(mode, "Add")
 
 
@@ -1859,7 +1857,7 @@ elif st.session_state["workspace_active_tab"] in {"Edit", "Grid"}:
 
 active_tab = st.radio(
     "Workspace section",
-    ["Home", "Actions", "Data"],
+    ["Home", "Actions", "Slides", "Data"],
     horizontal=True,
     key="workspace_active_tab",
     label_visibility="collapsed",
@@ -1873,7 +1871,6 @@ if active_tab == "Actions":
         "Generate headline": "Pull source text from an Instagram post or article link, then return three headline options plus a footered caption.",
         "Caption this": "Generate a caption directly from an Instagram post or article link using the selected hashtag preset.",
         "Download media": "Download the media and upload it to Drive without adding a row first.",
-        "ChatGPT handoff": "Build one copyable prompt from every row that is ready in the sheet, then paste ChatGPT JSON results back here to write them into the correct rows.",
     }
     link_area = st.container()
     settings_area = st.container()
@@ -1903,25 +1900,24 @@ if active_tab == "Actions":
         else:
             selected_hashtag = ""
 
-    if mode != "ChatGPT handoff":
-        with link_area:
-            links = _normalize_home_links(_ensure_home_links())
-            link_label = "Instagram Link" if mode == "Download media" else "Link"
-            link_placeholder = (
-                "https://www.instagram.com/p/... or /reel/..."
-                if mode == "Download media"
-                else "https://www.instagram.com/... or https://example.com/article"
-            )
-            links[0] = st.text_input(
-                link_label,
-                value=links[0],
-                placeholder=link_placeholder,
-                key="workspace_home_link_0",
-            )
-            normalized_links = _normalize_home_links(links)
-            st.session_state["workspace_home_links"] = normalized_links
-            if normalized_links != links:
-                _rerun_workspace("Actions")
+    with link_area:
+        links = _normalize_home_links(_ensure_home_links())
+        link_label = "Instagram Link" if mode == "Download media" else "Link"
+        link_placeholder = (
+            "https://www.instagram.com/p/... or /reel/..."
+            if mode == "Download media"
+            else "https://www.instagram.com/... or https://example.com/article"
+        )
+        links[0] = st.text_input(
+            link_label,
+            value=links[0],
+            placeholder=link_placeholder,
+            key="workspace_home_link_0",
+        )
+        normalized_links = _normalize_home_links(links)
+        st.session_state["workspace_home_links"] = normalized_links
+        if normalized_links != links:
+            _rerun_workspace("Actions")
 
     with button_area:
         clear_col, action_col = st.columns([1, 3])
@@ -1934,54 +1930,37 @@ if active_tab == "Actions":
         with action_col:
             submitted = st.button(_action_label(mode), type="primary", width="stretch")
         if submitted:
-            if mode == "ChatGPT handoff":
+            links_to_process = _clean_home_links()
+            if not links_to_process:
+                st.warning(f"Enter at least one {link_label.lower()}.")
+            elif mode == "Add to sheet":
                 try:
-                    ready_rows = _chatgpt_ready_rows(GOOGLE_SHEET_ID)
+                    append_link_rows(
+                        GOOGLE_SHEET_ID,
+                        links_to_process,
+                        selected_hashtag,
+                    )
                 except Exception as e:
-                    st.error(f"Could not prepare ChatGPT handoff: {describe_error(e)}")
+                    st.error(f"Could not add links to sheet: {describe_error(e)}")
                 else:
-                    if not ready_rows:
-                        st.warning("No rows are ready for ChatGPT handoff yet.")
+                    st.session_state["workspace_home_notice"] = f"Added {len(links_to_process)} link(s) to the sheet."
+                    _reset_home_links_on_next_render()
+                    _rerun_workspace("Actions")
+            else:
+                with st.spinner(f"{mode} in progress..."):
+                    try:
+                        tag_value, results = _run_home_mode(mode, links_to_process, org_hashtag)
+                    except Exception as e:
+                        st.error(f"{mode} failed: {describe_error(e)}")
                     else:
                         st.session_state["workspace_home_results"] = {
                             "mode": mode,
-                            "count": len(ready_rows),
-                            "prompt": _build_chatgpt_handoff_prompt(ready_rows),
+                            "required_hashtag": tag_value,
+                            "items": results,
                         }
-                        st.session_state["workspace_home_notice"] = f"Built ChatGPT prompt for {len(ready_rows)} row(s)."
-                        _rerun_workspace("Actions")
-            else:
-                links_to_process = _clean_home_links()
-                if not links_to_process:
-                    st.warning(f"Enter at least one {link_label.lower()}.")
-                elif mode == "Add to sheet":
-                    try:
-                        append_link_rows(
-                            GOOGLE_SHEET_ID,
-                            links_to_process,
-                            selected_hashtag,
-                        )
-                    except Exception as e:
-                        st.error(f"Could not add links to sheet: {describe_error(e)}")
-                    else:
-                        st.session_state["workspace_home_notice"] = f"Added {len(links_to_process)} link(s) to the sheet."
+                        st.session_state["workspace_home_notice"] = f"{mode} finished for {len(results)} link(s)."
                         _reset_home_links_on_next_render()
                         _rerun_workspace("Actions")
-                else:
-                    with st.spinner(f"{mode} in progress..."):
-                        try:
-                            tag_value, results = _run_home_mode(mode, links_to_process, org_hashtag)
-                        except Exception as e:
-                            st.error(f"{mode} failed: {describe_error(e)}")
-                        else:
-                            st.session_state["workspace_home_results"] = {
-                                "mode": mode,
-                                "required_hashtag": tag_value,
-                                "items": results,
-                            }
-                            st.session_state["workspace_home_notice"] = f"{mode} finished for {len(results)} link(s)."
-                            _reset_home_links_on_next_render()
-                            _rerun_workspace("Actions")
 
     with results_area:
         home_results = st.session_state.get("workspace_home_results")
@@ -2017,28 +1996,58 @@ if active_tab == "Actions":
                     st.write(f"Media link(s): {item['media_link']}")
                 if item.get("thumbnail_link"):
                     st.write(f"Thumbnail: {item['thumbnail_link']}")
-        if home_results and home_results.get("mode") == "ChatGPT handoff":
-            st.caption(f"Ready rows: {home_results.get('count', 0)}")
-            _copy_block("prompt", home_results.get("prompt", ""), "workspace_chatgpt_handoff_prompt")
-            pasted_results = st.text_area(
-                "Paste ChatGPT JSON results",
-                key="workspace_chatgpt_handoff_results",
-                height=220,
-                placeholder='[{"row_number":2,"generated_caption":"...","#name":"...","#text1":"...","#text2":"...","#text3":"..."}]',
-            )
-            if st.button("Apply ChatGPT results", key="workspace_chatgpt_apply", type="primary", width="stretch"):
-                try:
-                    updated_count = _apply_chatgpt_handoff_results(GOOGLE_SHEET_ID, pasted_results)
-                except Exception as e:
-                    st.error(f"Could not apply ChatGPT results: {describe_error(e)}")
-                else:
-                    if updated_count:
-                        st.session_state["workspace_success"] = f"Applied ChatGPT results to {updated_count} row(s)."
-                    else:
-                        st.session_state["workspace_error"] = "No valid ChatGPT results were found to apply."
-                    _rerun_workspace("Actions")
         if home_notice:
             st.caption(home_notice)
+
+if active_tab == "Slides":
+    slides_notice = st.session_state.pop("workspace_slides_notice", "")
+    slides_prompt = st.session_state.get("workspace_slides_prompt", "")
+
+    try:
+        ready_rows = _chatgpt_ready_rows(GOOGLE_SHEET_ID)
+    except Exception as e:
+        st.error(f"Could not load slide-ready rows: {describe_error(e)}")
+        ready_rows = []
+
+    ready_count = len(ready_rows)
+    row_word = "row" if ready_count == 1 else "rows"
+    if ready_count:
+        st.caption(f"{ready_count} {row_word} ready for slides.")
+    else:
+        st.info("No rows are ready for slides yet.")
+
+    if st.button("Generate slides prompt", key="workspace_slides_build_prompt", type="primary", width="stretch"):
+        if not ready_rows:
+            st.warning("No rows are ready for slides yet.")
+        else:
+            st.session_state["workspace_slides_prompt"] = _build_chatgpt_handoff_prompt(ready_rows)
+            st.session_state["workspace_slides_notice"] = f"Built slides prompt for {ready_count} {row_word}."
+            _rerun_workspace("Slides")
+
+    if slides_notice:
+        st.caption(slides_notice)
+
+    if slides_prompt:
+        _copy_block("prompt", slides_prompt, "workspace_slides_prompt_copy")
+
+    pasted_results = st.text_area(
+        "Paste slide results",
+        key="workspace_slides_results",
+        height=240,
+        placeholder='[{"row_number":2,"generated_caption":"...","#name":"...","#text1":"...","#text2":"...","#text3":"..."}]',
+    )
+    if st.button("Apply slide results", key="workspace_slides_apply", type="primary", width="stretch"):
+        try:
+            updated_count = _apply_chatgpt_handoff_results(GOOGLE_SHEET_ID, pasted_results)
+        except Exception as e:
+            st.error(f"Could not apply slide results: {describe_error(e)}")
+        else:
+            if updated_count:
+                st.session_state["workspace_success"] = f"Applied slide results to {updated_count} row(s)."
+            else:
+                st.session_state["workspace_error"] = "No valid slide results were found to apply."
+            _rerun_workspace("Slides")
+
 if active_tab == "Home":
     default_day, default_time = _schedule_day_defaults()
     default_hour, default_minute, default_suffix = _time_parts(default_time)
