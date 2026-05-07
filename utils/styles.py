@@ -318,6 +318,33 @@ div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-test
 div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:nth-child(3) {
     grid-column: 3;
 }
+div[data-testid="stVerticalBlock"]:has(> div.workspace-slides-anchor) [data-testid="stCodeBlock"] {
+    margin: 0.2rem 0 0.35rem;
+    max-height: 200px;
+    overflow: hidden;
+}
+div[data-testid="stVerticalBlock"]:has(> div.workspace-slides-anchor) [data-testid="stCodeBlock"] > div {
+    max-height: 200px;
+    overflow: hidden;
+}
+div[data-testid="stVerticalBlock"]:has(> div.workspace-slides-anchor) [data-testid="stCodeBlock"] pre {
+    max-height: 200px;
+    overflow: auto;
+    white-space: pre-wrap;
+    line-height: 1.25rem;
+    padding: 0.7rem 2.75rem 0.7rem 0.8rem;
+    border-radius: 12px;
+}
+div[data-testid="stVerticalBlock"]:has(> div.workspace-slides-anchor) [data-testid="stCodeBlock"] code {
+    white-space: pre-wrap;
+    overflow: visible;
+    display: block;
+}
+div[data-testid="stVerticalBlock"]:has(> div.workspace-slides-anchor) [data-testid="stCodeBlock"] code span,
+div[data-testid="stVerticalBlock"]:has(> div.workspace-slides-anchor) [data-testid="stCodeBlock"] code div {
+    white-space: pre-wrap;
+    display: inline;
+}
 .workspace-content-tabs [data-baseweb="tab-list"] {
     gap: 0.5rem;
     flex-wrap: nowrap;
@@ -336,6 +363,7 @@ div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-test
 }
 .workspace-edit-main-anchor,
 .workspace-action-anchor,
+.workspace-slides-anchor,
 .workspace-schedule-anchor,
 .workspace-generate-anchor {
     display: none;

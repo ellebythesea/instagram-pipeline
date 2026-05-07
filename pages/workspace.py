@@ -2008,6 +2008,7 @@ if active_tab == "Actions":
             st.caption(home_notice)
 
 if active_tab == "Slides":
+    st.markdown('<div class="workspace-slides-anchor"></div>', unsafe_allow_html=True)
     slides_notice = st.session_state.pop("workspace_slides_notice", "")
     slides_prompt = st.session_state.get("workspace_slides_prompt", "")
 
@@ -2036,7 +2037,7 @@ if active_tab == "Slides":
         st.caption(slides_notice)
 
     if slides_prompt:
-        _copy_block("prompt", slides_prompt, "workspace_slides_prompt_copy")
+        _tab_copy_preview(slides_prompt)
 
     pasted_results = st.text_area(
         "Paste slide results",
