@@ -28,14 +28,8 @@ def make_filename(post_id: str, post_date: str, ext: str, index: int = 0) -> str
 
 
 def build_filename_prefix(row_number: int | str | None, username: str) -> str:
-    row_text = str(row_number or "").strip()
     username_text = re.sub(r"[^A-Za-z0-9._-]+", "_", (username or "").strip().lstrip("@")).strip("._-")
-    parts = []
-    if row_text:
-        parts.append(f"row{row_text}")
-    if username_text:
-        parts.append(username_text)
-    return "_".join(parts) + ("_" if parts else "")
+    return f"{username_text}_" if username_text else ""
 
 
 def _ext_from_url(url: str, fallback: str) -> str:
