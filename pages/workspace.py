@@ -1740,7 +1740,7 @@ def _build_chatgpt_handoff_prompt(rows: list[dict]) -> str:
         "* No commentary outside JSON\n"
         "* #name = short lowercase account label\n"
         "* #text1 = clickbait hook under 180 chars\n"
-        "* #text2 and #text3 = under 450 chars each\n"
+        "* #text2 and #text3 = under 550 chars each\n"
         "* generated_caption = under 1400 chars total\n"
         "* generated_caption = exactly 2 paragraphs\n"
         "* First paragraph under 300 chars\n"
@@ -1751,36 +1751,31 @@ def _build_chatgpt_handoff_prompt(rows: list[dict]) -> str:
         "* No em dashes\n"
         "* No speculation\n"
         "* Avoid repetitive phrasing across fields\n"
-        "* Do not repeat the same idea in #text1, #text2, and #text3\n\n"
-        "Quote rules:\n"
-        "* If speaker name exists, use their name naturally\n"
-        "* If no speaker name exists, state the information directly\n"
-        '* Never say "the speaker," "the transcript," "the clip," "the video," "the moment," or "the comments"\n'
-        "* Prefer short verbatim quotes when strong lines exist\n"
-        "* Preserve wording closely\n"
-        "* Use direct quotes when they make the copy stronger\n"
-        "* At least one field should contain a direct quote when possible\n"
-        "* Prefer quotes with accusations, numbers, or emotional language\n"
-        "* Keep quotes under 25 words when possible\n\n"
-        "Style:\n"
-        "* Write naturally like a political social media editor, not a database summary\n"
-        "* Sound like a sharp political analyst summarizing a viral moment\n"
-        "* Write statements directly and confidently\n"
-        "* Vary sentence openings\n"
-        '* Avoid vague framing phrases like "the argument," "the speaker," "the transcript," "the clip," "the video," "the moment," or "the comments"\n'
-        "* If no speaker name exists, state the information directly\n"
-        "* Use direct quotes when they make the copy stronger\n"
-        "* Prefer conflict, stakes, numbers, accusations, and consequences\n"
+        "Style priority:\n"
+        "* Write like a viral political news account creating Instagram carousel slides\n"
+        "* Sound natural, conversational, and punchy\n"
+        "* Prioritize emotional framing, political stakes, accusations, numbers, and consequences\n"
+        "* Use direct quotes naturally when they strengthen the writing\n"
+        "* Avoid robotic transition phrases\n"
+        '* Never say "the speaker," "the clip," "the transcript," "the video," "the comments," "the argument," "the warning," or "the line said"\n'
+        "* Do not over explain the source material\n"
+        "* Make #text1, #text2, and #text3 feel like three carousel slides\n"
         "* Avoid generic summaries\n\n"
+        "Quote guidance:\n"
+        "* Use the person's name when provided\n"
+        "* If no name is provided, write around the facts naturally\n"
+        "* Prefer short direct quotes when they are strong\n"
+        "* Do not force quotes into awkward sentences\n"
+        '* Never write "the quote said" or "the line said"\n\n'
         "Output format example:\n"
         "[\n"
         "  {\n"
         '    "row_number": 1,\n'
-        '    "generated_caption": "A senator accused insurance companies of blocking healthcare reform while Americans struggle with rising costs. #Healthcare #Politics #usapolitics\\n\\nLobbying money, Medicaid cuts, and medical debt were at the center of the speech. \\"We could abolish medical debt 10 times over,\\" he said while criticizing military spending priorities.",\n'
+        '    "generated_caption": "A senator accused insurance companies of blocking healthcare reform while Americans struggle with rising costs. #Healthcare #Politics #usapolitics\\n\\nLobbying money, Medicaid cuts, and medical debt were at the center of the fight. \\"We could abolish medical debt 10 times over,\\" he said while attacking military spending priorities.",\n'
         '    "#name": "nowthis",\n'
         '    "#text1": "\\"We could abolish medical debt 10 times over.\\"",\n'
-        '    "#text2": "He compared military spending with healthcare costs and argued billions are being diverted away from public needs while families struggle with debt and coverage gaps.",\n'
-        '    "#text3": "The speech tied Medicaid cuts, insurance lobbying, and federal spending priorities to the financial pressure facing working Americans."\n'
+        '    "#text2": "He compared military spending with healthcare costs and argued billions are being diverted away from public needs while families still drown in debt and coverage gaps.",\n'
+        '    "#text3": "The carousel connects Medicaid cuts, insurance lobbying, and federal spending priorities to the financial pressure hitting working Americans."\n'
         "  }\n"
         "]\n"
     )
