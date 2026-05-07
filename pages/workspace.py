@@ -2117,10 +2117,6 @@ if active_tab == "Slides":
 
     if slides_prompt:
         _one_line_copy_preview("slides prompt", slides_prompt, "workspace_slides_prompt_copy")
-        st.markdown(
-            f'<div class="workspace-plain-copy-text">{html.escape(slides_prompt)}</div>',
-            unsafe_allow_html=True,
-        )
 
     pasted_results = st.text_area(
         "Paste slide results",
