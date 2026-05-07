@@ -1023,41 +1023,11 @@ def _render_workspace_link_dialog(row: dict) -> None:
 
 
 def _copy_block(label: str, value: str, key: str, empty_text: str = "(none)") -> None:
-    display_text = value or empty_text
-    escaped_label = html.escape(label)
-    clipboard_text = json.dumps(value or "")
-    component_html = f"""
-    <div style="margin-top:0.25rem;" id="{html.escape(key)}">
-      <div style="
-        min-height: 3.25rem;
-        white-space: pre-wrap;
-        border: 1px solid rgba(15,23,42,0.08);
-        border-radius: 16px;
-        background: #f8fafc;
-        padding: 0.8rem 0.9rem;
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-        font-size: 0.88rem;
-        line-height: 1.32;
-        color: #0f172a;
-      ">{html.escape(display_text)}</div>
-      <button
-        onclick='navigator.clipboard.writeText({clipboard_text})'
-        style="
-          width: 100%;
-          margin-top: 0.5rem;
-          border: 1px solid rgba(15,23,42,0.14);
-          border-radius: 12px;
-          background: white;
-          color: #0f172a;
-          padding: 0.55rem 0.8rem;
-          font-size: 0.92rem;
-          font-weight: 600;
-        cursor: pointer;
-        "
-      >Copy {escaped_label}</button>
-    </div>
-    """
-    st.html(component_html)
+    _one_line_copy_preview(label, value, key, empty_text)
+    st.markdown(
+        f'<div class="workspace-plain-copy-text">{html.escape(value or empty_text)}</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def _one_line_copy_preview(label: str, value: str, key: str, empty_text: str = "(none)") -> None:
@@ -1107,7 +1077,8 @@ def _one_line_copy_preview(label: str, value: str, key: str, empty_text: str = "
 
 
 def _tab_copy_preview(value: str) -> None:
-    st.code(value or "(none)", language=None)
+    cache_key = hashlib.md5((value or "(none)").encode("utf-8")).hexdigest()[:10]
+    _one_line_copy_preview("text", value, f"workspace_copy_{cache_key}")
     st.markdown(
         f'<div class="workspace-plain-copy-text">{html.escape(value or "(none)")}</div>',
         unsafe_allow_html=True,
@@ -1161,11 +1132,15 @@ def _copy_tabs(
         next_tab_index += 1
     if media_links:
         with text_tabs[next_tab_index]:
+            _one_line_copy_preview("media", "\n".join(media_links), f"workspace_media_links_{row_num}")
             st.markdown(
                 f'<div class="workspace-plain-copy-text">Drive media link{"" if len(media_links) == 1 else "s"}.</div>',
                 unsafe_allow_html=True,
             )
-            st.code("\n".join(media_links), language=None)
+            st.markdown(
+                f'<div class="workspace-plain-copy-text">{html.escape(chr(10).join(media_links))}</div>',
+                unsafe_allow_html=True,
+            )
             if (media_type or "").strip().lower() == "reel" and media_links:
                 st.link_button("Open reel in Drive", media_links[0], width="stretch")
             else:
