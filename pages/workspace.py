@@ -378,26 +378,7 @@ def _default_editor_status(row: dict) -> str:
 
 
 def _sort_editor_rows(rows: list[dict]) -> list[dict]:
-    def row_sort_key(row: dict) -> tuple[int, int]:
-        has_caption = bool((row.get("Generated Caption") or "").strip())
-        has_transcript = bool((row.get("Transcript") or "").strip())
-        is_skipped = (row.get("Status") or "").strip().lower() == "skipped"
-        if is_skipped:
-            group = 3
-        elif not has_caption:
-            group = 0
-        elif has_caption and not has_transcript:
-            group = 1
-        elif has_caption and has_transcript:
-            group = 2
-        else:
-            group = 3
-        return group, row.get("row_number", 0)
-
-    return sorted(
-        rows,
-        key=row_sort_key,
-    )
+    return sorted(rows, key=lambda row: row.get("row_number", 0))
 
 
 def _grid_badges(row: dict) -> list[tuple[str, str]]:
