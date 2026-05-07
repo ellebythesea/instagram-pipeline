@@ -1748,7 +1748,6 @@ def _build_chatgpt_handoff_prompt(rows: list[dict]) -> str:
         "Return ONLY valid JSON as an array.\n\n"
         "Each object must include:\n"
         "* row_number\n"
-        "* generated_caption\n"
         "* #name\n"
         "* #text1\n"
         "* #text2\n"
@@ -1760,13 +1759,6 @@ def _build_chatgpt_handoff_prompt(rows: list[dict]) -> str:
         "* #name = short lowercase account label\n"
         "* #text1 = strongest opening carousel slide under 350 chars\n"
         "* #text2 and #text3 = under 900 chars each\n"
-        "* generated_caption = under 1400 chars total\n"
-        "* generated_caption = exactly 2 paragraphs\n"
-        "* First paragraph under 300 chars\n"
-        "* ALL hashtags must appear ONLY at the END of the FIRST paragraph\n"
-        "* Never place hashtags inside sentences\n"
-        "* Use 3 to 5 hashtags total\n"
-        "* Include required_hashtags exactly\n"
         "* No em dashes\n"
         "* No speculation\n"
         "* Avoid repetitive phrasing across fields\n"
@@ -1801,7 +1793,6 @@ def _build_chatgpt_handoff_prompt(rows: list[dict]) -> str:
         "[\n"
         "  {\n"
         '    "row_number": 1,\n'
-        '    "generated_caption": "A senator accused insurance companies of blocking healthcare reform while Americans struggle with rising costs. #Healthcare #Politics #usapolitics\\n\\nLobbying money, Medicaid cuts, and medical debt were at the center of the fight. \\"We could abolish medical debt 10 times over,\\" he said while attacking military spending priorities.",\n'
         '    "#name": "nowthis",\n'
         '    "#text1": "\\"We could abolish medical debt 10 times over.\\"",\n'
         '    "#text2": "He compared military spending with healthcare costs and argued billions are being diverted away from public needs while families still drown in debt and coverage gaps. The attack centered on lobbying money, Medicaid cuts, and the claim that Washington keeps funding war while basic healthcare needs go unmet.",\n'
@@ -1968,22 +1959,18 @@ def _apply_chatgpt_handoff_results(sheet_id: str, raw_text: str) -> tuple[int, l
             issues.append(f"Item {index}: row {row_number} was not found in the sheet.")
             continue
 
-        caption = _cell_text(item.get("generated_caption") or item.get("caption")).strip()
         name = _cell_text(item.get("#name") or item.get("name")).strip()
         text1 = _cell_text(item.get("#text1") or item.get("text1")).strip()
         text2 = _cell_text(item.get("#text2") or item.get("text2")).strip()
         text3 = _cell_text(item.get("#text3") or item.get("text3")).strip()
 
-        if not (caption or name or text1 or text2 or text3):
+        if not (name or text1 or text2 or text3):
             issues.append(
-                f"Item {index} / row {row_number}: no generated_caption, #name, #text1, #text2, or #text3 values were provided."
+                f"Item {index} / row {row_number}: no #name, #text1, #text2, or #text3 values were provided."
             )
             continue
 
-        if caption:
-            next_status = "skipped" if _cell_text(row.get("Status")).strip().lower() == "skipped" else "done"
-            update_caption(sheet_id, row_number, caption, next_status)
-        if update_carousel_fields is not None and (name or text1 or text2 or text3):
+        if update_carousel_fields is not None:
             update_carousel_fields(sheet_id, row_number, name, text1, text2, text3)
         updated_count += 1
 
@@ -2272,7 +2259,7 @@ if active_tab == "Slides":
         "Paste slide results",
         key="workspace_slides_results",
         height=100,
-        placeholder='[{"row_number":2,"generated_caption":"...","#name":"...","#text1":"...","#text2":"...","#text3":"..."}]',
+        placeholder='[{"row_number":2,"#name":"...","#text1":"...","#text2":"...","#text3":"..."}]',
     )
     if st.button("Apply slide results", key="workspace_slides_apply", type="primary", width="stretch"):
         try:
