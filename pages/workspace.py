@@ -1060,6 +1060,52 @@ def _copy_block(label: str, value: str, key: str, empty_text: str = "(none)") ->
     st.html(component_html)
 
 
+def _one_line_copy_preview(label: str, value: str, key: str, empty_text: str = "(none)") -> None:
+    display_text = (value or empty_text).replace("\n", " ")
+    escaped_label = html.escape(label)
+    clipboard_text = json.dumps(value or "")
+    component_html = f"""
+    <div style="margin-top:0.25rem;" id="{html.escape(key)}">
+      <div style="
+        position: relative;
+        min-height: 2.1rem;
+        height: 2.1rem;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        border: 1px solid rgba(15,23,42,0.08);
+        border-radius: 16px;
+        background: #f8fafc;
+        padding: 0.45rem 3.1rem 0.45rem 0.8rem;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.88rem;
+        line-height: 1.15rem;
+        color: #0f172a;
+      ">{html.escape(display_text)}</div>
+      <button
+        onclick='navigator.clipboard.writeText({clipboard_text})'
+        aria-label='Copy {escaped_label}'
+        style="
+          position: absolute;
+          margin-top: -2.55rem;
+          right: 0.55rem;
+          width: 2.35rem;
+          height: 2.35rem;
+          border: 1px solid rgba(15,23,42,0.08);
+          border-radius: 16px;
+          background: white;
+          color: #0f172a;
+          font-size: 1rem;
+          line-height: 1;
+          cursor: pointer;
+          box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+        "
+      >⧉</button>
+    </div>
+    """
+    st.html(component_html)
+
+
 def _tab_copy_preview(value: str) -> None:
     st.code(value or "(none)", language=None)
     st.markdown(
@@ -2070,7 +2116,11 @@ if active_tab == "Slides":
         st.caption(slides_notice)
 
     if slides_prompt:
-        _tab_copy_preview(slides_prompt)
+        _one_line_copy_preview("slides prompt", slides_prompt, "workspace_slides_prompt_copy")
+        st.markdown(
+            f'<div class="workspace-plain-copy-text">{html.escape(slides_prompt)}</div>',
+            unsafe_allow_html=True,
+        )
 
     pasted_results = st.text_area(
         "Paste slide results",
