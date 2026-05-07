@@ -36,6 +36,7 @@ MODE_OPTIONS = [
     "Generate headline",
     "Caption this",
     "Download media",
+    "ChatGPT handoff",
 ]
 
 ORG_HASHTAG_OPTIONS = [
@@ -309,6 +310,7 @@ def _action_label(mode: str) -> str:
         "Generate headline": "Generate",
         "Caption this": "Caption",
         "Download media": "Download",
+        "ChatGPT handoff": "Build prompt",
     }.get(mode, "Add")
 
 
@@ -1628,6 +1630,121 @@ def _write_carousel_fields(row_number: int, row: dict) -> None:
     )
 
 
+def _row_ready_for_chatgpt(row: dict) -> bool:
+    if not _cell_text(row.get("Instagram URL")).strip():
+        return False
+    status = _cell_text(row.get("Status")).strip().lower()
+    if status.startswith("error"):
+        return False
+    media_type = _cell_text(row.get("Media Type")).strip().lower()
+    transcript = _cell_text(row.get("Transcript")).strip()
+    original_caption = _cell_text(row.get("Original Caption")).strip()
+    caption_context = _cell_text(row.get("Caption Context")).strip()
+    if media_type == "article":
+        return bool(original_caption or caption_context)
+    return bool(transcript or original_caption or caption_context)
+
+
+def _chatgpt_ready_rows(sheet_id: str) -> list[dict]:
+    return [row for row in get_all_rows(sheet_id) if _row_ready_for_chatgpt(row)]
+
+
+def _build_chatgpt_handoff_prompt(rows: list[dict]) -> str:
+    blocks: list[str] = []
+    for row in rows:
+        row_num = row["row_number"]
+        username = _cell_text(row.get("Source Username")).strip() or "unknown"
+        media_type = _cell_text(row.get("Media Type")).strip().lower() or "post"
+        required_hashtags = _cell_text(row.get("Required Hashtags")).strip()
+        transcript = _cell_text(row.get("Transcript")).strip()
+        original_caption = _cell_text(row.get("Original Caption")).strip()
+        caption_context = _cell_text(row.get("Caption Context")).strip()
+        blocks.append(
+            "\n".join(
+                [
+                    f"ROW {row_num}",
+                    f"username: {username}",
+                    f"media_type: {media_type}",
+                    f"required_hashtags: {required_hashtags or '(none)'}",
+                    f"transcript:\n{transcript or '(none)'}",
+                    f"original_caption:\n{original_caption or '(none)'}",
+                    f"caption_context:\n{caption_context or '(none)'}",
+                ]
+            )
+        )
+
+    instructions = (
+        "Create results for every row below.\n"
+        "Return ONLY valid JSON as an array. Each object must include:\n"
+        "- row_number\n"
+        "- generated_caption\n"
+        "- #name\n"
+        "- #text1\n"
+        "- #text2\n"
+        "- #text3\n\n"
+        "Rules:\n"
+        "- keep row_number exactly the same\n"
+        "- generated_caption should be a strong final caption\n"
+        "- #name should be the short username/domain label\n"
+        "- #text1 should be a clickbait hook, max 150 characters\n"
+        "- #text2 and #text3 should each be max 300 characters\n"
+        "- no markdown fences\n"
+        "- no extra commentary outside the JSON\n"
+    )
+    return instructions + "\n\n" + "\n\n---\n\n".join(blocks)
+
+
+def _extract_json_payload(raw_text: str):
+    text = (raw_text or "").strip()
+    if not text:
+        raise ValueError("Paste a JSON result first.")
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        match = re.search(r"(\[[\s\S]*\]|\{[\s\S]*\})", text)
+        if not match:
+            raise
+        return json.loads(match.group(1))
+
+
+def _apply_chatgpt_handoff_results(sheet_id: str, raw_text: str) -> int:
+    payload = _extract_json_payload(raw_text)
+    items = payload if isinstance(payload, list) else [payload]
+    rows = get_all_rows(sheet_id)
+    row_map = {int(row["row_number"]): row for row in rows if row.get("row_number")}
+    updated_count = 0
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        row_number = item.get("row_number")
+        if row_number is None:
+            continue
+        try:
+            row_number = int(row_number)
+        except Exception:
+            continue
+        row = row_map.get(row_number)
+        if row is None:
+            continue
+
+        caption = _cell_text(item.get("generated_caption") or item.get("caption")).strip()
+        name = _cell_text(item.get("#name") or item.get("name")).strip()
+        text1 = _cell_text(item.get("#text1") or item.get("text1")).strip()
+        text2 = _cell_text(item.get("#text2") or item.get("text2")).strip()
+        text3 = _cell_text(item.get("#text3") or item.get("text3")).strip()
+
+        if caption:
+            next_status = "skipped" if _cell_text(row.get("Status")).strip().lower() == "skipped" else "done"
+            update_caption(sheet_id, row_number, caption, next_status)
+        if update_carousel_fields is not None and (name or text1 or text2 or text3):
+            update_carousel_fields(sheet_id, row_number, name, text1, text2, text3)
+        if caption or name or text1 or text2 or text3:
+            updated_count += 1
+
+    return updated_count
+
+
 def _run_home_mode(mode: str, urls: list[str], org_hashtag: str) -> tuple[str, list[dict]]:
     results = []
     tag_value = ORG_HASHTAG_MAP.get(org_hashtag, "")
@@ -1756,6 +1873,7 @@ if active_tab == "Actions":
         "Generate headline": "Pull source text from an Instagram post or article link, then return three headline options plus a footered caption.",
         "Caption this": "Generate a caption directly from an Instagram post or article link using the selected hashtag preset.",
         "Download media": "Download the media and upload it to Drive without adding a row first.",
+        "ChatGPT handoff": "Build one copyable prompt from every row that is ready in the sheet, then paste ChatGPT JSON results back here to write them into the correct rows.",
     }
     link_area = st.container()
     settings_area = st.container()
@@ -1785,24 +1903,25 @@ if active_tab == "Actions":
         else:
             selected_hashtag = ""
 
-    with link_area:
-        links = _normalize_home_links(_ensure_home_links())
-        link_label = "Instagram Link" if mode == "Download media" else "Link"
-        link_placeholder = (
-            "https://www.instagram.com/p/... or /reel/..."
-            if mode == "Download media"
-            else "https://www.instagram.com/... or https://example.com/article"
-        )
-        links[0] = st.text_input(
-            link_label,
-            value=links[0],
-            placeholder=link_placeholder,
-            key="workspace_home_link_0",
-        )
-        normalized_links = _normalize_home_links(links)
-        st.session_state["workspace_home_links"] = normalized_links
-        if normalized_links != links:
-            _rerun_workspace("Actions")
+    if mode != "ChatGPT handoff":
+        with link_area:
+            links = _normalize_home_links(_ensure_home_links())
+            link_label = "Instagram Link" if mode == "Download media" else "Link"
+            link_placeholder = (
+                "https://www.instagram.com/p/... or /reel/..."
+                if mode == "Download media"
+                else "https://www.instagram.com/... or https://example.com/article"
+            )
+            links[0] = st.text_input(
+                link_label,
+                value=links[0],
+                placeholder=link_placeholder,
+                key="workspace_home_link_0",
+            )
+            normalized_links = _normalize_home_links(links)
+            st.session_state["workspace_home_links"] = normalized_links
+            if normalized_links != links:
+                _rerun_workspace("Actions")
 
     with button_area:
         clear_col, action_col = st.columns([1, 3])
@@ -1815,37 +1934,54 @@ if active_tab == "Actions":
         with action_col:
             submitted = st.button(_action_label(mode), type="primary", width="stretch")
         if submitted:
-            links_to_process = _clean_home_links()
-            if not links_to_process:
-                st.warning(f"Enter at least one {link_label.lower()}.")
-            elif mode == "Add to sheet":
+            if mode == "ChatGPT handoff":
                 try:
-                    append_link_rows(
-                        GOOGLE_SHEET_ID,
-                        links_to_process,
-                        selected_hashtag,
-                    )
+                    ready_rows = _chatgpt_ready_rows(GOOGLE_SHEET_ID)
                 except Exception as e:
-                    st.error(f"Could not add links to sheet: {describe_error(e)}")
+                    st.error(f"Could not prepare ChatGPT handoff: {describe_error(e)}")
                 else:
-                    st.session_state["workspace_home_notice"] = f"Added {len(links_to_process)} link(s) to the sheet."
-                    _reset_home_links_on_next_render()
-                    _rerun_workspace("Actions")
-            else:
-                with st.spinner(f"{mode} in progress..."):
-                    try:
-                        tag_value, results = _run_home_mode(mode, links_to_process, org_hashtag)
-                    except Exception as e:
-                        st.error(f"{mode} failed: {describe_error(e)}")
+                    if not ready_rows:
+                        st.warning("No rows are ready for ChatGPT handoff yet.")
                     else:
                         st.session_state["workspace_home_results"] = {
                             "mode": mode,
-                            "required_hashtag": tag_value,
-                            "items": results,
+                            "count": len(ready_rows),
+                            "prompt": _build_chatgpt_handoff_prompt(ready_rows),
                         }
-                        st.session_state["workspace_home_notice"] = f"{mode} finished for {len(results)} link(s)."
+                        st.session_state["workspace_home_notice"] = f"Built ChatGPT prompt for {len(ready_rows)} row(s)."
+                        _rerun_workspace("Actions")
+            else:
+                links_to_process = _clean_home_links()
+                if not links_to_process:
+                    st.warning(f"Enter at least one {link_label.lower()}.")
+                elif mode == "Add to sheet":
+                    try:
+                        append_link_rows(
+                            GOOGLE_SHEET_ID,
+                            links_to_process,
+                            selected_hashtag,
+                        )
+                    except Exception as e:
+                        st.error(f"Could not add links to sheet: {describe_error(e)}")
+                    else:
+                        st.session_state["workspace_home_notice"] = f"Added {len(links_to_process)} link(s) to the sheet."
                         _reset_home_links_on_next_render()
                         _rerun_workspace("Actions")
+                else:
+                    with st.spinner(f"{mode} in progress..."):
+                        try:
+                            tag_value, results = _run_home_mode(mode, links_to_process, org_hashtag)
+                        except Exception as e:
+                            st.error(f"{mode} failed: {describe_error(e)}")
+                        else:
+                            st.session_state["workspace_home_results"] = {
+                                "mode": mode,
+                                "required_hashtag": tag_value,
+                                "items": results,
+                            }
+                            st.session_state["workspace_home_notice"] = f"{mode} finished for {len(results)} link(s)."
+                            _reset_home_links_on_next_render()
+                            _rerun_workspace("Actions")
 
     with results_area:
         home_results = st.session_state.get("workspace_home_results")
@@ -1881,6 +2017,26 @@ if active_tab == "Actions":
                     st.write(f"Media link(s): {item['media_link']}")
                 if item.get("thumbnail_link"):
                     st.write(f"Thumbnail: {item['thumbnail_link']}")
+        if home_results and home_results.get("mode") == "ChatGPT handoff":
+            st.caption(f"Ready rows: {home_results.get('count', 0)}")
+            _copy_block("prompt", home_results.get("prompt", ""), "workspace_chatgpt_handoff_prompt")
+            pasted_results = st.text_area(
+                "Paste ChatGPT JSON results",
+                key="workspace_chatgpt_handoff_results",
+                height=220,
+                placeholder='[{"row_number":2,"generated_caption":"...","#name":"...","#text1":"...","#text2":"...","#text3":"..."}]',
+            )
+            if st.button("Apply ChatGPT results", key="workspace_chatgpt_apply", type="primary", width="stretch"):
+                try:
+                    updated_count = _apply_chatgpt_handoff_results(GOOGLE_SHEET_ID, pasted_results)
+                except Exception as e:
+                    st.error(f"Could not apply ChatGPT results: {describe_error(e)}")
+                else:
+                    if updated_count:
+                        st.session_state["workspace_success"] = f"Applied ChatGPT results to {updated_count} row(s)."
+                    else:
+                        st.session_state["workspace_error"] = "No valid ChatGPT results were found to apply."
+                    _rerun_workspace("Actions")
         if home_notice:
             st.caption(home_notice)
 if active_tab == "Home":
