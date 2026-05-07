@@ -1680,22 +1680,45 @@ def _build_chatgpt_handoff_prompt(rows: list[dict]) -> str:
         )
 
     instructions = (
-        "Create results for every row below.\n"
-        "Return ONLY valid JSON as an array. Each object must include:\n"
-        "- row_number\n"
-        "- generated_caption\n"
-        "- #name\n"
-        "- #text1\n"
-        "- #text2\n"
-        "- #text3\n\n"
+        "Return ONLY valid JSON as an array.\n\n"
+        "Each object must include:\n"
+        "* row_number\n"
+        "* generated_caption\n"
+        "* #name\n"
+        "* #text1\n"
+        "* #text2\n"
+        "* #text3\n\n"
         "Rules:\n"
-        "- keep row_number exactly the same\n"
-        "- generated_caption should be a strong final caption\n"
-        "- #name should be the short username/domain label\n"
-        "- #text1 should be a clickbait hook, max 150 characters\n"
-        "- #text2 and #text3 should each be max 300 characters\n"
-        "- no markdown fences\n"
-        "- no extra commentary outside the JSON\n"
+        "* Keep row_number exactly the same numeric value shown in the row block\n"
+        "* Do not use markdown\n"
+        "* Do not include commentary outside JSON\n"
+        "* #text1 must be a clickbait hook under 150 characters\n"
+        "* #text2 and #text3 must each be under 300 characters\n"
+        "* generated_caption must be under 1300 characters\n"
+        "* generated_caption must contain exactly 2 paragraphs\n"
+        "* The FIRST paragraph must be under 250 characters\n"
+        "* ALL hashtags must appear ONLY at the END of the FIRST paragraph\n"
+        "* Never place hashtags inside sentences\n"
+        "* Use 3 to 5 hashtags total\n"
+        "* Include required_hashtags exactly as provided\n"
+        "* Do not invent extra political claims\n"
+        "* Use simple, direct language\n"
+        "* Avoid speculation, flourish, or rhetorical questions\n"
+        "* Preserve quotes accurately when used\n"
+        "* No em dashes\n"
+        "* Do not repeat the same sentence across fields\n"
+        "* #name should be a short lowercase account label only\n\n"
+        "Example:\n"
+        "[\n"
+        "  {\n"
+        '    "row_number": 1,\n'
+        '    "generated_caption": "A senator just accused major insurers of blocking healthcare reform while taking millions from lobbying groups. #Healthcare #Politics #usapolitics\\n\\nThe speech focused on rising medical costs, insurance industry influence, and proposed Medicaid cuts. The senator argued that corporate lobbying is shaping healthcare policy more than public need.",\n'
+        '    "#name": "nowthis",\n'
+        '    "#text1": "A senator just accused insurers of controlling healthcare policy.",\n'
+        '    "#text2": "The speech focused on lobbying money, Medicaid cuts, and rising healthcare costs affecting millions of Americans.",\n'
+        '    "#text3": "Critics argued insurance companies are influencing lawmakers while patients continue struggling with debt and coverage gaps."\n'
+        "  }\n"
+        "]\n"
     )
     return instructions + "\n\n" + "\n\n---\n\n".join(blocks)
 
