@@ -1296,9 +1296,9 @@ def _process_pending_rows_from_sheet() -> int:
                     default_top_comment,
                     "",
                 )
-                if result["status"] == "ingested" and result["media_type"] == "article":
-                    article_row = dict(row)
-                    article_row.update(
+                if result["status"] == "ingested":
+                    ingested_row = dict(row)
+                    ingested_row.update(
                         {
                             "Source Username": result["username"],
                             "Media Type": result["media_type"],
@@ -1315,8 +1315,8 @@ def _process_pending_rows_from_sheet() -> int:
                             "Footer": "",
                         }
                     )
-                    generated_caption = generate_row_caption(article_row)
-                    _write_carousel_fields(row_num, article_row)
+                    generated_caption = generate_row_caption(ingested_row)
+                    _write_carousel_fields(row_num, ingested_row)
                     if update_caption_and_metadata is not None:
                         update_caption_and_metadata(
                             GOOGLE_SHEET_ID,
@@ -1337,7 +1337,7 @@ def _process_pending_rows_from_sheet() -> int:
                 if result["status"].startswith("error"):
                     status_box.update(label=f"Row {row_num}: {result['status']}", state="error")
                 else:
-                    action_word = "ingested + captioned" if result["media_type"] == "article" else "ingested"
+                    action_word = "ingested + captioned"
                     display_name = f"@{result['username']}" if result["username"] and result["media_type"] != "article" else result["username"]
                     status_box.update(
                         label=f"Row {row_num}: {action_word} - {display_name} ({result['media_type']})",
