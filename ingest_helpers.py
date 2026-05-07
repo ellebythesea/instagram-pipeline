@@ -22,9 +22,16 @@ def download_file(url: str, dest: str) -> None:
             f.write(chunk)
 
 
+def _compact_post_date(post_date: str) -> str:
+    digits = re.sub(r"\D", "", post_date or "")
+    if len(digits) >= 8:
+        return digits[2:8]
+    return post_date or ""
+
+
 def make_filename(post_id: str, post_date: str, ext: str, index: int = 0) -> str:
     suffix = f"_{index}" if index > 0 else ""
-    return f"{post_date}_{post_id}{suffix}{ext}"
+    return f"{_compact_post_date(post_date)}_{post_id}{suffix}{ext}"
 
 
 def build_filename_prefix(row_number: int | str | None, username: str) -> str:
@@ -75,7 +82,7 @@ def upload_media_bundle(data: dict, filename_prefix: str = "") -> dict:
     thumbnail_link = ""
     thumbnail_path = ""
     if data.get("thumbnail_url"):
-        thumb_filename = f"{post_date}_{post_id}_thumb.jpg"
+        thumb_filename = f"{_compact_post_date(post_date)}_{post_id}_thumb.jpg"
         thumb_path = os.path.join(tmp_dir, thumb_filename)
         try:
             download_file(data["thumbnail_url"], thumb_path)
@@ -113,7 +120,7 @@ def download_media_bundle(data: dict) -> dict:
         GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER,
     )
     if data.get("thumbnail_url"):
-        thumb_filename = f"{post_date}_{post_id}_thumb.jpg"
+        thumb_filename = f"{_compact_post_date(post_date)}_{post_id}_thumb.jpg"
         thumb_path = os.path.join(tmp_dir, thumb_filename)
         try:
             download_file(data["thumbnail_url"], thumb_path)
@@ -139,7 +146,7 @@ def upload_thumbnail_only(data: dict) -> dict:
     )
 
     if data.get("thumbnail_url"):
-        thumb_filename = f"{data['post_date']}_{data['post_id']}_thumb.jpg"
+        thumb_filename = f"{_compact_post_date(data['post_date'])}_{data['post_id']}_thumb.jpg"
         thumb_path = os.path.join(tmp_dir, thumb_filename)
         download_file(data["thumbnail_url"], thumb_path)
         thumbnail_link = upload_to_drive(thumb_path, thumb_filename, screenshots_folder_id)
