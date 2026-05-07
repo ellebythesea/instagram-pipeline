@@ -1705,7 +1705,7 @@ def _row_ready_for_chatgpt(row: dict) -> bool:
     if not _cell_text(row.get("Instagram URL")).strip():
         return False
     status = _cell_text(row.get("Status")).strip().lower()
-    if status.startswith("error"):
+    if status.startswith("error") or status == "slides":
         return False
     media_type = _cell_text(row.get("Media Type")).strip().lower()
     transcript = _cell_text(row.get("Transcript")).strip()

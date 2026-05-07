@@ -298,12 +298,14 @@ def update_carousel_fields(
     text2: str,
     text3: str,
 ) -> None:
-    """Write Figma/Google Sync carousel fields to cols Q-T."""
+    """Write Figma/Google Sync carousel fields to cols Q-T and set status to 'slides'."""
     ws = _worksheet(sheet_id)
     _with_backoff(
-        ws.update,
-        f"Q{row_number}:T{row_number}",
-        [[name, text1, text2, text3]],
+        ws.batch_update,
+        [
+            {"range": f"N{row_number}", "values": [["slides"]]},
+            {"range": f"Q{row_number}:T{row_number}", "values": [[name, text1, text2, text3]]},
+        ],
     )
     _invalidate_rows_cache(sheet_id)
 
