@@ -100,6 +100,12 @@ div[data-testid="stCodeBlock"] > div {
     height: 2.1rem !important;
     overflow: hidden !important;
 }
+div[data-testid="stCodeBlock"] > div > div {
+    min-height: 2.1rem !important;
+    max-height: 2.1rem !important;
+    height: 2.1rem !important;
+    overflow: hidden !important;
+}
 div[data-testid="stCodeBlock"] pre {
     min-height: 2.1rem !important;
     max-height: 2.1rem !important;
@@ -120,11 +126,13 @@ div[data-testid="stCodeBlock"] code {
     display: block !important;
     max-height: 1.1rem !important;
 }
-div[data-testid="stCodeBlock"] code span,
-div[data-testid="stCodeBlock"] code div {
+div[data-testid="stCodeBlock"] code *,
+div[data-testid="stCodeBlock"] pre * {
     white-space: nowrap !important;
     display: inline !important;
     max-height: 1.1rem !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
 }
 div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) {
     border: 1px solid rgba(15, 23, 42, 0.12);
