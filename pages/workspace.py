@@ -1690,33 +1690,43 @@ def _build_chatgpt_handoff_prompt(rows: list[dict]) -> str:
         "* #text3\n\n"
         "Rules:\n"
         "* Keep row_number exactly the same numeric value shown in the row block\n"
-        "* Do not use markdown\n"
-        "* Do not include commentary outside JSON\n"
-        "* #text1 must be a clickbait hook under 150 characters\n"
-        "* #text2 and #text3 must each be under 300 characters\n"
-        "* generated_caption must be under 1300 characters\n"
-        "* generated_caption must contain exactly 2 paragraphs\n"
-        "* The FIRST paragraph must be under 250 characters\n"
+        "* No markdown\n"
+        "* No commentary outside JSON\n"
+        "* #name = short lowercase account label\n"
+        "* #text1 = clickbait hook under 150 chars\n"
+        "* #text2 and #text3 = under 300 chars each\n"
+        "* generated_caption = under 1300 chars total\n"
+        "* generated_caption = exactly 2 paragraphs\n"
+        "* First paragraph under 250 chars\n"
         "* ALL hashtags must appear ONLY at the END of the FIRST paragraph\n"
         "* Never place hashtags inside sentences\n"
         "* Use 3 to 5 hashtags total\n"
-        "* Include required_hashtags exactly as provided\n"
-        "* Do not invent extra political claims\n"
-        "* Use simple, direct language\n"
-        "* Avoid speculation, flourish, or rhetorical questions\n"
-        "* Preserve quotes accurately when used\n"
+        "* Include required_hashtags exactly\n"
+        "* Use simple political news style\n"
+        "* No rhetorical questions\n"
         "* No em dashes\n"
-        "* Do not repeat the same sentence across fields\n"
-        "* #name should be a short lowercase account label only\n\n"
-        "Example:\n"
+        "* No speculation\n"
+        "* Do not repeat wording across fields\n\n"
+        "Quote rules:\n"
+        "* If speaker name exists, prefer direct quotes from transcript\n"
+        "* Use short verbatim quotes when strong lines exist\n"
+        "* Preserve wording closely\n"
+        "* At least one field must contain a direct quote when possible\n"
+        "* Prefer quotes with accusations, numbers, or emotional language\n"
+        "* Keep quotes under 25 words when possible\n\n"
+        "Style:\n"
+        "* Sound like a sharp political analyst summarizing a viral clip\n"
+        "* Focus on conflict, stakes, numbers, and consequences\n"
+        "* Avoid generic summaries\n\n"
+        "Output format example:\n"
         "[\n"
         "  {\n"
         '    "row_number": 1,\n'
-        '    "generated_caption": "A senator just accused major insurers of blocking healthcare reform while taking millions from lobbying groups. #Healthcare #Politics #usapolitics\\n\\nThe speech focused on rising medical costs, insurance industry influence, and proposed Medicaid cuts. The senator argued that corporate lobbying is shaping healthcare policy more than public need.",\n'
+        '    "generated_caption": "A senator accused insurance companies of blocking healthcare reform while Americans struggle with rising costs. #Healthcare #Politics #usapolitics\\n\\nThe speech focused on lobbying money, Medicaid cuts, and medical debt. \\"We could abolish medical debt 10 times over,\\" the speaker said while criticizing military spending priorities.",\n'
         '    "#name": "nowthis",\n'
-        '    "#text1": "A senator just accused insurers of controlling healthcare policy.",\n'
-        '    "#text2": "The speech focused on lobbying money, Medicaid cuts, and rising healthcare costs affecting millions of Americans.",\n'
-        '    "#text3": "Critics argued insurance companies are influencing lawmakers while patients continue struggling with debt and coverage gaps."\n'
+        '    "#text1": "\\"We could abolish medical debt 10 times over.\\"",\n'
+        '    "#text2": "The speaker compared military spending with healthcare costs and argued billions are being diverted away from public needs.",\n'
+        '    "#text3": "The clip focused on medical debt, Medicaid, and federal spending priorities affecting working Americans."\n'
         "  }\n"
         "]\n"
     )
