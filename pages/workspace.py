@@ -1739,8 +1739,8 @@ def _build_chatgpt_handoff_prompt(rows: list[dict]) -> str:
         "* No markdown\n"
         "* No commentary outside JSON\n"
         "* #name = short lowercase account label\n"
-        "* #text1 = clickbait hook under 180 chars\n"
-        "* #text2 and #text3 = under 550 chars each\n"
+        "* #text1 = strongest opening carousel slide under 350 chars\n"
+        "* #text2 and #text3 = under 900 chars each\n"
         "* generated_caption = under 1400 chars total\n"
         "* generated_caption = exactly 2 paragraphs\n"
         "* First paragraph under 300 chars\n"
@@ -1760,6 +1760,17 @@ def _build_chatgpt_handoff_prompt(rows: list[dict]) -> str:
         '* Never say "the speaker," "the clip," "the transcript," "the video," "the comments," "the argument," "the warning," or "the line said"\n'
         "* Do not over explain the source material\n"
         "* Make #text1, #text2, and #text3 feel like three carousel slides\n"
+        "* Put the most important accusation, statistic, conflict, or consequence into #text1\n"
+        "* #text1 should feel like the strongest opening carousel slide, not just a short hook\n"
+        "* Front load critical information into #text1 whenever possible\n"
+        "* Use #text2 to expand the core conflict with context, quotes, or stakes\n"
+        "* Use #text3 to focus on consequences, reactions, fallout, or additional details\n"
+        "* Make each text field feel like a standalone Instagram carousel slide\n"
+        "* Prioritize specificity over vagueness\n"
+        "* Include numbers, names, and direct quotes whenever they strengthen the writing\n"
+        "* Use emotionally charged but factual framing\n"
+        "* Avoid filler phrases and weak transitions\n"
+        "* Do not artificially shorten strong explanations just to save space\n"
         "* Avoid generic summaries\n\n"
         "Quote guidance:\n"
         "* Use the person's name when provided\n"
@@ -1774,8 +1785,8 @@ def _build_chatgpt_handoff_prompt(rows: list[dict]) -> str:
         '    "generated_caption": "A senator accused insurance companies of blocking healthcare reform while Americans struggle with rising costs. #Healthcare #Politics #usapolitics\\n\\nLobbying money, Medicaid cuts, and medical debt were at the center of the fight. \\"We could abolish medical debt 10 times over,\\" he said while attacking military spending priorities.",\n'
         '    "#name": "nowthis",\n'
         '    "#text1": "\\"We could abolish medical debt 10 times over.\\"",\n'
-        '    "#text2": "He compared military spending with healthcare costs and argued billions are being diverted away from public needs while families still drown in debt and coverage gaps.",\n'
-        '    "#text3": "The carousel connects Medicaid cuts, insurance lobbying, and federal spending priorities to the financial pressure hitting working Americans."\n'
+        '    "#text2": "He compared military spending with healthcare costs and argued billions are being diverted away from public needs while families still drown in debt and coverage gaps. The attack centered on lobbying money, Medicaid cuts, and the claim that Washington keeps funding war while basic healthcare needs go unmet.",\n'
+        '    "#text3": "The fallout is political as much as financial. The carousel ties insurance lobbying, federal spending priorities, and Medicaid pressure to the daily reality facing working Americans who are still buried in debt and losing coverage."\n'
         "  }\n"
         "]\n"
     )
