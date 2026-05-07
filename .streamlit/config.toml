@@ -5,3 +5,6 @@ fileWatcherType = "auto"
 
 [browser]
 gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"
