@@ -23,13 +23,21 @@ import streamlit.components.v1 as components
 from article_source import fetch_article_source
 from config import DEFAULT_POST_FOOTER, GOOGLE_SHEET_ID, OPENAI_API_KEY
 from ingest_helpers import upload_media_bundle
-from pipeline_caption import generate_carousel_copy, generate_row_caption, _strip_top_comment_paragraphs
+import pipeline_caption as pipeline_caption_ops
 from post_scraper import process_url as process_post_url
 from reel_scraper import process_url as process_reel_url
 import sheets as sheet_ops
 from utils.auth import require_auth
 from utils.error_labels import describe_error
 from utils.styles import inject as inject_styles
+
+generate_row_caption = pipeline_caption_ops.generate_row_caption
+_strip_top_comment_paragraphs = pipeline_caption_ops._strip_top_comment_paragraphs
+generate_carousel_copy = getattr(
+    pipeline_caption_ops,
+    "generate_carousel_copy",
+    lambda _row: {"name": "", "text1": "", "text2": "", "text3": ""},
+)
 
 MODE_OPTIONS = [
     "Add to sheet",
