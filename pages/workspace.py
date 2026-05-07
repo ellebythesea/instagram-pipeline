@@ -1804,6 +1804,43 @@ def _build_chatgpt_handoff_prompt(rows: list[dict]) -> str:
     return instructions + "\n\n" + "\n\n---\n\n".join(blocks)
 
 
+_SLIDE_KEYS = ["row_number", "#name", "#text1", "#text2", "#text3", "generated_caption"]
+
+
+def _normalize_slide_paste(text: str) -> str:
+    """Rebuild messy slide paste as valid JSON using known field names as anchors."""
+    text = text.replace("“", '"').replace("”", '"').replace("‘", "'").replace("’", "'")
+    raw = text.strip().lstrip("[").rstrip("]").strip()
+    blocks = re.split(r"}\s*,\s*{", raw)
+    key_pat = '"(' + "|".join(re.escape(k) for k in _SLIDE_KEYS) + r')"\s*:\s*'
+    out: list[dict] = []
+    for block in blocks:
+        matches = list(re.finditer(key_pat, block))
+        if not matches:
+            continue
+        item: dict = {}
+        for i, m in enumerate(matches):
+            key = m.group(1)
+            val_start = m.end()
+            val_end = matches[i + 1].start() if i + 1 < len(matches) else len(block)
+            raw_val = block[val_start:val_end].strip().rstrip(",}] ").strip()
+            if key == "row_number":
+                num = re.search(r"\d+", raw_val)
+                if num:
+                    item["row_number"] = int(num.group())
+            else:
+                if raw_val.startswith('"'):
+                    raw_val = raw_val[1:]
+                if raw_val.endswith('"'):
+                    raw_val = raw_val[:-1]
+                item[key] = raw_val
+        if item:
+            out.append(item)
+    if not out:
+        raise ValueError("No slide items found.")
+    return json.dumps(out)
+
+
 def _extract_json_payload(raw_text: str):
     text = (raw_text or "").strip()
     if not text:
@@ -1947,6 +1984,10 @@ def _extract_json_payload(raw_text: str):
     try:
         return json.loads(text_block)
     except json.JSONDecodeError:
+        try:
+            return json.loads(_normalize_slide_paste(text_block))
+        except Exception:
+            pass
         repaired = _repair_jsonish(text_block)
         try:
             return json.loads(repaired)
@@ -1958,14 +1999,11 @@ def _extract_json_payload(raw_text: str):
                 return ast.literal_eval(pythonish)
             except Exception as exc:
                 try:
-                    return _parse_by_known_keys(text_block)
+                    return _parse_linewise_payload(text_block)
                 except Exception:
-                    try:
-                        return _parse_linewise_payload(text_block)
-                    except Exception:
-                        raise ValueError(
-                            "Slide results must be valid JSON or near-JSON with quoted keys."
-                        ) from exc
+                    raise ValueError(
+                        "Slide results must be valid JSON or near-JSON with quoted keys."
+                    ) from exc
 
 
 def _apply_chatgpt_handoff_results(sheet_id: str, raw_text: str) -> tuple[int, list[str]]:
