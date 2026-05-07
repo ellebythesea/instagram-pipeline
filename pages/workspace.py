@@ -940,12 +940,30 @@ def _save_all_workspace_speaker_names(rows: list[dict]) -> int:
     return updated_count
 
 
+def _save_workspace_speaker_name(row: dict) -> bool:
+    return bool(_save_all_workspace_speaker_names([row]))
+
+
 def _dirty_workspace_speaker_rows(rows: list[dict]) -> list[dict]:
     return [
         row for row in rows
         if _cell_text(st.session_state.get(_workspace_speaker_key(row), row.get("Speaker Name", ""))).strip()
         != _cell_text(row.get("Speaker Name")).strip()
     ]
+
+
+def _handle_update_all_workspace_speaker_names(rows: list[dict], rerun_tab: str = "Edit") -> None:
+    try:
+        updated_count = _save_all_workspace_speaker_names(rows)
+    except Exception as e:
+        st.session_state["workspace_error"] = f"Could not save names: {describe_error(e)}"
+    else:
+        st.session_state["workspace_success"] = (
+            f"Updated {updated_count} speaker name(s)."
+            if updated_count
+            else "No name changes to save."
+        )
+    _rerun_workspace(rerun_tab)
 
 
 def _fundraising_preset_map() -> dict[str, str]:
@@ -1809,8 +1827,38 @@ def _extract_json_payload(raw_text: str):
         match = re.search(r"(\[[\s\S]*\]|\{[\s\S]*\})", candidate)
         return match.group(1) if match else candidate
 
+    def _escape_string_newlines(s: str) -> str:
+        result = []
+        in_string = False
+        i = 0
+        while i < len(s):
+            c = s[i]
+            if not in_string:
+                if c == '"':
+                    in_string = True
+                result.append(c)
+            else:
+                if c == '\\':
+                    result.append(c)
+                    i += 1
+                    if i < len(s):
+                        result.append(s[i])
+                elif c == '"':
+                    in_string = False
+                    result.append(c)
+                elif c == '\n':
+                    result.append('\\n')
+                elif c == '\r':
+                    result.append('\\r')
+                elif c == '\t':
+                    result.append('\\t')
+                else:
+                    result.append(c)
+            i += 1
+        return ''.join(result)
+
     def _repair_jsonish(candidate: str) -> str:
-        repaired = candidate.strip()
+        repaired = _escape_string_newlines(candidate.strip())
         repaired = repaired.replace("\u201c", '"').replace("\u201d", '"').replace("\u2018", "'").replace("\u2019", "'")
         repaired = _strip_comments(repaired)
         repaired = re.sub(r",\s*([}\]])", r"\1", repaired)
@@ -2389,12 +2437,30 @@ if active_tab == "Home":
                     else:
                         st.markdown(f"#### Row {row_num}")
 
-                    st.text_input(
-                        "Speaker Name",
-                        value=speaker_name,
-                        key=speaker_key,
-                        placeholder="Enter name",
-                    )
+                    with st.form(f"workspace_speaker_form_{row_num}", clear_on_submit=False):
+                        st.text_input(
+                            "Speaker Name",
+                            value=speaker_name,
+                            key=speaker_key,
+                            placeholder="Enter name",
+                        )
+                        save_name = st.form_submit_button(
+                            "Update name",
+                            type="primary",
+                            width="stretch",
+                        )
+                    if save_name:
+                        try:
+                            changed = _save_workspace_speaker_name(row)
+                        except Exception as e:
+                            st.session_state["workspace_error"] = f"Row {row_num}: could not save name - {describe_error(e)}"
+                        else:
+                            st.session_state["workspace_success"] = (
+                                f"Row {row_num}: speaker name saved."
+                                if changed
+                                else f"Row {row_num}: no name change to save."
+                            )
+                        _rerun_workspace("Edit")
                     if _is_reel_url(url):
                         pending_transcribe_resets = st.session_state.setdefault("workspace_transcribe_reset_rows", [])
                         if transcribe_key in pending_transcribe_resets:
@@ -2444,6 +2510,14 @@ if active_tab == "Home":
                                 _close_workspace_menu(row)
                                 _queue_workspace_action(row_num, "generate_caption")
                                 _rerun_workspace("Edit")
+                            if st.button(
+                                "Update all names",
+                                key=f"workspace_menu_update_all_names_{row_num}",
+                                width="stretch",
+                                help="Save all edited speaker names to the sheet.",
+                            ):
+                                _close_workspace_menu(row)
+                                _handle_update_all_workspace_speaker_names(editor_rows)
                             if url and st.button("Add Watch", key=f"workspace_watch_add_{row_num}", width="stretch"):
                                 top_comment = _build_watch_cta(username or speaker_name, url)
                                 try:
@@ -2536,26 +2610,15 @@ if active_tab == "Home":
             )
 
         dirty_name_rows = _dirty_workspace_speaker_rows(editor_rows)
-        if dirty_name_rows:
-            st.caption(f"{len(dirty_name_rows)} unsaved name(s).")
-            if st.button(
-                "Update all names",
-                key="workspace_update_all_names_bottom",
-                type="primary",
-                width="stretch",
-                help="Save all edited speaker names to the sheet.",
-            ):
-                try:
-                    updated_count = _save_all_workspace_speaker_names(editor_rows)
-                except Exception as e:
-                    st.session_state["workspace_error"] = f"Could not save names: {describe_error(e)}"
-                else:
-                    st.session_state["workspace_success"] = (
-                        f"Updated {updated_count} speaker name(s)."
-                        if updated_count
-                        else "No name changes to save."
-                    )
-                _rerun_workspace("Edit")
+        st.caption(f"{len(dirty_name_rows)} unsaved name(s).")
+        if st.button(
+            "Update all names",
+            key="workspace_update_all_names_bottom",
+            type="primary",
+            width="stretch",
+            help="Save all edited speaker names to the sheet.",
+        ):
+            _handle_update_all_workspace_speaker_names(editor_rows)
 
     with st.expander("Set times", expanded=False):
         st.markdown('<div class="workspace-schedule-anchor"></div>', unsafe_allow_html=True)
