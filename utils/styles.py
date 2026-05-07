@@ -89,42 +89,42 @@ section[data-testid="stSidebar"] {
 }
 div[data-testid="stCodeBlock"] {
     margin: 0.2rem 0 0.35rem;
-    min-height: 2.1rem;
-    max-height: 2.1rem;
-    height: 2.1rem;
-    overflow: hidden;
+    min-height: 2.1rem !important;
+    max-height: 2.1rem !important;
+    height: 2.1rem !important;
+    overflow: hidden !important;
 }
 div[data-testid="stCodeBlock"] > div {
-    min-height: 2.1rem;
-    max-height: 2.1rem;
-    height: 2.1rem;
-    overflow: hidden;
+    min-height: 2.1rem !important;
+    max-height: 2.1rem !important;
+    height: 2.1rem !important;
+    overflow: hidden !important;
 }
 div[data-testid="stCodeBlock"] pre {
-    min-height: 2.1rem;
-    max-height: 2.1rem;
-    height: 2.1rem;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    line-height: 1.1rem;
-    padding: 0.45rem 2.75rem 0.45rem 0.7rem;
-    border-radius: 12px;
+    min-height: 2.1rem !important;
+    max-height: 2.1rem !important;
+    height: 2.1rem !important;
+    overflow: hidden !important;
+    white-space: nowrap !important;
+    text-overflow: ellipsis !important;
+    line-height: 1.1rem !important;
+    padding: 0.45rem 2.75rem 0.45rem 0.7rem !important;
+    border-radius: 12px !important;
 }
 div[data-testid="stCodeBlock"] code {
-    line-height: 1.1rem;
-    font-size: 0.86rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    display: block;
-    max-height: 1.1rem;
+    line-height: 1.1rem !important;
+    font-size: 0.86rem !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    display: block !important;
+    max-height: 1.1rem !important;
 }
 div[data-testid="stCodeBlock"] code span,
 div[data-testid="stCodeBlock"] code div {
-    white-space: nowrap;
-    display: inline;
-    max-height: 1.1rem;
+    white-space: nowrap !important;
+    display: inline !important;
+    max-height: 1.1rem !important;
 }
 div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) {
     border: 1px solid rgba(15, 23, 42, 0.12);
