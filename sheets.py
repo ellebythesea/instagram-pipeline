@@ -46,10 +46,10 @@ _EXPECTED_HEADERS = [
     "Status",
     "Caption Context",
     "Scheduled Time",
-    "#name",
-    "#text1",
-    "#text2",
-    "#text3",
+    "name",
+    "text1",
+    "text2",
+    "text3",
 ]
 
 _headers_checked: set[tuple[str, str]] = set()

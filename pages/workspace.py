@@ -1748,18 +1748,18 @@ def _build_chatgpt_handoff_prompt(rows: list[dict]) -> str:
         "Return ONLY valid JSON as an array.\n\n"
         "Each object must include:\n"
         "* row_number\n"
-        "* #name\n"
-        "* #text1\n"
-        "* #text2\n"
-        "* #text3\n\n"
+        "* name\n"
+        "* text1\n"
+        "* text2\n"
+        "* text3\n\n"
         "Rules:\n"
         "* Keep row_number exactly the same numeric value shown in the row block\n"
         "* No markdown\n"
         "* No commentary outside JSON\n"
         "* Use plain straight double quotes for all JSON keys and string values — no smart quotes, no escaped quotes inside key names\n"
-        "* #name = short lowercase account label\n"
-        "* #text1 = strongest opening carousel slide under 350 chars\n"
-        "* #text2 and #text3 = under 900 chars each\n"
+        "* name = short lowercase account username (no @ symbol)\n"
+        "* text1 = strongest opening carousel slide under 350 chars\n"
+        "* text2 and text3 = under 900 chars each\n"
         "* No em dashes\n"
         "* No speculation\n"
         "* Avoid repetitive phrasing across fields\n"
@@ -1794,17 +1794,17 @@ def _build_chatgpt_handoff_prompt(rows: list[dict]) -> str:
         "[\n"
         "  {\n"
         '    "row_number": 1,\n'
-        '    "#name": "nowthis",\n'
-        '    "#text1": "\\"We could abolish medical debt 10 times over.\\"",\n'
-        '    "#text2": "He compared military spending with healthcare costs and argued billions are being diverted away from public needs while families still drown in debt and coverage gaps. The attack centered on lobbying money, Medicaid cuts, and the claim that Washington keeps funding war while basic healthcare needs go unmet.",\n'
-        '    "#text3": "The fallout is political as much as financial. The carousel ties insurance lobbying, federal spending priorities, and Medicaid pressure to the daily reality facing working Americans who are still buried in debt and losing coverage."\n'
+        '    "name": "nowthis",\n'
+        '    "text1": "\\"We could abolish medical debt 10 times over.\\"",\n'
+        '    "text2": "He compared military spending with healthcare costs and argued billions are being diverted away from public needs while families still drown in debt and coverage gaps. The attack centered on lobbying money, Medicaid cuts, and the claim that Washington keeps funding war while basic healthcare needs go unmet.",\n'
+        '    "text3": "The fallout is political as much as financial. The carousel ties insurance lobbying, federal spending priorities, and Medicaid pressure to the daily reality facing working Americans who are still buried in debt and losing coverage."\n'
         "  }\n"
         "]\n"
     )
     return instructions + "\n\n" + "\n\n---\n\n".join(blocks)
 
 
-_SLIDE_KEYS = ["row_number", "#name", "#text1", "#text2", "#text3", "generated_caption"]
+_SLIDE_KEYS = ["row_number", "name", "text1", "text2", "text3", "generated_caption"]
 
 
 def _normalize_slide_paste(text: str) -> str:
@@ -1912,7 +1912,7 @@ def _extract_json_payload(raw_text: str):
         return repaired
 
     def _parse_by_known_keys(candidate: str) -> list:
-        known = ["row_number", "#name", "#text1", "#text2", "#text3", "generated_caption"]
+        known = ["row_number", "name", "text1", "text2", "text3", "generated_caption"]
         key_pat = '"(' + "|".join(re.escape(k) for k in known) + r')"\s*:\s*'
         raw = candidate.strip().lstrip("[").rstrip("]")
         blocks = re.split(r"}\s*,\s*{", raw)
@@ -2035,14 +2035,15 @@ def _apply_chatgpt_handoff_results(sheet_id: str, raw_text: str) -> tuple[int, l
             issues.append(f"Item {index}: row {row_number} was not found in the sheet.")
             continue
 
-        name = _cell_text(item.get("#name") or item.get("name")).strip()
-        text1 = _cell_text(item.get("#text1") or item.get("text1")).strip()
-        text2 = _cell_text(item.get("#text2") or item.get("text2")).strip()
-        text3 = _cell_text(item.get("#text3") or item.get("text3")).strip()
+        raw_name = _cell_text(item.get("name")).strip()
+        name = ("@" + raw_name if raw_name and not raw_name.startswith("@") and " " not in raw_name else raw_name)
+        text1 = _cell_text(item.get("text1")).strip()
+        text2 = _cell_text(item.get("text2")).strip()
+        text3 = _cell_text(item.get("text3")).strip()
 
         if not (name or text1 or text2 or text3):
             issues.append(
-                f"Item {index} / row {row_number}: no #name, #text1, #text2, or #text3 values were provided."
+                f"Item {index} / row {row_number}: no name, text1, text2, or text3 values were provided."
             )
             continue
 
@@ -2335,7 +2336,7 @@ if active_tab == "Slides":
         "Paste slide results",
         key="workspace_slides_results",
         height=100,
-        placeholder='[{"row_number":2,"#name":"...","#text1":"...","#text2":"...","#text3":"..."}]',
+        placeholder='[{"row_number":2,"name":"...","text1":"...","text2":"...","text3":"..."}]',
     )
     if st.button("Apply slide results", key="workspace_slides_apply", type="primary", width="stretch"):
         try:
@@ -2651,9 +2652,9 @@ if active_tab == "Home":
                         media_type,
                         url,
                         is_instagram,
-                        _cell_text(row.get("#text1")).strip(),
-                        _cell_text(row.get("#text2")).strip(),
-                        _cell_text(row.get("#text3")).strip(),
+                        _cell_text(row.get("text1")).strip(),
+                        _cell_text(row.get("text2")).strip(),
+                        _cell_text(row.get("text3")).strip(),
                         row,
                     )
 
