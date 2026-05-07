@@ -87,6 +87,45 @@ section[data-testid="stSidebar"] {
     background: #fff;
     margin-top: 1rem;
 }
+div[data-testid="stCodeBlock"] {
+    margin: 0.2rem 0 0.35rem;
+    min-height: 2.1rem;
+    max-height: 2.1rem;
+    height: 2.1rem;
+    overflow: hidden;
+}
+div[data-testid="stCodeBlock"] > div {
+    min-height: 2.1rem;
+    max-height: 2.1rem;
+    height: 2.1rem;
+    overflow: hidden;
+}
+div[data-testid="stCodeBlock"] pre {
+    min-height: 2.1rem;
+    max-height: 2.1rem;
+    height: 2.1rem;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    line-height: 1.1rem;
+    padding: 0.45rem 2.75rem 0.45rem 0.7rem;
+    border-radius: 12px;
+}
+div[data-testid="stCodeBlock"] code {
+    line-height: 1.1rem;
+    font-size: 0.86rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: block;
+    max-height: 1.1rem;
+}
+div[data-testid="stCodeBlock"] code span,
+div[data-testid="stCodeBlock"] code div {
+    white-space: nowrap;
+    display: inline;
+    max-height: 1.1rem;
+}
 div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) {
     border: 1px solid rgba(15, 23, 42, 0.12);
     border-radius: 24px;
