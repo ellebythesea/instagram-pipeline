@@ -2087,24 +2087,13 @@ if active_tab == "Slides":
     else:
         st.info("No rows are ready for slides yet.")
 
-    if st.button("Generate slides prompt", key="workspace_slides_build_prompt", type="primary", width="stretch"):
-        if not ready_rows:
-            st.warning("No rows are ready for slides yet.")
-        else:
-            st.session_state["workspace_slides_prompt"] = _build_chatgpt_handoff_prompt(ready_rows)
-            st.session_state["workspace_slides_notice"] = f"Built slides prompt for {ready_count} {row_word}."
-            _rerun_workspace("Slides")
-
     if slides_notice:
         st.caption(slides_notice)
-
-    if slides_prompt:
-        _tab_copy_preview(slides_prompt, show_plain_text=False)
 
     pasted_results = st.text_area(
         "Paste slide results",
         key="workspace_slides_results",
-        height=240,
+        height=100,
         placeholder='[{"row_number":2,"generated_caption":"...","#name":"...","#text1":"...","#text2":"...","#text3":"..."}]',
     )
     if st.button("Apply slide results", key="workspace_slides_apply", type="primary", width="stretch"):
@@ -2118,6 +2107,17 @@ if active_tab == "Slides":
             else:
                 st.session_state["workspace_error"] = "No valid slide results were found to apply."
             _rerun_workspace("Slides")
+
+    if st.button("Generate slides prompt", key="workspace_slides_build_prompt", type="primary", width="stretch"):
+        if not ready_rows:
+            st.warning("No rows are ready for slides yet.")
+        else:
+            st.session_state["workspace_slides_prompt"] = _build_chatgpt_handoff_prompt(ready_rows)
+            st.session_state["workspace_slides_notice"] = f"Built slides prompt for {ready_count} {row_word}."
+            _rerun_workspace("Slides")
+
+    if slides_prompt:
+        _tab_copy_preview(slides_prompt, show_plain_text=False)
 
 if active_tab == "Home":
     default_day, default_time = _schedule_day_defaults()
