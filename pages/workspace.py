@@ -1076,13 +1076,14 @@ def _one_line_copy_preview(label: str, value: str, key: str, empty_text: str = "
     st.html(component_html)
 
 
-def _tab_copy_preview(value: str) -> None:
+def _tab_copy_preview(value: str, show_plain_text: bool = True) -> None:
     cache_key = hashlib.md5((value or "(none)").encode("utf-8")).hexdigest()[:10]
     _one_line_copy_preview("text", value, f"workspace_copy_{cache_key}")
-    st.markdown(
-        f'<div class="workspace-plain-copy-text">{html.escape(value or "(none)")}</div>',
-        unsafe_allow_html=True,
-    )
+    if show_plain_text:
+        st.markdown(
+            f'<div class="workspace-plain-copy-text">{html.escape(value or "(none)")}</div>',
+            unsafe_allow_html=True,
+        )
 
 
 def _copy_tabs(
@@ -2091,7 +2092,7 @@ if active_tab == "Slides":
         st.caption(slides_notice)
 
     if slides_prompt:
-        _one_line_copy_preview("slides prompt", slides_prompt, "workspace_slides_prompt_copy")
+        _tab_copy_preview(slides_prompt, show_plain_text=False)
 
     pasted_results = st.text_area(
         "Paste slide results",
