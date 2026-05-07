@@ -1756,6 +1756,7 @@ def _build_chatgpt_handoff_prompt(rows: list[dict]) -> str:
         "* Keep row_number exactly the same numeric value shown in the row block\n"
         "* No markdown\n"
         "* No commentary outside JSON\n"
+        "* Use plain straight double quotes for all JSON keys and string values — no smart quotes, no escaped quotes inside key names\n"
         "* #name = short lowercase account label\n"
         "* #text1 = strongest opening carousel slide under 350 chars\n"
         "* #text2 and #text3 = under 900 chars each\n"
@@ -1890,7 +1891,7 @@ def _extract_json_payload(raw_text: str):
             if not line or ":" not in line:
                 continue
             key, value = line.split(":", 1)
-            key = key.strip().strip("\"'")
+            key = key.strip().strip(_QUOTES)
             value = value.strip().rstrip(",")
             if not key:
                 continue
@@ -1933,6 +1934,7 @@ def _extract_json_payload(raw_text: str):
 
 
 def _apply_chatgpt_handoff_results(sheet_id: str, raw_text: str) -> tuple[int, list[str]]:
+    _QUOTES = '"“”\'‘’ '
     payload = _extract_json_payload(raw_text)
     items = payload if isinstance(payload, list) else [payload]
     rows = get_all_rows(sheet_id)
@@ -1944,6 +1946,7 @@ def _apply_chatgpt_handoff_results(sheet_id: str, raw_text: str) -> tuple[int, l
         if not isinstance(item, dict):
             issues.append(f"Item {index}: result is not an object.")
             continue
+        item = {k.strip().strip(_QUOTES): v for k, v in item.items()}
         row_number = item.get("row_number")
         if row_number is None:
             found_keys = ", ".join(list(item.keys())[:6]) or "(none)"
