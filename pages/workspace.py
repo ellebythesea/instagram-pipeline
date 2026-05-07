@@ -1730,27 +1730,31 @@ def _build_chatgpt_handoff_prompt(rows: list[dict]) -> str:
         "* No rhetorical questions\n"
         "* No em dashes\n"
         "* No speculation\n"
-        "* Do not repeat wording across fields\n\n"
+        "* Do not repeat wording across fields\n"
+        '* Never say "the speaker," "the transcript," "the clip," or "the video"\n\n'
         "Quote rules:\n"
-        "* If speaker name exists, prefer direct quotes from transcript\n"
+        "* If speaker name exists, use their name naturally\n"
+        "* If no speaker name exists, state the information directly without referencing a speaker\n"
+        '* Never say "the speaker," "the transcript," "the clip," or "the video"\n'
         "* Use short verbatim quotes when strong lines exist\n"
         "* Preserve wording closely\n"
-        "* At least one field must contain a direct quote when possible\n"
+        "* At least one field should contain a direct quote when possible\n"
         "* Prefer quotes with accusations, numbers, or emotional language\n"
         "* Keep quotes under 25 words when possible\n\n"
         "Style:\n"
-        "* Sound like a sharp political analyst summarizing a viral clip\n"
+        "* Sound like a sharp political analyst summarizing a viral moment\n"
+        "* Write statements directly and confidently\n"
         "* Focus on conflict, stakes, numbers, and consequences\n"
         "* Avoid generic summaries\n\n"
         "Output format example:\n"
         "[\n"
         "  {\n"
         '    "row_number": 1,\n'
-        '    "generated_caption": "A senator accused insurance companies of blocking healthcare reform while Americans struggle with rising costs. #Healthcare #Politics #usapolitics\\n\\nThe speech focused on lobbying money, Medicaid cuts, and medical debt. \\"We could abolish medical debt 10 times over,\\" the speaker said while criticizing military spending priorities.",\n'
+        '    "generated_caption": "A senator accused insurance companies of blocking healthcare reform while Americans struggle with rising costs. #Healthcare #Politics #usapolitics\\n\\nThe speech focused on lobbying money, Medicaid cuts, and medical debt. \\"We could abolish medical debt 10 times over,\\" he said while criticizing military spending priorities.",\n'
         '    "#name": "nowthis",\n'
         '    "#text1": "\\"We could abolish medical debt 10 times over.\\"",\n'
-        '    "#text2": "The speaker compared military spending with healthcare costs and argued billions are being diverted away from public needs.",\n'
-        '    "#text3": "The clip focused on medical debt, Medicaid, and federal spending priorities affecting working Americans."\n'
+        '    "#text2": "He compared military spending with healthcare costs and argued billions are being diverted away from public needs.",\n'
+        '    "#text3": "The moment focused on medical debt, Medicaid, and federal spending priorities affecting working Americans."\n'
         "  }\n"
         "]\n"
     )
