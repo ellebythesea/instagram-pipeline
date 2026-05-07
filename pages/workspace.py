@@ -1874,6 +1874,38 @@ def _extract_json_payload(raw_text: str):
             repaired = f"[{repaired}]"
         return repaired
 
+    def _parse_by_known_keys(candidate: str) -> list:
+        known = ["row_number", "#name", "#text1", "#text2", "#text3", "generated_caption"]
+        key_pat = '"(' + "|".join(re.escape(k) for k in known) + r')"\s*:\s*'
+        raw = candidate.strip().lstrip("[").rstrip("]")
+        blocks = re.split(r"}\s*,\s*{", raw)
+        items = []
+        for block in blocks:
+            matches = list(re.finditer(key_pat, block))
+            if not matches:
+                continue
+            item: dict = {}
+            for i, m in enumerate(matches):
+                key = m.group(1)
+                val_start = m.end()
+                val_end = matches[i + 1].start() if i + 1 < len(matches) else len(block)
+                raw_val = block[val_start:val_end].strip().rstrip(",").strip()
+                if key == "row_number":
+                    num = re.search(r"\d+", raw_val)
+                    if num:
+                        item["row_number"] = int(num.group())
+                else:
+                    if raw_val.startswith('"'):
+                        raw_val = raw_val[1:]
+                    if raw_val.endswith('"'):
+                        raw_val = raw_val[:-1]
+                    item[key] = raw_val
+            if item:
+                items.append(item)
+        if not items:
+            raise ValueError("No items found by key anchoring.")
+        return items
+
     def _parse_linewise_payload(candidate: str):
         lines = [line.rstrip() for line in candidate.splitlines() if line.strip()]
         if not lines or not any(":" in line for line in lines):
@@ -1926,11 +1958,14 @@ def _extract_json_payload(raw_text: str):
                 return ast.literal_eval(pythonish)
             except Exception as exc:
                 try:
-                    return _parse_linewise_payload(text_block)
+                    return _parse_by_known_keys(text_block)
                 except Exception:
-                    raise ValueError(
-                        "Slide results must be valid JSON or near-JSON with quoted keys."
-                    ) from exc
+                    try:
+                        return _parse_linewise_payload(text_block)
+                    except Exception:
+                        raise ValueError(
+                            "Slide results must be valid JSON or near-JSON with quoted keys."
+                        ) from exc
 
 
 def _apply_chatgpt_handoff_results(sheet_id: str, raw_text: str) -> tuple[int, list[str]]:
