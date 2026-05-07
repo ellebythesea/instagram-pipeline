@@ -320,30 +320,42 @@ div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-test
 }
 div[data-testid="stVerticalBlock"]:has(> div.workspace-slides-anchor) [data-testid="stCodeBlock"] {
     margin: 0.2rem 0 0.35rem;
-    max-height: 200px;
+    min-height: 2.1rem;
+    max-height: 2.1rem;
+    height: 2.1rem;
     overflow: hidden;
 }
 div[data-testid="stVerticalBlock"]:has(> div.workspace-slides-anchor) [data-testid="stCodeBlock"] > div {
-    max-height: 200px;
+    min-height: 2.1rem;
+    max-height: 2.1rem;
+    height: 2.1rem;
     overflow: hidden;
 }
 div[data-testid="stVerticalBlock"]:has(> div.workspace-slides-anchor) [data-testid="stCodeBlock"] pre {
-    max-height: 200px;
-    overflow: auto;
-    white-space: pre-wrap;
-    line-height: 1.25rem;
-    padding: 0.7rem 2.75rem 0.7rem 0.8rem;
+    min-height: 2.1rem;
+    max-height: 2.1rem;
+    height: 2.1rem;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    line-height: 1.1rem;
+    padding: 0.45rem 2.75rem 0.45rem 0.7rem;
     border-radius: 12px;
 }
 div[data-testid="stVerticalBlock"]:has(> div.workspace-slides-anchor) [data-testid="stCodeBlock"] code {
-    white-space: pre-wrap;
-    overflow: visible;
+    line-height: 1.1rem;
+    font-size: 0.86rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     display: block;
+    max-height: 1.1rem;
 }
 div[data-testid="stVerticalBlock"]:has(> div.workspace-slides-anchor) [data-testid="stCodeBlock"] code span,
 div[data-testid="stVerticalBlock"]:has(> div.workspace-slides-anchor) [data-testid="stCodeBlock"] code div {
-    white-space: pre-wrap;
+    white-space: nowrap;
     display: inline;
+    max-height: 1.1rem;
 }
 .workspace-content-tabs [data-baseweb="tab-list"] {
     gap: 0.5rem;
