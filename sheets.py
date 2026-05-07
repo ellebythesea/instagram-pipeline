@@ -9,7 +9,8 @@ Sheet layout:
   G  Media Drive Link   H  Thumbnail Drive Link
   I  Original Caption   J  Transcript         K  Top Comment
   L  Speaker Name       M  Footer             N  Status
-  O  Caption Context    P  Scheduled Time
+  O  Caption Context    P  Scheduled Time     Q  #name
+  R  #text1             S  #text2             T  #text3
 """
 
 import json
@@ -45,6 +46,10 @@ _EXPECTED_HEADERS = [
     "Status",
     "Caption Context",
     "Scheduled Time",
+    "#name",
+    "#text1",
+    "#text2",
+    "#text3",
 ]
 
 _ROWS_CACHE_TTL_SECONDS = 10
@@ -142,7 +147,7 @@ def _ensure_headers(sheet_id: str, ws: gspread.Worksheet) -> None:
     current = _with_backoff(ws.row_values, 1)
     normalized = current[:len(_EXPECTED_HEADERS)]
     if normalized != _EXPECTED_HEADERS:
-        _with_backoff(ws.update, "A1:P1", [_EXPECTED_HEADERS])
+        _with_backoff(ws.update, "A1:T1", [_EXPECTED_HEADERS])
     _headers_checked.add(cache_key)
 
 
@@ -290,6 +295,24 @@ def update_scheduled_times(sheet_id: str, assignments: dict[int, str]) -> None:
     ws = _worksheet(sheet_id)
     for row_number, scheduled_time in assignments.items():
         _with_backoff(ws.update, f"P{row_number}", [[scheduled_time]])
+    _invalidate_rows_cache(sheet_id)
+
+
+def update_carousel_fields(
+    sheet_id: str,
+    row_number: int,
+    name: str,
+    text1: str,
+    text2: str,
+    text3: str,
+) -> None:
+    """Write Figma/Google Sync carousel fields to cols Q-T."""
+    ws = _worksheet(sheet_id)
+    _with_backoff(
+        ws.update,
+        f"Q{row_number}:T{row_number}",
+        [[name, text1, text2, text3]],
+    )
     _invalidate_rows_cache(sheet_id)
 
 

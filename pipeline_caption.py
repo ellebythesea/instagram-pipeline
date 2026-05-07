@@ -1,5 +1,6 @@
 """Shared caption-generation helpers for the sheet workflow."""
 
+import json
 import re
 
 import openai
@@ -105,18 +106,22 @@ def _decode_top_comment(value: str) -> tuple[str, bool]:
     return cleaned, False
 
 
+def _row_source_text(row: dict) -> tuple[str, str, str]:
+    transcript = row.get("Transcript", "").strip()
+    original_caption = row.get("Original Caption", "").strip()
+    caption_context = row.get("Caption Context", "").strip()
+    content = transcript or original_caption or caption_context
+    if not content:
+        raise ValueError("No transcript, original caption, or caption context available")
+    return transcript, original_caption, caption_context
+
+
 def generate_row_caption(row: dict) -> str:
     """Generate a final caption string for one sheet row."""
     if not OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY is not configured.")
 
-    transcript = row.get("Transcript", "").strip()
-    original_caption = row.get("Original Caption", "").strip()
-    caption_context = row.get("Caption Context", "").strip()
-
-    content = transcript or original_caption or caption_context
-    if not content:
-        raise ValueError("No transcript, original caption, or caption context available")
+    transcript, original_caption, caption_context = _row_source_text(row)
 
     user_parts = []
     if transcript:
@@ -186,3 +191,58 @@ def generate_row_caption(row: dict) -> str:
         caption = f"{caption}\n\n{' '.join(footer_parts)}"
 
     return caption
+
+
+def generate_carousel_copy(row: dict) -> dict[str, str]:
+    """Generate Figma/Google Sync carousel fields."""
+    if not OPENAI_API_KEY:
+        raise RuntimeError("OPENAI_API_KEY is not configured.")
+
+    transcript, original_caption, caption_context = _row_source_text(row)
+    username = row.get("Source Username", "").strip()
+    media_type = (row.get("Media Type", "") or "").strip().lower()
+    display_name = f"@{username.lstrip('@')}" if media_type != "article" and username else username
+
+    user_parts = []
+    if transcript:
+        user_parts.append(f"TRANSCRIPT:\n{transcript}")
+    if original_caption:
+        user_parts.append(f"ORIGINAL SOURCE TEXT:\n{original_caption}")
+    if caption_context:
+        user_parts.append(f"ADDITIONAL CONTEXT:\n{caption_context}")
+
+    if row.get("Speaker Name", "").strip():
+        user_parts.append(f"Featured person: {row['Speaker Name'].strip()}")
+
+    prompt = (
+        "Create three clickbait carousel slides as JSON with keys "
+        "\"name\", \"text1\", \"text2\", \"text3\".\n"
+        "- name: short username/domain label only\n"
+        "- text1: strong hook, max 150 characters\n"
+        "- text2: max 300 characters\n"
+        "- text3: max 300 characters\n"
+        "- no hashtags\n"
+        "- no intro labels like Slide 1\n"
+        "- keep each field as plain text only\n"
+        f"- use this label for name when possible: {display_name or 'unknown'}"
+    )
+
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": "You write concise viral political carousel copy and return valid JSON only."},
+            {"role": "user", "content": prompt + "\n\n" + "\n\n".join(user_parts)},
+        ],
+        max_tokens=500,
+        temperature=0.45,
+    )
+    raw = response.choices[0].message.content.strip()
+    match = re.search(r"\{.*\}", raw, re.DOTALL)
+    payload = json.loads(match.group(0) if match else raw)
+
+    return {
+        "name": (payload.get("name") or display_name or "").strip(),
+        "text1": (payload.get("text1") or "").strip()[:150],
+        "text2": (payload.get("text2") or "").strip()[:300],
+        "text3": (payload.get("text3") or "").strip()[:300],
+    }

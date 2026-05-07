@@ -23,7 +23,7 @@ import streamlit.components.v1 as components
 from article_source import fetch_article_source
 from config import DEFAULT_POST_FOOTER, GOOGLE_SHEET_ID, OPENAI_API_KEY
 from ingest_helpers import upload_media_bundle
-from pipeline_caption import generate_row_caption, _strip_top_comment_paragraphs
+from pipeline_caption import generate_carousel_copy, generate_row_caption, _strip_top_comment_paragraphs
 from post_scraper import process_url as process_post_url
 from reel_scraper import process_url as process_reel_url
 import sheets as sheet_ops
@@ -64,6 +64,7 @@ update_ingest_result = sheet_ops.update_ingest_result
 update_metadata = sheet_ops.update_metadata
 update_scheduled_times = sheet_ops.update_scheduled_times
 update_transcript = sheet_ops.update_transcript
+update_carousel_fields = getattr(sheet_ops, "update_carousel_fields", None)
 delete_sheet_row = sheet_ops.delete_row
 get_fundraising_links = getattr(sheet_ops, "get_fundraising_links", lambda _sheet_id: [])
 if hasattr(sheet_ops, "get_last_scheduled_times"):
@@ -1264,6 +1265,7 @@ def _process_pending_rows_from_sheet() -> int:
                         }
                     )
                     generated_caption = generate_row_caption(article_row)
+                    _write_carousel_fields(row_num, article_row)
                     if update_caption_and_metadata is not None:
                         update_caption_and_metadata(
                             GOOGLE_SHEET_ID,
@@ -1355,6 +1357,7 @@ def _rerun_with_transcript(row: dict, force_remote: bool = False) -> None:
     caption = generate_row_caption(updated_row)
     next_status = "skipped" if (row.get("Status", "") or "").strip().lower() == "skipped" else "done"
     update_caption(GOOGLE_SHEET_ID, row_num, caption, next_status)
+    _write_carousel_fields(row_num, updated_row)
 
 
 def _fetch_row_with_transcript(row: dict, download_media: bool = False, force_remote: bool = False) -> dict:
@@ -1512,6 +1515,7 @@ def _redo_caption_from_image_text(row: dict) -> None:
     caption = generate_row_caption(updated_row)
     next_status = "skipped" if (row.get("Status", "") or "").strip().lower() == "skipped" else "done"
     update_caption(GOOGLE_SHEET_ID, row_num, caption, next_status)
+    _write_carousel_fields(row_num, updated_row)
 
 
 def _generate_caption_for_row(row: dict) -> None:
@@ -1531,6 +1535,7 @@ def _generate_caption_for_row(row: dict) -> None:
     caption = generate_row_caption(updated_row)
     next_status = "skipped" if (row.get("Status", "") or "").strip().lower() == "skipped" else "done"
     update_caption(GOOGLE_SHEET_ID, row_num, caption, next_status)
+    _write_carousel_fields(row_num, updated_row)
 
 
 def _queue_workspace_action(row_number: int, action: str) -> None:
@@ -1607,6 +1612,20 @@ def _delete_workspace_row(row: dict) -> None:
             pending for pending in pending_transcribe_resets if pending != _workspace_key(row, "transcribe")
         ]
     _clear_workspace_row_state(row)
+
+
+def _write_carousel_fields(row_number: int, row: dict) -> None:
+    if update_carousel_fields is None:
+        return
+    carousel = generate_carousel_copy(row)
+    update_carousel_fields(
+        GOOGLE_SHEET_ID,
+        row_number,
+        carousel.get("name", ""),
+        carousel.get("text1", ""),
+        carousel.get("text2", ""),
+        carousel.get("text3", ""),
+    )
 
 
 def _run_home_mode(mode: str, urls: list[str], org_hashtag: str) -> tuple[str, list[dict]]:
