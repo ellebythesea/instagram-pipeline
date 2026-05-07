@@ -318,6 +318,7 @@ div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-test
 div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:nth-child(3) {
     grid-column: 3;
 }
+div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stCodeBlock"],
 div[data-testid="stVerticalBlock"]:has(.workspace-slides-anchor) [data-testid="stCodeBlock"] {
     margin: 0.2rem 0 0.35rem;
     min-height: 2.1rem;
@@ -325,12 +326,14 @@ div[data-testid="stVerticalBlock"]:has(.workspace-slides-anchor) [data-testid="s
     height: 2.1rem;
     overflow: hidden;
 }
+div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stCodeBlock"] > div,
 div[data-testid="stVerticalBlock"]:has(.workspace-slides-anchor) [data-testid="stCodeBlock"] > div {
     min-height: 2.1rem;
     max-height: 2.1rem;
     height: 2.1rem;
     overflow: hidden;
 }
+div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stCodeBlock"] pre,
 div[data-testid="stVerticalBlock"]:has(.workspace-slides-anchor) [data-testid="stCodeBlock"] pre {
     min-height: 2.1rem;
     max-height: 2.1rem;
@@ -342,6 +345,7 @@ div[data-testid="stVerticalBlock"]:has(.workspace-slides-anchor) [data-testid="s
     padding: 0.45rem 2.75rem 0.45rem 0.7rem;
     border-radius: 12px;
 }
+div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stCodeBlock"] code,
 div[data-testid="stVerticalBlock"]:has(.workspace-slides-anchor) [data-testid="stCodeBlock"] code {
     line-height: 1.1rem;
     font-size: 0.86rem;
@@ -351,6 +355,8 @@ div[data-testid="stVerticalBlock"]:has(.workspace-slides-anchor) [data-testid="s
     display: block;
     max-height: 1.1rem;
 }
+div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stCodeBlock"] code span,
+div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stCodeBlock"] code div,
 div[data-testid="stVerticalBlock"]:has(.workspace-slides-anchor) [data-testid="stCodeBlock"] code span,
 div[data-testid="stVerticalBlock"]:has(.workspace-slides-anchor) [data-testid="stCodeBlock"] code div {
     white-space: nowrap;

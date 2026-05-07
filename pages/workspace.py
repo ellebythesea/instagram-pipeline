@@ -1023,7 +1023,7 @@ def _render_workspace_link_dialog(row: dict) -> None:
 
 
 def _copy_block(label: str, value: str, key: str, empty_text: str = "(none)") -> None:
-    _one_line_copy_preview(label, value, key, empty_text)
+    st.code(value or empty_text, language=None)
     st.markdown(
         f'<div class="workspace-plain-copy-text">{html.escape(value or empty_text)}</div>',
         unsafe_allow_html=True,
@@ -1077,8 +1077,7 @@ def _one_line_copy_preview(label: str, value: str, key: str, empty_text: str = "
 
 
 def _tab_copy_preview(value: str, show_plain_text: bool = True) -> None:
-    cache_key = hashlib.md5((value or "(none)").encode("utf-8")).hexdigest()[:10]
-    _one_line_copy_preview("text", value, f"workspace_copy_{cache_key}")
+    st.code(value or "(none)", language=None)
     if show_plain_text:
         st.markdown(
             f'<div class="workspace-plain-copy-text">{html.escape(value or "(none)")}</div>',
@@ -1930,6 +1929,7 @@ active_tab = st.radio(
 )
 
 if active_tab == "Actions":
+    st.markdown('<div class="workspace-action-anchor"></div>', unsafe_allow_html=True)
     home_notice = st.session_state.pop("workspace_home_notice", "")
 
     mode_help = {
