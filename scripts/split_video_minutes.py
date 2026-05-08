@@ -20,7 +20,6 @@ SPLIT_DIR_SUFFIX = (
     Path("_apps")
     / "vioo instagram pipeline"
     / "instagram pipeline media"
-    / "splits"
 )
 
 SPLIT_DIR_CANDIDATES = [
