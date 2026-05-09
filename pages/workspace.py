@@ -1745,7 +1745,6 @@ def _copy_tabs(
     if is_instagram:
         tab_labels.append("Transcript")
     tab_labels.append("Slides")
-    tab_labels.append("Previews")
     media_links = [link.strip() for link in (media_link or "").split(",") if link.strip()]
     if media_links:
         tab_labels.append("Media")
@@ -1785,17 +1784,6 @@ def _copy_tabs(
         _tab_copy_preview(transcript)
     elif selected_tab == "Slides":
         prompt_key = f"workspace_row_slides_prompt_{row_num}"
-        st.markdown('<div class="workspace-row-slides-anchor"></div>', unsafe_allow_html=True)
-        st.code(slide_text1 or "(none)", language=None)
-        st.code(slide_text2 or "(none)", language=None)
-        st.code(slide_text3 or "(none)", language=None)
-        if st.button("Generate prompt", key=f"workspace_row_slides_build_{row_num}", width="stretch"):
-            st.session_state[prompt_key] = _build_single_row_chatgpt_prompt(prompt_row or {})
-            _rerun_workspace("Edit")
-        row_prompt = st.session_state.get(prompt_key, "")
-        if row_prompt:
-            _one_line_copy_preview("slide prompt", row_prompt, f"workspace_row_slides_prompt_preview_{row_num}")
-    elif selected_tab == "Previews":
         slide_one_font_adjust_key = f"workspace_slide_preview_font_adjust_{row_num}"
         slide_one_background_adjust_key = f"workspace_slide_preview_background_adjust_{row_num}"
         slide_two_font_adjust_key = f"workspace_slide_two_preview_font_adjust_{row_num}"
@@ -1811,6 +1799,7 @@ def _copy_tabs(
         slide_handle = current_speaker_name or username.strip()
         if slide_handle and slide_handle == username.strip() and not slide_handle.startswith("@"):
             slide_handle = f"@{slide_handle}"
+        st.markdown('<div class="workspace-row-slides-anchor"></div>', unsafe_allow_html=True)
         _render_slide_one_preview(
             slide_handle,
             slide_text1,
@@ -1865,6 +1854,15 @@ def _copy_tabs(
             st.caption("Preview PNGs")
             for item in preview_links:
                 st.link_button(item.get("label", "Open preview"), item.get("link", ""), width="stretch")
+        st.code(slide_text1 or "(none)", language=None)
+        st.code(slide_text2 or "(none)", language=None)
+        st.code(slide_text3 or "(none)", language=None)
+        if st.button("Generate prompt", key=f"workspace_row_slides_build_{row_num}", width="stretch"):
+            st.session_state[prompt_key] = _build_single_row_chatgpt_prompt(prompt_row or {})
+            _rerun_workspace("Edit")
+        row_prompt = st.session_state.get(prompt_key, "")
+        if row_prompt:
+            _one_line_copy_preview("slide prompt", row_prompt, f"workspace_row_slides_prompt_preview_{row_num}")
     elif selected_tab == "Media" and media_links:
         _one_line_copy_preview("media", "\n".join(media_links), f"workspace_media_links_{row_num}")
         st.markdown(
