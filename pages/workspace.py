@@ -1140,10 +1140,10 @@ def _render_slide_one_preview(
     <div style="margin-top: 1rem;">
       <style>
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap');
-        .workspace-preview-bleed {{
-          width: 100vw;
-          margin-left: calc(50% - 50vw);
-          margin-right: calc(50% - 50vw);
+        .workspace-preview-shell {{
+          width: 100%;
+          max-width: {PREVIEW_CANVAS_WIDTH_PX}px;
+          margin: 0 auto;
         }}
         .workspace-preview-card {{
           width: 100%;
@@ -1154,6 +1154,14 @@ def _render_slide_one_preview(
         .workspace-preview-canvas {{
           width: 100%;
           aspect-ratio: 4 / 5;
+        }}
+        @media (max-width: 768px) {{
+          .workspace-preview-shell {{
+            width: 100vw;
+            max-width: none;
+            margin-left: calc(50% - 50vw);
+            margin-right: calc(50% - 50vw);
+          }}
         }}
         .workspace-slide-preview-copy {{
           font-family: {PREVIEW_SLIDE_FONT_FAMILY} !important;
@@ -1170,7 +1178,7 @@ def _render_slide_one_preview(
       <div style="font-size: 0.82rem; font-weight: 500; color: #475569; margin-bottom: 0.5rem;">
         Slide 1 preview
       </div>
-      <div class="workspace-preview-bleed">
+      <div class="workspace-preview-shell">
         <div class="workspace-preview-card" style="background: #0f172a;">
           <div class="workspace-preview-canvas" style="
           position: relative;
@@ -1257,10 +1265,10 @@ def _render_text_slide_preview(
     <div style="margin-top: 1rem;">
       <style>
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
-        .workspace-preview-bleed {{
-          width: 100vw;
-          margin-left: calc(50% - 50vw);
-          margin-right: calc(50% - 50vw);
+        .workspace-preview-shell {{
+          width: 100%;
+          max-width: {PREVIEW_CANVAS_WIDTH_PX}px;
+          margin: 0 auto;
         }}
         .workspace-preview-card {{
           width: 100%;
@@ -1272,6 +1280,14 @@ def _render_text_slide_preview(
           width: 100%;
           aspect-ratio: 4 / 5;
         }}
+        @media (max-width: 768px) {{
+          .workspace-preview-shell {{
+            width: 100vw;
+            max-width: none;
+            margin-left: calc(50% - 50vw);
+            margin-right: calc(50% - 50vw);
+          }}
+        }}
         .workspace-text-slide-preview-copy {{
           font-family: {PREVIEW_SLIDE_FONT_FAMILY} !important;
           font-weight: {PREVIEW_SLIDE_FONT_WEIGHT} !important;
@@ -1280,7 +1296,7 @@ def _render_text_slide_preview(
       <div style="font-size: 0.82rem; font-weight: 600; color: #475569; margin-bottom: 0.5rem;">
         Slide {slide_number} preview
       </div>
-      <div class="workspace-preview-bleed">
+      <div class="workspace-preview-shell">
         <div class="workspace-preview-card" style="background: #121722;">
           <div class="workspace-preview-canvas workspace-text-slide-preview-copy" style="
           padding: 28px 26px 28px 26px;
@@ -1555,6 +1571,7 @@ def _process_pending_rows_from_sheet() -> int:
         label = row["Instagram URL"][:60]
         with st.status(f"Row {row_num}: {label}", expanded=False) as status_box:
             result = _ingest_row(row)
+            carousel_error = ""
             try:
                 update_ingest_result(
                     GOOGLE_SHEET_ID,
@@ -1606,7 +1623,10 @@ def _process_pending_rows_from_sheet() -> int:
                         }
                     )
                     generated_caption = generate_row_caption(ingested_row)
-                    _write_carousel_fields(row_num, ingested_row)
+                    try:
+                        _write_carousel_fields(row_num, ingested_row)
+                    except Exception as carousel_exception:
+                        carousel_error = describe_error(carousel_exception)
                     if update_caption_and_metadata is not None:
                         update_caption_and_metadata(
                             GOOGLE_SHEET_ID,
@@ -1629,8 +1649,13 @@ def _process_pending_rows_from_sheet() -> int:
                 else:
                     action_word = "ingested + captioned"
                     display_name = f"@{result['username']}" if result["username"] and result["media_type"] != "article" else result["username"]
+                    if carousel_error:
+                        action_word = f"{action_word} (slide copy warning)"
                     status_box.update(
-                        label=f"Row {row_num}: {action_word} - {display_name} ({result['media_type']})",
+                        label=(
+                            f"Row {row_num}: {action_word} - {display_name} ({result['media_type']})"
+                            + (f" - {carousel_error}" if carousel_error else "")
+                        ),
                         state="complete",
                     )
         progress.progress((i + 1) / len(pending))
