@@ -2,7 +2,9 @@
 
 import json
 import os
+import re
 from json import JSONDecodeError
+from urllib.parse import parse_qs, urlparse
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials as UserCredentials
@@ -81,6 +83,54 @@ def upload_to_drive(file_path: str, filename: str, folder_id: str) -> str:
     ).execute()
 
     return uploaded.get("webViewLink", "")
+
+
+def extract_drive_file_id(link: str) -> str:
+    match = re.search(r"/d/([a-zA-Z0-9_-]+)", link or "")
+    if match:
+        return match.group(1)
+    parsed = urlparse(link or "")
+    return parse_qs(parsed.query).get("id", [""])[0]
+
+
+def get_drive_file_metadata(link_or_file_id: str) -> dict:
+    service = _get_service()
+    file_id = extract_drive_file_id(link_or_file_id) or (link_or_file_id or "").strip()
+    if not file_id:
+        raise ValueError(f"Could not parse a Drive file id from {link_or_file_id!r}")
+    return (
+        service.files()
+        .get(
+            fileId=file_id,
+            fields="id,name,webViewLink,mimeType",
+            supportsAllDrives=True,
+        )
+        .execute()
+    )
+
+
+def copy_drive_file_to_folder(link_or_file_id: str, folder_id: str, filename: str = "") -> str:
+    service = _get_service()
+    metadata = get_drive_file_metadata(link_or_file_id)
+    body = {"parents": [folder_id]}
+    if filename.strip():
+        body["name"] = filename.strip()
+    copied = (
+        service.files()
+        .copy(
+            fileId=metadata["id"],
+            body=body,
+            fields="id,webViewLink",
+            supportsAllDrives=True,
+        )
+        .execute()
+    )
+    service.permissions().create(
+        fileId=copied["id"],
+        body={"type": "anyone", "role": "reader"},
+        supportsAllDrives=True,
+    ).execute()
+    return copied.get("webViewLink", "")
 
 
 def get_or_create_subfolder(parent_folder_id: str, folder_name: str) -> str:

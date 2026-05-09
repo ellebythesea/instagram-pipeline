@@ -3,14 +3,17 @@
 from datetime import datetime, time as dt_time, timedelta
 import ast
 import hashlib
+import json
+import html
 import os
 import re
 import shutil
+import subprocess
 import sys
+import tempfile
+import textwrap
 import time
-import json
 from urllib.parse import parse_qs, quote, urlparse
-import html
 import requests
 from zoneinfo import ZoneInfo
 
@@ -22,8 +25,9 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from article_source import fetch_article_source
-from config import DEFAULT_POST_FOOTER, GOOGLE_SHEET_ID, OPENAI_API_KEY
-from ingest_helpers import build_filename_prefix, upload_media_bundle
+from config import DEFAULT_POST_FOOTER, GOOGLE_DRIVE_FOLDER_ID, GOOGLE_SHEET_ID, OPENAI_API_KEY
+from drive import copy_drive_file_to_folder, get_drive_file_metadata, get_or_create_subfolder, upload_to_drive
+from ingest_helpers import _compact_post_date, build_filename_prefix, upload_media_bundle
 import pipeline_caption as pipeline_caption_ops
 from post_scraper import process_url as process_post_url
 from reel_scraper import process_url as process_reel_url
@@ -62,7 +66,11 @@ EDITABLE_STATUSES = {"ingested", "done"}
 TRANSCRIPT_SIZE_WARNING_BYTES = 100 * 1024 * 1024
 EDITOR_INITIAL_RENDER_LIMIT = 12
 INSTAGRAM_CANVAS_WIDTH_PX = 1080
-INSTAGRAM_CANVAS_HEIGHT_PX = 1620
+INSTAGRAM_CANVAS_HEIGHT_PX = 1485
+PREVIEW_EXPORT_WIDTH_PX = 1080
+PREVIEW_EXPORT_HEIGHT_PX = 1350
+PREVIEW_EXPORT_SCALE = PREVIEW_EXPORT_HEIGHT_PX / INSTAGRAM_CANVAS_HEIGHT_PX
+PREVIEW_EXPORT_FONT_SCALE = 0.92
 PREVIEW_CANVAS_WIDTH_PX = 420
 PREVIEW_CANVAS_HEIGHT_PX = round(
     PREVIEW_CANVAS_WIDTH_PX * INSTAGRAM_CANVAS_HEIGHT_PX / INSTAGRAM_CANVAS_WIDTH_PX
@@ -77,6 +85,7 @@ SLIDE_TWO_FONT_MAX_REM = 3.35
 SLIDE_THREE_FONT_MIN_REM = 1.5
 SLIDE_THREE_FONT_VW = 4.0
 SLIDE_THREE_FONT_MAX_REM = 3.0
+PREVIEW_UPLOAD_SUBFOLDER = "previews"
 client = openai.OpenAI(api_key=OPENAI_API_KEY, timeout=45.0, max_retries=1)
 PINNED_TOP_COMMENT_PREFIX = "[[TOP]] "
 
@@ -745,6 +754,301 @@ def _safe_browser_image_url(raw_value: str) -> str:
     return candidate if _is_https_url(candidate) else ""
 
 
+def _ffmpeg_filter_value(value: str) -> str:
+    return (
+        (value or "")
+        .replace("\\", "\\\\")
+        .replace(":", "\\:")
+        .replace("'", "\\'")
+        .replace(",", "\\,")
+    )
+
+
+def _preview_font_path(bold: bool = False) -> str:
+    candidates = (
+        [
+            "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+            "/System/Library/Fonts/Supplemental/Helvetica Bold.ttf",
+            "/Library/Fonts/Arial Bold.ttf",
+        ]
+        if bold else
+        [
+            "/System/Library/Fonts/Supplemental/Arial.ttf",
+            "/System/Library/Fonts/Supplemental/Helvetica.ttf",
+            "/Library/Fonts/Arial.ttf",
+        ]
+    )
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            return candidate
+    return ""
+
+
+def _preview_ffmpeg_path() -> str:
+    ffmpeg_path = shutil.which("ffmpeg")
+    if not ffmpeg_path:
+        raise RuntimeError("ffmpeg is not installed or not on PATH.")
+    return ffmpeg_path
+
+
+def _write_preview_text_file(tmp_dir: str, filename: str, value: str, wrap_width: int) -> str:
+    path = os.path.join(tmp_dir, filename)
+    wrapped_lines: list[str] = []
+    for raw_line in (value or "").splitlines() or [""]:
+        cleaned_line = raw_line.strip()
+        if not cleaned_line:
+            wrapped_lines.append("")
+            continue
+        wrapped_lines.extend(textwrap.wrap(cleaned_line, width=wrap_width, break_long_words=False) or [""])
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("\n".join(wrapped_lines).strip())
+    return path
+
+
+def _download_preview_background(url: str, tmp_dir: str) -> str:
+    if not _is_https_url(url):
+        return ""
+    output_path = os.path.join(tmp_dir, "preview_background.jpg")
+    response = requests.get(url, timeout=60)
+    response.raise_for_status()
+    with open(output_path, "wb") as handle:
+        handle.write(response.content)
+    return output_path
+
+
+def _preview_folder_base_name(username: str, media_link: str, row_num: int) -> tuple[str, str]:
+    cleaned_username = re.sub(r"[^A-Za-z0-9._-]+", "_", (username or "").strip().lstrip("@")).strip("._-")
+    if media_link:
+        try:
+            metadata = get_drive_file_metadata(media_link)
+            filename = (metadata.get("name") or "").strip()
+            stem = os.path.splitext(filename)[0]
+            match = re.match(r"(?P<username>[A-Za-z0-9._-]+)_(?P<date>\d{6})_", stem)
+            if match:
+                matched_username = (match.group("username") or "").strip("._-")
+                matched_date = (match.group("date") or "").strip()
+                return f"{matched_username}_{matched_date}", filename
+            date_match = re.search(r"(\d{6})", stem)
+            if cleaned_username and date_match:
+                return f"{cleaned_username}_{date_match.group(1)}", filename
+            if stem:
+                return stem, filename
+            return filename or f"{cleaned_username or 'row'}_{row_num}", filename
+        except Exception:
+            pass
+    fallback = f"{cleaned_username or 'row'}_{row_num}"
+    return fallback, ""
+
+
+def _render_slide_one_png(
+    output_path: str,
+    tmp_dir: str,
+    handle_text: str,
+    headline: str,
+    background_url: str,
+    headline_font_adjust_px: int = 0,
+    background_y_adjust_px: int = 0,
+) -> None:
+    ffmpeg_path = _preview_ffmpeg_path()
+    handle_file = _write_preview_text_file(tmp_dir, "slide1_handle.txt", (handle_text or "@UNKNOWN").upper(), 40)
+    headline_file = _write_preview_text_file(tmp_dir, "slide1_headline.txt", headline, 24)
+    bold_font = _preview_font_path(bold=True)
+    regular_font = _preview_font_path(bold=False) or bold_font
+    background_path = _download_preview_background(background_url, tmp_dir)
+    handle_font_clause = f":fontfile='{_ffmpeg_filter_value(regular_font)}'" if regular_font else ""
+    headline_font_clause = f":fontfile='{_ffmpeg_filter_value(bold_font)}'" if bold_font else ""
+    font_size = max(64, round((96 + int(headline_font_adjust_px)) * PREVIEW_EXPORT_FONT_SCALE))
+    y_offset = int(background_y_adjust_px)
+    overlay_y = round(720 * PREVIEW_EXPORT_SCALE)
+    overlay_h = round(900 * PREVIEW_EXPORT_SCALE)
+    handle_y = round(1000 * PREVIEW_EXPORT_SCALE)
+    headline_y = round(1080 * PREVIEW_EXPORT_SCALE)
+    handle_font_size = max(26, round(30 * PREVIEW_EXPORT_FONT_SCALE))
+    line_spacing = max(15, round(18 * PREVIEW_EXPORT_FONT_SCALE))
+    y_shift = round(y_offset * PREVIEW_EXPORT_SCALE)
+    y_pad_expr = f"(oh-ih)/2{y_shift:+d}"
+
+    if background_path:
+        input_args = ["-loop", "1", "-i", background_path]
+        filter_graph = (
+            f"[0:v]scale={PREVIEW_EXPORT_WIDTH_PX}:{PREVIEW_EXPORT_HEIGHT_PX}:force_original_aspect_ratio=decrease,"
+            f"pad={PREVIEW_EXPORT_WIDTH_PX}:{PREVIEW_EXPORT_HEIGHT_PX}:(ow-iw)/2:{y_pad_expr}:color=0x121722,"
+            f"drawbox=x=0:y={overlay_y}:w={PREVIEW_EXPORT_WIDTH_PX}:h={overlay_h}:color=0x121722@0.90:t=fill,"
+            f"drawtext=textfile='{_ffmpeg_filter_value(handle_file)}'{handle_font_clause}:"
+            f"fontcolor=white:fontsize={handle_font_size}:line_spacing=8:x=74:y={handle_y},"
+            f"drawtext=textfile='{_ffmpeg_filter_value(headline_file)}'{headline_font_clause}:"
+            f"fontcolor=white:fontsize={font_size}:line_spacing={line_spacing}:x=72:y={headline_y}"
+        )
+    else:
+        input_args = ["-f", "lavfi", "-i", f"color=c=#121722:s={PREVIEW_EXPORT_WIDTH_PX}x{PREVIEW_EXPORT_HEIGHT_PX}:d=1"]
+        filter_graph = (
+            f"drawtext=textfile='{_ffmpeg_filter_value(handle_file)}'{handle_font_clause}:"
+            f"fontcolor=white:fontsize={handle_font_size}:line_spacing=8:x=74:y={handle_y},"
+            f"drawtext=textfile='{_ffmpeg_filter_value(headline_file)}'{headline_font_clause}:"
+            f"fontcolor=white:fontsize={font_size}:line_spacing={line_spacing}:x=72:y={headline_y}"
+        )
+
+    command = [
+        ffmpeg_path,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        *input_args,
+        "-frames:v",
+        "1",
+        "-vf",
+        filter_graph,
+        output_path,
+    ]
+    subprocess.run(command, check=True)
+
+
+def _render_text_slide_png(
+    output_path: str,
+    tmp_dir: str,
+    body_text: str,
+    font_adjust_px: int = 0,
+    include_link_cta: bool = False,
+) -> None:
+    ffmpeg_path = _preview_ffmpeg_path()
+    body_file = _write_preview_text_file(tmp_dir, os.path.basename(output_path) + ".txt", body_text, 26)
+    cta_file = ""
+    bold_font = _preview_font_path(bold=True)
+    body_font_clause = f":fontfile='{_ffmpeg_filter_value(bold_font)}'" if bold_font else ""
+    body_font_size = max(52, round((74 + int(font_adjust_px)) * PREVIEW_EXPORT_FONT_SCALE))
+    body_y = round(78 * PREVIEW_EXPORT_SCALE)
+    body_line_spacing = max(14, round(16 * PREVIEW_EXPORT_FONT_SCALE))
+
+    filter_parts = [
+        f"drawtext=textfile='{_ffmpeg_filter_value(body_file)}'{body_font_clause}:fontcolor=white:fontsize={body_font_size}:"
+        f"line_spacing={body_line_spacing}:x=62:y={body_y}"
+    ]
+    if include_link_cta:
+        cta_file = _write_preview_text_file(tmp_dir, "slide3_cta.txt", "Comment LINK for more", 28)
+        cta_box_y = round(1380 * PREVIEW_EXPORT_SCALE)
+        cta_box_h = round(88 * PREVIEW_EXPORT_SCALE)
+        cta_text_y = round(1405 * PREVIEW_EXPORT_SCALE)
+        cta_font_size = max(32, round(36 * PREVIEW_EXPORT_FONT_SCALE))
+        filter_parts.extend(
+            [
+                f"drawbox=x=62:y={cta_box_y}:w=470:h={cta_box_h}:color=white@1.0:t=fill",
+                f"drawtext=textfile='{_ffmpeg_filter_value(cta_file)}'{body_font_clause}:fontcolor=#121722:fontsize={cta_font_size}:"
+                f"line_spacing=8:x=90:y={cta_text_y}",
+            ]
+        )
+
+    command = [
+        ffmpeg_path,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        f"color=c=#121722:s={PREVIEW_EXPORT_WIDTH_PX}x{PREVIEW_EXPORT_HEIGHT_PX}:d=1",
+        "-frames:v",
+        "1",
+        "-vf",
+        ",".join(filter_parts),
+        output_path,
+    ]
+    subprocess.run(command, check=True)
+
+
+def _upload_preview_pngs(
+    row_num: int,
+    username: str,
+    handle_text: str,
+    slide_text1: str,
+    slide_text2: str,
+    slide_text3: str,
+    background_url: str,
+    media_link: str = "",
+    slide_one_font_adjust: int = 0,
+    slide_one_background_adjust: int = 0,
+    slide_two_font_adjust: int = 0,
+    slide_three_font_adjust: int = 0,
+) -> list[dict[str, str]]:
+    if not GOOGLE_DRIVE_FOLDER_ID:
+        raise RuntimeError("GOOGLE_DRIVE_FOLDER_ID is not configured.")
+
+    preview_root_folder_id = get_or_create_subfolder(GOOGLE_DRIVE_FOLDER_ID, PREVIEW_UPLOAD_SUBFOLDER)
+    tmp_dir = tempfile.mkdtemp(prefix="workspace_previews_")
+    uploaded: list[dict[str, str]] = []
+    folder_base_name, source_filename = _preview_folder_base_name(username or handle_text, media_link, row_num)
+    preview_folder_id = get_or_create_subfolder(preview_root_folder_id, folder_base_name)
+    safe_handle = (handle_text or username or f"row_{row_num}").strip()
+
+    try:
+        slides_to_render: list[tuple[str, callable, dict]] = []
+        if (slide_text1 or "").strip():
+            slides_to_render.append(
+                (
+                    "slide1",
+                    _render_slide_one_png,
+                    {
+                        "handle_text": safe_handle,
+                        "headline": slide_text1,
+                        "background_url": background_url,
+                        "headline_font_adjust_px": slide_one_font_adjust,
+                        "background_y_adjust_px": slide_one_background_adjust,
+                    },
+                )
+            )
+        if (slide_text2 or "").strip():
+            slides_to_render.append(
+                (
+                    "slide2",
+                    _render_text_slide_png,
+                    {
+                        "body_text": slide_text2,
+                        "font_adjust_px": slide_two_font_adjust,
+                        "include_link_cta": False,
+                    },
+                )
+            )
+        if (slide_text3 or "").strip():
+            slides_to_render.append(
+                (
+                    "slide3",
+                    _render_text_slide_png,
+                    {
+                        "body_text": slide_text3,
+                        "font_adjust_px": slide_three_font_adjust,
+                        "include_link_cta": True,
+                    },
+                )
+            )
+        if not slides_to_render:
+            raise ValueError("No slide preview text is available to export.")
+
+        if media_link:
+            copied_media_link = copy_drive_file_to_folder(media_link, preview_folder_id, source_filename)
+            uploaded.append(
+                {
+                    "label": "Source video",
+                    "link": copied_media_link,
+                }
+            )
+
+        for suffix, renderer, kwargs in slides_to_render:
+            output_filename = f"{folder_base_name}_{suffix}.png"
+            output_path = os.path.join(tmp_dir, output_filename)
+            renderer(output_path=output_path, tmp_dir=tmp_dir, **kwargs)
+            uploaded.append(
+                {
+                    "label": suffix.replace("slide", "Slide "),
+                    "link": upload_to_drive(output_path, output_filename, preview_folder_id),
+                }
+            )
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    return uploaded
+
+
 def _is_https_url(value: str) -> bool:
     parsed = urlparse((value or "").strip())
     return parsed.scheme == "https" and bool(parsed.netloc)
@@ -1223,7 +1527,7 @@ def _render_slide_one_preview(
         }}
         .workspace-preview-canvas {{
           width: 100%;
-          aspect-ratio: 4 / 6;
+          aspect-ratio: 4 / 5.5;
         }}
         @media (max-width: 768px) {{
           .workspace-preview-shell {{
@@ -1348,7 +1652,7 @@ def _render_text_slide_preview(
         }}
         .workspace-preview-canvas {{
           width: 100%;
-          aspect-ratio: 4 / 6;
+          aspect-ratio: 4 / 5.5;
         }}
         @media (max-width: 768px) {{
           .workspace-preview-shell {{
@@ -1445,7 +1749,18 @@ def _copy_tabs(
     media_links = [link.strip() for link in (media_link or "").split(",") if link.strip()]
     if media_links:
         tab_labels.append("Media")
-    text_tabs = st.tabs(tab_labels)
+    tab_key = f"workspace_row_content_tab_{row_num}"
+    current_tab = st.session_state.get(tab_key, tab_labels[0])
+    if current_tab not in tab_labels:
+        current_tab = tab_labels[0]
+    selected_tab = st.radio(
+        "Content section",
+        tab_labels,
+        index=tab_labels.index(current_tab),
+        key=tab_key,
+        horizontal=True,
+        label_visibility="collapsed",
+    )
     original_preview = _build_original_caption_preview(
         original_caption,
         username,
@@ -1453,7 +1768,7 @@ def _copy_tabs(
         required_hashtags,
         is_instagram=is_instagram,
     )
-    with text_tabs[0]:
+    if selected_tab == "Caption":
         _tab_copy_preview(
             _caption_tab_value(
                 generated,
@@ -1464,15 +1779,12 @@ def _copy_tabs(
                 is_instagram,
             )
         )
-    with text_tabs[1]:
+    elif selected_tab == "Original caption":
         _tab_copy_preview(original_preview)
-    next_tab_index = 2
-    if is_instagram:
-        with text_tabs[next_tab_index]:
-            _tab_copy_preview(transcript)
-        next_tab_index += 1
-    prompt_key = f"workspace_row_slides_prompt_{row_num}"
-    with text_tabs[next_tab_index]:
+    elif selected_tab == "Transcript" and is_instagram:
+        _tab_copy_preview(transcript)
+    elif selected_tab == "Slides":
+        prompt_key = f"workspace_row_slides_prompt_{row_num}"
         st.markdown('<div class="workspace-row-slides-anchor"></div>', unsafe_allow_html=True)
         st.code(slide_text1 or "(none)", language=None)
         st.code(slide_text2 or "(none)", language=None)
@@ -1483,12 +1795,12 @@ def _copy_tabs(
         row_prompt = st.session_state.get(prompt_key, "")
         if row_prompt:
             _one_line_copy_preview("slide prompt", row_prompt, f"workspace_row_slides_prompt_preview_{row_num}")
-    next_tab_index += 1
-    with text_tabs[next_tab_index]:
+    elif selected_tab == "Previews":
         slide_one_font_adjust_key = f"workspace_slide_preview_font_adjust_{row_num}"
         slide_one_background_adjust_key = f"workspace_slide_preview_background_adjust_{row_num}"
         slide_two_font_adjust_key = f"workspace_slide_two_preview_font_adjust_{row_num}"
         slide_three_font_adjust_key = f"workspace_slide_three_preview_font_adjust_{row_num}"
+        preview_links_key = f"workspace_preview_upload_links_{row_num}"
         current_slide_one_font_adjust = int(st.session_state.get(slide_one_font_adjust_key, 0) or 0)
         current_slide_one_background_adjust = int(st.session_state.get(slide_one_background_adjust_key, 0) or 0)
         current_slide_two_font_adjust = int(st.session_state.get(slide_two_font_adjust_key, 0) or 0)
@@ -1527,24 +1839,48 @@ def _copy_tabs(
                 slide_three_font_adjust_key,
                 current_slide_three_font_adjust,
             )
-    next_tab_index += 1
-    if media_links:
-        with text_tabs[next_tab_index]:
-            _one_line_copy_preview("media", "\n".join(media_links), f"workspace_media_links_{row_num}")
-            st.markdown(
-                f'<div class="workspace-plain-copy-text">Drive media link{"" if len(media_links) == 1 else "s"}.</div>',
-                unsafe_allow_html=True,
-            )
-            st.markdown(
-                f'<div class="workspace-plain-copy-text">{html.escape(chr(10).join(media_links))}</div>',
-                unsafe_allow_html=True,
-            )
-            if (media_type or "").strip().lower() == "reel" and media_links:
-                st.link_button("Open reel in Drive", media_links[0], width="stretch")
+        if st.button("Upload preview PNGs to Drive", key=f"workspace_preview_upload_{row_num}", width="stretch"):
+            try:
+                with st.spinner("Rendering preview PNGs and uploading to Drive..."):
+                    st.session_state[preview_links_key] = _upload_preview_pngs(
+                        row_num,
+                        username,
+                        slide_handle,
+                        slide_text1,
+                        slide_text2,
+                        slide_text3,
+                        _safe_browser_image_url(thumbnail_link),
+                        media_links[0] if media_links else "",
+                        current_slide_one_font_adjust,
+                        current_slide_one_background_adjust,
+                        current_slide_two_font_adjust,
+                        current_slide_three_font_adjust,
+                    )
+            except Exception as e:
+                st.error(f"Could not upload preview PNGs: {describe_error(e)}")
             else:
-                for index, link in enumerate(media_links, start=1):
-                    label = "Open media in Drive" if len(media_links) == 1 else f"Open media {index} in Drive"
-                    st.link_button(label, link, width="stretch")
+                st.success("Preview PNGs uploaded to Drive.")
+        preview_links = st.session_state.get(preview_links_key, [])
+        if preview_links:
+            st.caption("Preview PNGs")
+            for item in preview_links:
+                st.link_button(item.get("label", "Open preview"), item.get("link", ""), width="stretch")
+    elif selected_tab == "Media" and media_links:
+        _one_line_copy_preview("media", "\n".join(media_links), f"workspace_media_links_{row_num}")
+        st.markdown(
+            f'<div class="workspace-plain-copy-text">Drive media link{"" if len(media_links) == 1 else "s"}.</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            f'<div class="workspace-plain-copy-text">{html.escape(chr(10).join(media_links))}</div>',
+            unsafe_allow_html=True,
+        )
+        if (media_type or "").strip().lower() == "reel" and media_links:
+            st.link_button("Open reel in Drive", media_links[0], width="stretch")
+        else:
+            for index, link in enumerate(media_links, start=1):
+                label = "Open media in Drive" if len(media_links) == 1 else f"Open media {index} in Drive"
+                st.link_button(label, link, width="stretch")
 
 
 def _icon_copy_button(label: str, value: str) -> None:

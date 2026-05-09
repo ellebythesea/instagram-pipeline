@@ -35,6 +35,7 @@ from drive import _get_service  # noqa: E402
 from pipeline_caption import generate_row_caption  # noqa: E402
 from sheets import get_all_rows, update_caption, update_metadata, update_transcript  # noqa: E402
 from utils.error_labels import describe_error  # noqa: E402
+from watch_split_folder import watch_folder  # noqa: E402
 
 
 MEDIA_DIR_SUFFIX = Path("_apps") / "vioo instagram pipeline" / "instagram pipeline media"
@@ -374,6 +375,8 @@ def main() -> int:
     if not media_root.exists():
         raise FileNotFoundError(f"Media directory does not exist: {media_root}")
     print(f"Using media directory: {media_root}")
+    print("Running split watcher until the media folder is idle...")
+    watch_folder(media_root, stop_when_idle=True)
 
     rows = get_all_rows(GOOGLE_SHEET_ID)
     targets = _eligible_rows(rows)

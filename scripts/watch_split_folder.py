@@ -10,6 +10,7 @@ Optional:
 
 from __future__ import annotations
 
+import argparse
 import sys
 import time
 from pathlib import Path
@@ -19,6 +20,7 @@ from split_video_minutes import VIDEO_SUFFIXES, default_split_dir, output_dir_fo
 
 POLL_SECONDS = 5
 STABLE_SECONDS = 10
+DEFAULT_IDLE_POLLS = 2
 
 
 def _video_files(folder: Path) -> list[Path]:
@@ -28,22 +30,49 @@ def _video_files(folder: Path) -> list[Path]:
     )
 
 
-def watch_folder(folder: Path) -> int:
+def _needs_split(folder: Path, video_path: Path) -> bool:
+    output_dir = output_dir_for_video(folder, video_path)
+    return not (output_dir.exists() and any(output_dir.glob("*.mp4")))
+
+
+def _split_existing_unsplit_videos(folder: Path) -> int:
+    processed = 0
+    for video_path in _video_files(folder):
+        if not _needs_split(folder, video_path):
+            continue
+        try:
+            split_video_file(video_path, folder)
+        except Exception as exc:
+            print(f"Failed to split {video_path.name}: {exc}")
+        else:
+            processed += 1
+    return processed
+
+
+def watch_folder(folder: Path, stop_when_idle: bool = False, idle_polls: int = DEFAULT_IDLE_POLLS) -> int:
     if not folder.exists():
         raise FileNotFoundError(f"Folder does not exist: {folder}")
     if not folder.is_dir():
         raise NotADirectoryError(f"Not a folder: {folder}")
 
     print(f"Watching {folder}")
+    processed_total = 0
+    startup_processed = _split_existing_unsplit_videos(folder)
+    processed_total += startup_processed
+    if startup_processed:
+        print(f"Startup pass split {startup_processed} existing video(s).")
+    else:
+        print("Startup pass found no unsplit existing videos.")
     seen_sizes: dict[Path, tuple[int, float]] = {}
+    idle_cycles = 0
 
     while True:
         current_files = set(_video_files(folder))
         current_time = time.time()
+        processed_this_cycle = 0
 
         for video_path in current_files:
-            output_dir = output_dir_for_video(folder, video_path)
-            if output_dir.exists() and any(output_dir.glob("*.mp4")):
+            if not _needs_split(folder, video_path):
                 continue
 
             stat = video_path.stat()
@@ -59,6 +88,7 @@ def watch_folder(folder: Path) -> int:
 
             try:
                 split_video_file(video_path, folder)
+                processed_this_cycle += 1
             except Exception as exc:
                 print(f"Failed to split {video_path.name}: {exc}")
             finally:
@@ -68,12 +98,31 @@ def watch_folder(folder: Path) -> int:
         for path in stale:
             seen_sizes.pop(path, None)
 
+        processed_total += processed_this_cycle
+        if stop_when_idle:
+            unsplit_remaining = any(_needs_split(folder, video_path) for video_path in current_files)
+            if not unsplit_remaining and not seen_sizes:
+                idle_cycles += 1
+            else:
+                idle_cycles = 0
+            if idle_cycles >= max(1, idle_polls):
+                print(f"Folder is idle. Stopping watcher after splitting {processed_total} video(s).")
+                return processed_total
+
         time.sleep(POLL_SECONDS)
 
 
 def main() -> int:
-    target = Path(sys.argv[1]).expanduser() if len(sys.argv) > 1 else default_split_dir()
-    watch_folder(target)
+    parser = argparse.ArgumentParser(description="Watch a folder and split videos into one-minute segments.")
+    parser.add_argument("folder", nargs="?", default="", help="Optional folder to watch.")
+    parser.add_argument(
+        "--until-idle",
+        action="store_true",
+        help="Stop automatically after the folder has no remaining unsplit videos for a couple of polls.",
+    )
+    args = parser.parse_args()
+    target = Path(args.folder).expanduser() if args.folder else default_split_dir()
+    watch_folder(target, stop_when_idle=args.until_idle)
     return 0
 
 
