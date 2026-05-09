@@ -62,7 +62,7 @@ EDITABLE_STATUSES = {"ingested", "done"}
 TRANSCRIPT_SIZE_WARNING_BYTES = 100 * 1024 * 1024
 EDITOR_INITIAL_RENDER_LIMIT = 12
 INSTAGRAM_CANVAS_WIDTH_PX = 1080
-INSTAGRAM_CANVAS_HEIGHT_PX = 1350
+INSTAGRAM_CANVAS_HEIGHT_PX = 1620
 PREVIEW_CANVAS_WIDTH_PX = 420
 PREVIEW_CANVAS_HEIGHT_PX = round(
     PREVIEW_CANVAS_WIDTH_PX * INSTAGRAM_CANVAS_HEIGHT_PX / INSTAGRAM_CANVAS_WIDTH_PX
@@ -1118,13 +1118,67 @@ def _one_line_copy_preview(label: str, value: str, key: str, empty_text: str = "
     st.html(component_html)
 
 
-def _tab_copy_preview(value: str, show_plain_text: bool = True) -> None:
+def _multiline_copy_preview(label: str, value: str, key: str, empty_text: str = "(none)") -> None:
+    display_text = value or empty_text
+    escaped_label = html.escape(label)
+    escaped_key = html.escape(key)
+    clipboard_text = json.dumps(value or "")
+    component_html = f"""
+    <div style="margin-top:0.5rem;" id="{escaped_key}">
+      <div style="
+        position: relative;
+        border: 1px solid rgba(15,23,42,0.08);
+        border-radius: 18px;
+        background: #f8fafc;
+        padding: 0.9rem 3.3rem 0.9rem 1rem;
+        box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+      ">
+        <pre style="
+          margin: 0;
+          white-space: pre-wrap;
+          word-break: break-word;
+          font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+          font-size: 0.88rem;
+          line-height: 1.35rem;
+          color: #0f172a;
+          max-height: 18rem;
+          overflow: auto;
+        ">{html.escape(display_text)}</pre>
+        <button
+          onclick='navigator.clipboard.writeText({clipboard_text})'
+          aria-label='Copy {escaped_label}'
+          style="
+            position: absolute;
+            top: 0.75rem;
+            right: 0.75rem;
+            width: 2.35rem;
+            height: 2.35rem;
+            border: 1px solid rgba(15,23,42,0.08);
+            border-radius: 16px;
+            background: white;
+            color: #0f172a;
+            font-size: 1rem;
+            line-height: 1;
+            cursor: pointer;
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+          "
+        >⧉</button>
+      </div>
+    </div>
+    """
+    st.html(component_html)
+
+
+def _tab_copy_preview(value: str, show_plain_text: bool = True, key: str = "") -> None:
     st.code(value or "(none)", language=None)
     if show_plain_text:
         st.markdown(
             f'<div class="workspace-plain-copy-text">{html.escape(value or "(none)")}</div>',
             unsafe_allow_html=True,
         )
+    else:
+        preview_key = key or f"workspace_multiline_copy_{hashlib.md5((value or '').encode('utf-8')).hexdigest()[:12]}"
+        _multiline_copy_preview("copy text", value or "(none)", preview_key)
 
 
 def _render_slide_one_preview(
@@ -1169,7 +1223,7 @@ def _render_slide_one_preview(
         }}
         .workspace-preview-canvas {{
           width: 100%;
-          aspect-ratio: 4 / 5;
+          aspect-ratio: 4 / 6;
         }}
         @media (max-width: 768px) {{
           .workspace-preview-shell {{
@@ -1294,7 +1348,7 @@ def _render_text_slide_preview(
         }}
         .workspace-preview-canvas {{
           width: 100%;
-          aspect-ratio: 4 / 5;
+          aspect-ratio: 4 / 6;
         }}
         @media (max-width: 768px) {{
           .workspace-preview-shell {{
@@ -2674,7 +2728,7 @@ if active_tab == "Slides":
             _rerun_workspace("Slides")
 
     if slides_prompt:
-        _tab_copy_preview(slides_prompt, show_plain_text=False)
+        _tab_copy_preview(slides_prompt, show_plain_text=False, key="workspace_slides_prompt_copy")
 
 if active_tab == "Home":
     default_day, default_time = _schedule_day_defaults()
