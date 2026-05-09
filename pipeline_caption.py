@@ -199,9 +199,13 @@ def generate_carousel_copy(row: dict) -> dict[str, str]:
         raise RuntimeError("OPENAI_API_KEY is not configured.")
 
     transcript, original_caption, caption_context = _row_source_text(row)
+    speaker_name = row.get("Speaker Name", "").strip()
     username = row.get("Source Username", "").strip()
     media_type = (row.get("Media Type", "") or "").strip().lower()
-    display_name = f"@{username.lstrip('@')}" if media_type != "article" and username else username
+    if speaker_name:
+        display_name = speaker_name
+    else:
+        display_name = f"@{username.lstrip('@')}" if media_type != "article" and username else username
 
     user_parts = []
     if transcript:

@@ -309,6 +309,29 @@ div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-t
     flex: 0 0 58%;
     width: 58%;
 }
+div[data-testid="stVerticalBlock"]:has(> div.workspace-preview-controls-anchor) {
+    max-width: 420px;
+    margin: 0.9rem auto 0;
+}
+div[data-testid="stVerticalBlock"]:has(> div.workspace-preview-controls-anchor) [role="radiogroup"] {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 0.65rem;
+    overflow-x: auto;
+    white-space: nowrap;
+    padding-bottom: 0.2rem;
+}
+div[data-testid="stVerticalBlock"]:has(> div.workspace-preview-controls-anchor) [role="radiogroup"] label {
+    min-width: 4.25rem;
+    justify-content: center;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: 14px;
+    background: #fff;
+    padding: 0.35rem 0.85rem;
+}
+div[data-testid="stVerticalBlock"]:has(> div.workspace-preview-controls-anchor) [role="radiogroup"] label p {
+    font-weight: 700;
+}
 div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stCodeBlock"] {
     margin: 0.2rem 0 0.35rem;
     min-height: 2.1rem;
@@ -499,6 +522,9 @@ div[data-testid="stVerticalBlock"]:has(> div.workspace-generate-anchor) {
     div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:last-child {
         flex: 0 0 56%;
         width: 56%;
+    }
+    div[data-testid="stVerticalBlock"]:has(> div.workspace-preview-controls-anchor) [role="radiogroup"] {
+        gap: 0.5rem;
     }
     div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] {
         display: grid;

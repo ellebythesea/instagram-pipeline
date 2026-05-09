@@ -61,6 +61,22 @@ ORG_HASHTAG_MAP = {
 EDITABLE_STATUSES = {"ingested", "done"}
 TRANSCRIPT_SIZE_WARNING_BYTES = 100 * 1024 * 1024
 EDITOR_INITIAL_RENDER_LIMIT = 12
+INSTAGRAM_CANVAS_WIDTH_PX = 1080
+INSTAGRAM_CANVAS_HEIGHT_PX = 1350
+PREVIEW_CANVAS_WIDTH_PX = 420
+PREVIEW_CANVAS_HEIGHT_PX = round(
+    PREVIEW_CANVAS_WIDTH_PX * INSTAGRAM_CANVAS_HEIGHT_PX / INSTAGRAM_CANVAS_WIDTH_PX
+)
+PREVIEW_SLIDE_FONT_FAMILY = "'Poppins', sans-serif"
+PREVIEW_SLIDE_FONT_WEIGHT = 500
+PREVIEW_SLIDE_LETTER_SPACING = "0.01em"
+PREVIEW_SLIDE_LINE_HEIGHT = "1.16"
+SLIDE_TWO_FONT_MIN_REM = 1.5
+SLIDE_TWO_FONT_VW = 4.4
+SLIDE_TWO_FONT_MAX_REM = 3.35
+SLIDE_THREE_FONT_MIN_REM = 1.6
+SLIDE_THREE_FONT_VW = 4.0
+SLIDE_THREE_FONT_MAX_REM = 3.0
 client = openai.OpenAI(api_key=OPENAI_API_KEY, timeout=45.0, max_retries=1)
 PINNED_TOP_COMMENT_PREFIX = "[[TOP]] "
 
@@ -378,7 +394,11 @@ def _default_editor_status(row: dict) -> str:
 
 
 def _sort_editor_rows(rows: list[dict]) -> list[dict]:
-    return sorted(rows, key=lambda row: row.get("row_number", 0))
+    def sort_key(row):
+        is_skipped = _cell_text(row.get("Status")).strip().lower() == "skipped"
+        return (1 if is_skipped else 0, row.get("row_number", 0))
+
+    return sorted(rows, key=sort_key)
 
 
 def _grid_badges(row: dict) -> list[tuple[str, str]]:
@@ -411,7 +431,8 @@ def _visible_rows_with_target(rows: list[dict], limit: int, target_row_number: s
     visible_rows = rows[:limit]
     if target_row_number:
         target_row = next((row for row in rows if str(row.get("row_number", "")) == target_row_number), None)
-        if target_row and all(row.get("row_number") != target_row.get("row_number") for row in visible_rows):
+        is_skipped = _cell_text((target_row or {}).get("Status")).strip().lower() == "skipped"
+        if target_row and not is_skipped and all(row.get("row_number") != target_row.get("row_number") for row in visible_rows):
             visible_rows = [*visible_rows, target_row]
     return visible_rows
 
@@ -713,6 +734,11 @@ def _drive_view_url(drive_link: str) -> str:
     if file_id:
         return f"https://drive.google.com/uc?export=view&id={file_id}"
     return ""
+
+
+def _safe_browser_image_url(raw_value: str) -> str:
+    candidate = _drive_view_url(raw_value) or _drive_image_url(raw_value) or _cell_text(raw_value).strip()
+    return candidate if _is_https_url(candidate) else ""
 
 
 def _is_https_url(value: str) -> bool:
@@ -1085,8 +1111,221 @@ def _tab_copy_preview(value: str, show_plain_text: bool = True) -> None:
         )
 
 
+def _render_slide_one_preview(
+    handle: str,
+    headline: str,
+    background_url: str = "",
+    headline_font_adjust_px: int = 0,
+    background_y_adjust_px: int = 0,
+) -> None:
+    headline_text = (headline or "").strip()
+    if not headline_text:
+        return
+
+    safe_handle = html.escape((handle or "").strip() or "@UNKNOWN")
+    safe_headline = html.escape(headline_text)
+    safe_background = html.escape(background_url.strip()) if background_url else ""
+    headline_clamp_css = (
+        f"clamp(calc(1.55rem + {headline_font_adjust_px}px), "
+        f"calc(4vw + {headline_font_adjust_px}px), "
+        f"calc(2.8rem + {headline_font_adjust_px}px))"
+    )
+    background_position = f"center {background_y_adjust_px}px"
+    background_css = (
+        f"background-image: url('{safe_background}'); background-size: cover; background-position: {background_position};"
+        if safe_background
+        else "background: linear-gradient(180deg, #54606f 0%, #1f2937 48%, #121722 100%);"
+    )
+    preview_html = f"""
+    <div style="margin-top: 1rem;">
+      <style>
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap');
+        .workspace-slide-preview-copy {{
+          font-family: {PREVIEW_SLIDE_FONT_FAMILY} !important;
+        }}
+        .workspace-slide-preview-handle {{
+          font-family: {PREVIEW_SLIDE_FONT_FAMILY} !important;
+          font-weight: 400 !important;
+        }}
+        .workspace-slide-preview-headline {{
+          font-family: {PREVIEW_SLIDE_FONT_FAMILY} !important;
+          font-weight: {PREVIEW_SLIDE_FONT_WEIGHT} !important;
+        }}
+      </style>
+      <div style="font-size: 0.82rem; font-weight: 500; color: #475569; margin-bottom: 0.5rem;">
+        Slide 1 preview
+      </div>
+      <div style="
+        width: 100%;
+        max-width: {PREVIEW_CANVAS_WIDTH_PX}px;
+        margin: 0 auto;
+        border-radius: 0;
+        overflow: hidden;
+        box-shadow: 0 24px 80px rgba(15, 23, 42, 0.22);
+        background: #0f172a;
+      ">
+        <div style="
+          position: relative;
+          width: 100%;
+          height: {PREVIEW_CANVAS_HEIGHT_PX}px;
+          display: flex;
+          flex-direction: column;
+          justify-content: flex-end;
+          {background_css}
+        ">
+          <div class="workspace-slide-preview-copy" style="
+            display: flex;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.8rem;
+            align-self: stretch;
+            padding: 78px 24px 24px 24px;
+            color: white;
+            font-family: {PREVIEW_SLIDE_FONT_FAMILY};
+            background: linear-gradient(180deg, rgba(18, 23, 34, 0) 0%, rgba(18, 23, 34, 0.9) 36.34%, #121722 80.76%);
+          ">
+            <div class="workspace-slide-preview-handle" style="
+              font-size: clamp(0.8rem, 1.15vw, 1rem);
+              letter-spacing: 0.3em;
+              line-height: 1.38;
+              text-transform: uppercase;
+              white-space: nowrap;
+            ">{safe_handle}</div>
+            <div class="workspace-slide-preview-headline" style="
+              font-size: {headline_clamp_css};
+              line-height: {PREVIEW_SLIDE_LINE_HEIGHT};
+              letter-spacing: {PREVIEW_SLIDE_LETTER_SPACING};
+            ">{safe_headline}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    """
+    st.html(preview_html)
+
+
+def _render_text_slide_preview(
+    slide_number: int,
+    body_text: str,
+    body_font_adjust_px: int = 0,
+    include_link_cta: bool = False,
+) -> None:
+    content_text = (body_text or "").strip()
+    if not content_text:
+        return
+
+    safe_body = html.escape(content_text)
+    if slide_number == 3:
+        body_clamp_css = (
+            f"clamp(calc({SLIDE_THREE_FONT_MIN_REM}rem + {body_font_adjust_px}px), "
+            f"calc({SLIDE_THREE_FONT_VW}vw + {body_font_adjust_px}px), "
+            f"calc({SLIDE_THREE_FONT_MAX_REM}rem + {body_font_adjust_px}px))"
+        )
+    else:
+        body_clamp_css = (
+            f"clamp(calc({SLIDE_TWO_FONT_MIN_REM}rem + {body_font_adjust_px}px), "
+            f"calc({SLIDE_TWO_FONT_VW}vw + {body_font_adjust_px}px), "
+            f"calc({SLIDE_TWO_FONT_MAX_REM}rem + {body_font_adjust_px}px))"
+        )
+    cta_html = ""
+    if include_link_cta:
+        cta_html = """
+            <div style="
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              margin-top: 1.2rem;
+              padding: 0.4rem 0.6rem;
+              border-radius: 2px;
+              background: #ffffff;
+              color: #121722;
+              font-size: clamp(0.95rem, 2vw, 1.15rem);
+              font-weight: 600;
+              line-height: 1.1;
+            ">Comment LINK for more</div>
+        """
+
+    preview_html = f"""
+    <div style="margin-top: 1rem;">
+      <style>
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+        .workspace-text-slide-preview-copy {{
+          font-family: {PREVIEW_SLIDE_FONT_FAMILY} !important;
+          font-weight: {PREVIEW_SLIDE_FONT_WEIGHT} !important;
+        }}
+      </style>
+      <div style="font-size: 0.82rem; font-weight: 600; color: #475569; margin-bottom: 0.5rem;">
+        Slide {slide_number} preview
+      </div>
+      <div style="
+        width: 100%;
+        max-width: {PREVIEW_CANVAS_WIDTH_PX}px;
+        margin: 0 auto;
+        border-radius: 0;
+        overflow: hidden;
+        box-shadow: 0 24px 80px rgba(15, 23, 42, 0.22);
+        background: #121722;
+      ">
+        <div class="workspace-text-slide-preview-copy" style="
+          height: {PREVIEW_CANVAS_HEIGHT_PX}px;
+          padding: 28px 26px 28px 26px;
+          color: #ffffff;
+          background: #121722;
+          font-size: {body_clamp_css};
+          line-height: {PREVIEW_SLIDE_LINE_HEIGHT};
+          letter-spacing: {PREVIEW_SLIDE_LETTER_SPACING};
+          overflow: hidden;
+          box-sizing: border-box;
+        ">
+          <div>{safe_body}</div>
+          {cta_html}
+        </div>
+      </div>
+    </div>
+    """
+    st.html(preview_html)
+
+
 def _build_single_row_chatgpt_prompt(row: dict) -> str:
     return _build_chatgpt_handoff_prompt([row])
+
+
+def _render_workspace_preview_control_bar(
+    control_id: str,
+    font_adjust_key: str,
+    current_font_adjust: int,
+    background_adjust_key: str | None = None,
+    current_background_adjust: int = 0,
+) -> None:
+    with st.container():
+        st.markdown('<div class="workspace-preview-controls-anchor"></div>', unsafe_allow_html=True)
+        options = ["A-", "A+"]
+        if background_adjust_key is not None:
+            options.extend(["Up", "Down"])
+        action_key = f"workspace_preview_action_picker_{control_id}"
+        action_reset_key = f"{action_key}_reset"
+        if st.session_state.pop(action_reset_key, False):
+            st.session_state.pop(action_key, None)
+        picked_action = st.radio(
+            "Preview controls",
+            options=options,
+            index=None,
+            key=action_key,
+            horizontal=True,
+            label_visibility="collapsed",
+        )
+        if picked_action:
+            if picked_action == "A-":
+                st.session_state[font_adjust_key] = max(-16, current_font_adjust - 2)
+            elif picked_action == "A+":
+                st.session_state[font_adjust_key] = min(24, current_font_adjust + 2)
+            elif picked_action == "Up" and background_adjust_key is not None:
+                st.session_state[background_adjust_key] = max(-200, current_background_adjust - 12)
+            elif picked_action == "Down" and background_adjust_key is not None:
+                st.session_state[background_adjust_key] = min(200, current_background_adjust + 12)
+            st.session_state[action_reset_key] = True
+            _rerun_workspace("Edit")
 
 
 def _copy_tabs(
@@ -1095,6 +1334,7 @@ def _copy_tabs(
     original_caption: str,
     transcript: str,
     username: str,
+    speaker_name: str,
     top_comment: str,
     required_hashtags: str,
     media_link: str = "",
@@ -1105,11 +1345,13 @@ def _copy_tabs(
     slide_text2: str = "",
     slide_text3: str = "",
     prompt_row: dict | None = None,
+    thumbnail_link: str = "",
 ) -> None:
     tab_labels = ["Caption", "Original caption"]
     if is_instagram:
         tab_labels.append("Transcript")
     tab_labels.append("Slides")
+    tab_labels.append("Previews")
     media_links = [link.strip() for link in (media_link or "").split(",") if link.strip()]
     if media_links:
         tab_labels.append("Media")
@@ -1151,6 +1393,50 @@ def _copy_tabs(
         row_prompt = st.session_state.get(prompt_key, "")
         if row_prompt:
             _one_line_copy_preview("slide prompt", row_prompt, f"workspace_row_slides_prompt_preview_{row_num}")
+    next_tab_index += 1
+    with text_tabs[next_tab_index]:
+        slide_one_font_adjust_key = f"workspace_slide_preview_font_adjust_{row_num}"
+        slide_one_background_adjust_key = f"workspace_slide_preview_background_adjust_{row_num}"
+        slide_two_font_adjust_key = f"workspace_slide_two_preview_font_adjust_{row_num}"
+        slide_three_font_adjust_key = f"workspace_slide_three_preview_font_adjust_{row_num}"
+        current_slide_one_font_adjust = int(st.session_state.get(slide_one_font_adjust_key, 0) or 0)
+        current_slide_one_background_adjust = int(st.session_state.get(slide_one_background_adjust_key, 0) or 0)
+        current_slide_two_font_adjust = int(st.session_state.get(slide_two_font_adjust_key, 0) or 0)
+        current_slide_three_font_adjust = int(st.session_state.get(slide_three_font_adjust_key, 0) or 0)
+        current_speaker_name = _cell_text(
+            st.session_state.get(f"workspace_speaker_row_{row_num}", speaker_name)
+        ).strip()
+        slide_handle = current_speaker_name or username.strip()
+        if slide_handle and slide_handle == username.strip() and not slide_handle.startswith("@"):
+            slide_handle = f"@{slide_handle}"
+        _render_slide_one_preview(
+            slide_handle,
+            slide_text1,
+            _safe_browser_image_url(thumbnail_link),
+            current_slide_one_font_adjust,
+            current_slide_one_background_adjust,
+        )
+        _render_workspace_preview_control_bar(
+            f"{row_num}_slide1",
+            slide_one_font_adjust_key,
+            current_slide_one_font_adjust,
+            slide_one_background_adjust_key,
+            current_slide_one_background_adjust,
+        )
+        if (slide_text2 or "").strip():
+            _render_text_slide_preview(2, slide_text2, current_slide_two_font_adjust)
+            _render_workspace_preview_control_bar(
+                f"{row_num}_slide2",
+                slide_two_font_adjust_key,
+                current_slide_two_font_adjust,
+            )
+        if (slide_text3 or "").strip():
+            _render_text_slide_preview(3, slide_text3, current_slide_three_font_adjust, include_link_cta=True)
+            _render_workspace_preview_control_bar(
+                f"{row_num}_slide3",
+                slide_three_font_adjust_key,
+                current_slide_three_font_adjust,
+            )
     next_tab_index += 1
     if media_links:
         with text_tabs[next_tab_index]:
@@ -2401,22 +2687,24 @@ if active_tab == "Home":
     if not editor_rows:
         st.info("No rows yet. Add a link on Actions or process new rows on Data.")
     else:
-
         query_row = str(st.query_params.get("workspace_row", "") or "")
         if query_row and st.session_state.get("workspace_target_row") != query_row:
             st.session_state["workspace_target_row"] = query_row
-        _render_editor_grid(editor_rows)
         show_full_list = st.checkbox(
             "Show full list",
             key="workspace_show_full_list",
         )
+        _render_editor_grid(editor_rows)
         visible_editor_rows = editor_rows if show_full_list else _visible_rows_with_target(
             editor_rows,
             EDITOR_INITIAL_RENDER_LIMIT,
             query_row,
         )
         if len(visible_editor_rows) < len(editor_rows):
-            st.caption(f"Showing {len(visible_editor_rows)} of {len(editor_rows)} rows. Rows stay here until you delete them from the sheet.")
+            st.caption(
+                f"Showing {len(visible_editor_rows)} of {len(editor_rows)} rows. "
+                "Rows stay here until you delete them from the sheet."
+            )
         else:
             st.caption("Rows stay here until you delete them from the sheet.")
         for row in visible_editor_rows:
@@ -2577,6 +2865,11 @@ if active_tab == "Home":
                             ):
                                 next_status = _default_editor_status(row) if status.strip().lower() == "skipped" else "skipped"
                                 update_status(GOOGLE_SHEET_ID, row_num, next_status)
+                                if next_status == "skipped":
+                                    if str(st.query_params.get("workspace_row", "") or "") == str(row_num):
+                                        st.query_params.pop("workspace_row", None)
+                                    if st.session_state.get("workspace_target_row") == str(row_num):
+                                        st.session_state.pop("workspace_target_row", None)
                                 _close_workspace_menu(row)
                                 st.session_state["workspace_success"] = (
                                     f"Row {row_num}: moved back into the main edit list."
@@ -2627,6 +2920,7 @@ if active_tab == "Home":
                         original_caption,
                         transcript,
                         username,
+                        speaker_name,
                         _decode_top_comment(st.session_state.get(top_key, row.get("Top Comment", "")).strip())[0],
                         st.session_state.get(hashtags_key, row.get("Required Hashtags", "")).strip(),
                         row.get("Media Drive Link", ""),
@@ -2637,6 +2931,7 @@ if active_tab == "Home":
                         _cell_text(row.get("text2")).strip(),
                         _cell_text(row.get("text3")).strip(),
                         row,
+                        _cell_text(row.get("Thumbnail Drive Link")).strip(),
                     )
 
             st.divider()
