@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -102,6 +103,14 @@ def _is_instagram_url(url: str) -> bool:
     return "instagram.com/" in (url or "").lower()
 
 
+def _row_has_caption_source(row: dict) -> bool:
+    return bool(
+        (row.get("Transcript") or "").strip()
+        or (row.get("Original Caption") or "").strip()
+        or (row.get("Caption Context") or "").strip()
+    )
+
+
 def _clean_public_url(link: str) -> str:
     parsed = urlparse((link or "").strip())
     if not parsed.scheme or not parsed.netloc:
@@ -184,15 +193,34 @@ def _is_media_decode_error(error: Exception) -> bool:
     )
 
 
-def _transcribe_with_audio_fallback(path: str, transcribe_file: Callable[[str], str]) -> str:
+def _stage_media_for_local_decode(path: str) -> str:
+    source = Path(path)
+    suffix = source.suffix or ".mp4"
+    staged_fd, staged_path = tempfile.mkstemp(suffix=suffix)
+    os.close(staged_fd)
     try:
-        return transcribe_file(path)
+        shutil.copyfile(source, staged_path)
+    except Exception:
+        try:
+            os.unlink(staged_path)
+        except Exception:
+            pass
+        raise
+    return staged_path
+
+
+def _transcribe_with_audio_fallback(path: str, transcribe_file: Callable[[str], str]) -> str:
+    staged_path = None
+    try:
+        staged_path = _stage_media_for_local_decode(path)
+        return transcribe_file(staged_path)
     except Exception as first_error:
         if not _is_media_decode_error(first_error):
             raise
         audio_path = None
         try:
-            audio_path = _extract_audio_for_transcription(path)
+            decode_source = staged_path or path
+            audio_path = _extract_audio_for_transcription(decode_source)
             return transcribe_file(audio_path)
         except NoTranscribableAudioError:
             raise
@@ -205,6 +233,11 @@ def _transcribe_with_audio_fallback(path: str, transcribe_file: Callable[[str], 
             if audio_path:
                 try:
                     os.unlink(audio_path)
+                except Exception:
+                    pass
+            if staged_path:
+                try:
+                    os.unlink(staged_path)
                 except Exception:
                     pass
 
@@ -260,7 +293,14 @@ def _eligible_rows(rows: list[dict]) -> list[dict]:
         media_type = (row.get("Media Type") or "").strip().lower()
         transcript = (row.get("Transcript") or "").strip()
         media_link = (row.get("Media Drive Link") or "").strip()
+        generated_caption = (row.get("Generated Caption") or "").strip()
+        status = (row.get("Status") or "").strip().lower()
+        if status.startswith("error") or status == "slides" or generated_caption:
+            continue
         if media_type == "reel" and not transcript and media_link:
+            eligible.append(row)
+            continue
+        if _row_has_caption_source(row):
             eligible.append(row)
     return eligible
 
@@ -291,6 +331,12 @@ def _update_caption_from_transcript(row: dict, transcript: str) -> None:
     else:
         next_status = "done"
     update_caption(GOOGLE_SHEET_ID, row["row_number"], caption, next_status)
+
+
+def _generate_caption_from_existing_sources(row: dict) -> None:
+    if not _row_has_caption_source(row):
+        raise ValueError("No transcript, original caption, or caption context available for caption generation.")
+    _update_caption_from_transcript(row, (row.get("Transcript") or "").strip())
 
 
 def main() -> int:
@@ -337,39 +383,49 @@ def main() -> int:
         targets = targets[: args.limit]
 
     if not targets:
-        print("No reel rows are missing transcripts.")
+        print("No rows need transcription or fallback caption generation.")
         return 0
 
     service = _get_service()
     transcribe = _get_local_transcriber(args.model)
 
-    print(f"Found {len(targets)} reel row(s) missing transcripts.")
+    print(f"Found {len(targets)} row(s) to process.")
     for row in targets:
         row_num = row["row_number"]
         url = (row.get("Instagram URL") or "").strip()
+        media_type = (row.get("Media Type") or "").strip().lower()
+        transcript = (row.get("Transcript") or "").strip()
         media_links = [link.strip() for link in (row.get("Media Drive Link") or "").split(",") if link.strip()]
-        if not media_links:
-            print(f"Row {row_num}: skipped, no Drive media link.")
-            continue
         step = "starting"
         try:
-            step = "looking up Drive filename"
-            filename = _drive_filename(service, media_links[0])
-            if not filename:
-                raise ValueError(f"Drive file did not return a filename for {media_links[0]!r}")
-            step = "finding local media file"
-            local_path = _find_local_media_path(media_root, filename)
-            step = f"transcribing {local_path.name}"
-            transcript = transcribe(str(local_path))
-            step = "writing transcript to Google Sheets"
-            update_transcript(GOOGLE_SHEET_ID, row_num, transcript)
-            step = "regenerating caption with OpenAI"
-            _update_caption_from_transcript(row, transcript)
-            print(f"Row {row_num}: transcribed and regenerated caption for {filename} ({url})")
-        except Exception as exc:
-            if isinstance(exc, NoTranscribableAudioError):
-                print(f"Row {row_num}: skipped while {step} - {describe_error(exc)}")
+            if media_type == "reel" and not transcript and media_links:
+                step = "looking up Drive filename"
+                filename = _drive_filename(service, media_links[0])
+                if not filename:
+                    raise ValueError(f"Drive file did not return a filename for {media_links[0]!r}")
+                step = "finding local media file"
+                local_path = _find_local_media_path(media_root, filename)
+                try:
+                    step = f"transcribing {local_path.name}"
+                    transcript = transcribe(str(local_path))
+                except NoTranscribableAudioError:
+                    step = "generating caption from existing source text"
+                    _generate_caption_from_existing_sources(row)
+                    print(
+                        f"Row {row_num}: no transcribable audio, generated caption from existing source text ({url})"
+                    )
+                    continue
+                step = "writing transcript to Google Sheets"
+                update_transcript(GOOGLE_SHEET_ID, row_num, transcript)
+                step = "regenerating caption with OpenAI"
+                _update_caption_from_transcript(row, transcript)
+                print(f"Row {row_num}: transcribed and regenerated caption for {filename} ({url})")
                 continue
+
+            step = "generating caption from existing source text"
+            _generate_caption_from_existing_sources(row)
+            print(f"Row {row_num}: generated caption from existing source text ({url})")
+        except Exception as exc:
             print(f"Row {row_num}: failed while {step} - {describe_error(exc)}")
             if args.debug:
                 traceback.print_exc()

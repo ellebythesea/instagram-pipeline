@@ -282,6 +282,7 @@ def _workspace_row_state_keys(row: dict) -> list[str]:
 def _sync_workspace_row_state(row: dict) -> None:
     identity_key = _workspace_stable_row_key(row, "identity")
     token_key = _workspace_stable_row_key(row, "state_token")
+    speaker_key = _workspace_speaker_key(row)
     current_identity = _workspace_row_identity(row)
     current_token = _row_state_token(row)
     previous_identity = st.session_state.get(identity_key)
@@ -292,6 +293,7 @@ def _sync_workspace_row_state(row: dict) -> None:
     if previous_token:
         tokens_to_clear.add(previous_token)
     if previous_identity is not None or previous_token is not None:
+        st.session_state.pop(speaker_key, None)
         for token in tokens_to_clear:
             for key in _workspace_row_state_keys_for_token(token):
                 st.session_state.pop(key, None)
@@ -302,10 +304,12 @@ def _sync_workspace_row_state(row: dict) -> None:
 def _clear_workspace_row_state(row: dict) -> None:
     identity_key = _workspace_stable_row_key(row, "identity")
     token_key = _workspace_stable_row_key(row, "state_token")
+    speaker_key = _workspace_speaker_key(row)
     previous_token = st.session_state.get(token_key)
     tokens_to_clear = {_row_state_token(row)}
     if previous_token:
         tokens_to_clear.add(previous_token)
+    st.session_state.pop(speaker_key, None)
     for token in tokens_to_clear:
         for key in _workspace_row_state_keys_for_token(token):
             st.session_state.pop(key, None)
@@ -925,30 +929,42 @@ def _current_row_caption_inputs(row: dict) -> dict:
 
 def _save_all_workspace_speaker_names(rows: list[dict]) -> int:
     updated_count = 0
+    intended_updates: dict[int, str] = {}
     for row in rows:
-        speaker_key = _workspace_speaker_key(row)
-        current_speaker = _cell_text(st.session_state.get(speaker_key, row.get("Speaker Name", ""))).strip()
+        current_inputs = _current_row_caption_inputs(row)
+        current_speaker = current_inputs["Speaker Name"]
         saved_speaker = _cell_text(row.get("Speaker Name")).strip()
         if current_speaker == saved_speaker:
             continue
-        current_context = _cell_text(st.session_state.get(_workspace_key(row, "context"), row.get("Caption Context", ""))).strip()
-        current_hashtags = _cell_text(st.session_state.get(_workspace_key(row, "hashtags"), row.get("Required Hashtags", ""))).strip()
-        current_top = _cell_text(st.session_state.get(_workspace_key(row, "top"), row.get("Top Comment", ""))).strip()
         update_metadata(
             GOOGLE_SHEET_ID,
             row["row_number"],
-            current_context,
+            current_inputs["Caption Context"],
             current_speaker,
-            current_hashtags,
-            current_top,
+            current_inputs["Required Hashtags"],
+            current_inputs["Top Comment"],
             "",
         )
+        st.session_state[_workspace_speaker_key(row)] = current_speaker
+        intended_updates[row["row_number"]] = current_speaker
         updated_count += 1
+
+    if intended_updates:
+        refreshed_rows = {
+            refreshed["row_number"]: _cell_text(refreshed.get("Speaker Name")).strip()
+            for refreshed in get_all_rows(GOOGLE_SHEET_ID)
+            if refreshed.get("row_number") in intended_updates
+        }
+        mismatched = [
+            f"row {row_number}"
+            for row_number, expected in intended_updates.items()
+            if refreshed_rows.get(row_number, "") != expected
+        ]
+        if mismatched:
+            raise RuntimeError(
+                "Speaker name update did not persist for " + ", ".join(mismatched[:5]) + "."
+            )
     return updated_count
-
-
-def _save_workspace_speaker_name(row: dict) -> bool:
-    return bool(_save_all_workspace_speaker_names([row]))
 
 
 def _dirty_workspace_speaker_rows(rows: list[dict]) -> list[dict]:
@@ -1571,7 +1587,6 @@ def _process_pending_rows_from_sheet() -> int:
         label = row["Instagram URL"][:60]
         with st.status(f"Row {row_num}: {label}", expanded=False) as status_box:
             result = _ingest_row(row)
-            carousel_error = ""
             try:
                 update_ingest_result(
                     GOOGLE_SHEET_ID,
@@ -1625,8 +1640,8 @@ def _process_pending_rows_from_sheet() -> int:
                     generated_caption = generate_row_caption(ingested_row)
                     try:
                         _write_carousel_fields(row_num, ingested_row)
-                    except Exception as carousel_exception:
-                        carousel_error = describe_error(carousel_exception)
+                    except Exception:
+                        pass
                     if update_caption_and_metadata is not None:
                         update_caption_and_metadata(
                             GOOGLE_SHEET_ID,
@@ -1649,12 +1664,9 @@ def _process_pending_rows_from_sheet() -> int:
                 else:
                     action_word = "ingested + captioned"
                     display_name = f"@{result['username']}" if result["username"] and result["media_type"] != "article" else result["username"]
-                    if carousel_error:
-                        action_word = f"{action_word} (slide copy warning)"
                     status_box.update(
                         label=(
                             f"Row {row_num}: {action_word} - {display_name} ({result['media_type']})"
-                            + (f" - {carousel_error}" if carousel_error else "")
                         ),
                         state="complete",
                     )
@@ -1718,13 +1730,14 @@ def _ingest_row(row: dict) -> dict:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
-def _rerun_with_transcript(row: dict, force_remote: bool = False) -> None:
+def _rerun_with_transcript(row: dict, force_remote: bool = False) -> bool:
     updated_row = _fetch_row_with_transcript(row, force_remote=force_remote)
     row_num = row["row_number"]
     caption = generate_row_caption(updated_row)
     next_status = "skipped" if (row.get("Status", "") or "").strip().lower() == "skipped" else "done"
     update_caption(GOOGLE_SHEET_ID, row_num, caption, next_status)
     _write_carousel_fields(row_num, updated_row)
+    return bool((updated_row.get("Transcript") or "").strip())
 
 
 def _fetch_row_with_transcript(row: dict, download_media: bool = False, force_remote: bool = False) -> dict:
@@ -1749,9 +1762,6 @@ def _fetch_row_with_transcript(row: dict, download_media: bool = False, force_re
     try:
         refreshed = process_reel_url(url, include_transcript=True)
         transcript = (refreshed.get("transcript") or "").strip()
-        if not transcript:
-            raise ValueError("Apify did not return a transcript for this reel.")
-
         if download_media:
             filename_prefix = build_filename_prefix(row_num, refreshed.get("username") or row.get("Source Username", ""))
             uploaded = upload_media_bundle(refreshed, filename_prefix=filename_prefix)
@@ -1770,7 +1780,8 @@ def _fetch_row_with_transcript(row: dict, download_media: bool = False, force_re
                 status_value,
             )
         else:
-            update_transcript(GOOGLE_SHEET_ID, row_num, transcript)
+            if transcript:
+                update_transcript(GOOGLE_SHEET_ID, row_num, transcript)
             uploaded = {
                 "media_link": row.get("Media Drive Link", ""),
                 "thumbnail_link": row.get("Thumbnail Drive Link", ""),
@@ -1953,8 +1964,13 @@ def _process_next_workspace_action() -> None:
     try:
         if action == "transcript":
             with st.spinner(f"Refreshing row {row_number} with transcript..."):
-                _rerun_with_transcript(row, force_remote=True)
-            st.session_state["workspace_success"] = f"Row {row_number}: transcript rerun complete."
+                transcript_found = _rerun_with_transcript(row, force_remote=True)
+            if transcript_found:
+                st.session_state["workspace_success"] = f"Row {row_number}: transcript rerun complete."
+            else:
+                st.session_state["workspace_success"] = (
+                    f"Row {row_number}: no transcript was available, so the caption was generated from existing source text."
+                )
         elif action == "generate_caption":
             with st.spinner(f"Generating caption for row {row_number}..."):
                 _generate_caption_for_row(row)
@@ -2528,15 +2544,12 @@ if active_tab == "Actions":
             _rerun_workspace("Actions")
 
     with button_area:
-        clear_col, action_col = st.columns([1, 3])
-        with clear_col:
-            if st.button("Clear", width="stretch", key="workspace_home_clear"):
-                st.session_state.pop("workspace_home_results", None)
-                st.session_state.pop("workspace_home_notice", None)
-                _reset_home_links_on_next_render()
-                _rerun_workspace("Actions")
-        with action_col:
-            submitted = st.button(_action_label(mode), type="primary", width="stretch")
+        submitted = st.button(_action_label(mode), type="primary", width="stretch")
+        if st.button("Clear", width="stretch", key="workspace_home_clear"):
+            st.session_state.pop("workspace_home_results", None)
+            st.session_state.pop("workspace_home_notice", None)
+            _reset_home_links_on_next_render()
+            _rerun_workspace("Actions")
         if submitted:
             links_to_process = _clean_home_links()
             if not links_to_process:
@@ -2795,30 +2808,12 @@ if active_tab == "Home":
                     else:
                         st.markdown(f"#### Row {row_num}")
 
-                    with st.form(f"workspace_speaker_form_{row_num}", clear_on_submit=False):
-                        st.text_input(
-                            "Speaker Name",
-                            value=speaker_name,
-                            key=speaker_key,
-                            placeholder="Enter name",
-                        )
-                        save_name = st.form_submit_button(
-                            "Update name",
-                            type="primary",
-                            width="stretch",
-                        )
-                    if save_name:
-                        try:
-                            changed = _save_workspace_speaker_name(row)
-                        except Exception as e:
-                            st.session_state["workspace_error"] = f"Row {row_num}: could not save name - {describe_error(e)}"
-                        else:
-                            st.session_state["workspace_success"] = (
-                                f"Row {row_num}: speaker name saved."
-                                if changed
-                                else f"Row {row_num}: no name change to save."
-                            )
-                        _rerun_workspace("Edit")
+                    st.text_input(
+                        "Speaker Name",
+                        value=speaker_name,
+                        key=speaker_key,
+                        placeholder="Enter name",
+                    )
                     if _is_reel_url(url):
                         pending_transcribe_resets = st.session_state.setdefault("workspace_transcribe_reset_rows", [])
                         if transcribe_key in pending_transcribe_resets:
