@@ -71,10 +71,10 @@ PREVIEW_SLIDE_FONT_FAMILY = "'Poppins', sans-serif"
 PREVIEW_SLIDE_FONT_WEIGHT = 500
 PREVIEW_SLIDE_LETTER_SPACING = "0.01em"
 PREVIEW_SLIDE_LINE_HEIGHT = "1.16"
-SLIDE_TWO_FONT_MIN_REM = 1.5
+SLIDE_TWO_FONT_MIN_REM = 1.4
 SLIDE_TWO_FONT_VW = 4.4
 SLIDE_TWO_FONT_MAX_REM = 3.35
-SLIDE_THREE_FONT_MIN_REM = 1.6
+SLIDE_THREE_FONT_MIN_REM = 1.5
 SLIDE_THREE_FONT_VW = 4.0
 SLIDE_THREE_FONT_MAX_REM = 3.0
 client = openai.OpenAI(api_key=OPENAI_API_KEY, timeout=45.0, max_retries=1)
@@ -737,7 +737,7 @@ def _drive_view_url(drive_link: str) -> str:
 
 
 def _safe_browser_image_url(raw_value: str) -> str:
-    candidate = _drive_view_url(raw_value) or _drive_image_url(raw_value) or _cell_text(raw_value).strip()
+    candidate = _drive_image_url(raw_value) or _drive_view_url(raw_value) or _cell_text(raw_value).strip()
     return candidate if _is_https_url(candidate) else ""
 
 
