@@ -1,5 +1,6 @@
 """Google Drive upload helper."""
 
+import io
 import json
 import os
 import re
@@ -10,7 +11,7 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials as UserCredentials
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
+from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 
 from config import (
     GOOGLE_OAUTH_CLIENT_JSON,
@@ -131,6 +132,20 @@ def copy_drive_file_to_folder(link_or_file_id: str, folder_id: str, filename: st
         supportsAllDrives=True,
     ).execute()
     return copied.get("webViewLink", "")
+
+
+def download_drive_file(link_or_file_id: str, dest_path: str) -> str:
+    service = _get_service()
+    metadata = get_drive_file_metadata(link_or_file_id)
+    request = service.files().get_media(fileId=metadata["id"], supportsAllDrives=True)
+    buffer = io.BytesIO()
+    downloader = MediaIoBaseDownload(buffer, request)
+    done = False
+    while not done:
+        _status, done = downloader.next_chunk()
+    with open(dest_path, "wb") as handle:
+        handle.write(buffer.getvalue())
+    return dest_path
 
 
 def get_or_create_subfolder(parent_folder_id: str, folder_name: str) -> str:

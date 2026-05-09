@@ -194,6 +194,10 @@ def generate_row_caption(row: dict) -> str:
 
 
 def generate_carousel_copy(row: dict) -> dict[str, str]:
+    return generate_carousel_copy_with_model(row, model="gpt-4o")
+
+
+def generate_carousel_copy_with_model(row: dict, model: str = "gpt-4o") -> dict[str, str]:
     """Generate Figma/Google Sync carousel fields."""
     if not OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY is not configured.")
@@ -232,7 +236,7 @@ def generate_carousel_copy(row: dict) -> dict[str, str]:
     )
 
     response = client.chat.completions.create(
-        model="gpt-4o",
+        model=model,
         messages=[
             {"role": "system", "content": "You write concise viral political carousel copy and return valid JSON only."},
             {"role": "user", "content": prompt + "\n\n" + "\n\n".join(user_parts)},

@@ -25,8 +25,20 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from article_source import fetch_article_source
-from config import DEFAULT_POST_FOOTER, GOOGLE_DRIVE_FOLDER_ID, GOOGLE_SHEET_ID, OPENAI_API_KEY
-from drive import copy_drive_file_to_folder, get_drive_file_metadata, get_or_create_subfolder, upload_to_drive
+from config import (
+    DEFAULT_POST_FOOTER,
+    GOOGLE_DRIVE_FOLDER_ID,
+    GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER,
+    GOOGLE_SHEET_ID,
+    OPENAI_API_KEY,
+)
+from drive import (
+    copy_drive_file_to_folder,
+    download_drive_file,
+    get_drive_file_metadata,
+    get_or_create_subfolder,
+    upload_to_drive,
+)
 from ingest_helpers import _compact_post_date, build_filename_prefix, upload_media_bundle
 import pipeline_caption as pipeline_caption_ops
 from post_scraper import process_url as process_post_url
@@ -38,6 +50,11 @@ from utils.styles import inject as inject_styles
 
 generate_row_caption = pipeline_caption_ops.generate_row_caption
 _strip_top_comment_paragraphs = pipeline_caption_ops._strip_top_comment_paragraphs
+generate_carousel_copy_with_model = getattr(
+    pipeline_caption_ops,
+    "generate_carousel_copy_with_model",
+    lambda row, model="gpt-4o": pipeline_caption_ops.generate_carousel_copy(row),
+)
 generate_carousel_copy = getattr(
     pipeline_caption_ops,
     "generate_carousel_copy",
@@ -98,6 +115,7 @@ update_ingest_result = sheet_ops.update_ingest_result
 update_metadata = sheet_ops.update_metadata
 update_scheduled_times = sheet_ops.update_scheduled_times
 update_transcript = sheet_ops.update_transcript
+update_thumbnail_link = getattr(sheet_ops, "update_thumbnail_link", None)
 update_carousel_fields = getattr(sheet_ops, "update_carousel_fields", None)
 delete_sheet_row = sheet_ops.delete_row
 get_fundraising_links = getattr(sheet_ops, "get_fundraising_links", lambda _sheet_id: [])
@@ -840,6 +858,87 @@ def _preview_folder_base_name(username: str, media_link: str, row_num: int) -> t
     return fallback, ""
 
 
+def _ffprobe_path() -> str:
+    ffprobe_path = shutil.which("ffprobe")
+    if not ffprobe_path:
+        raise RuntimeError("ffprobe is not installed or not on PATH.")
+    return ffprobe_path
+
+
+def _video_duration_seconds(path: str) -> float:
+    command = [
+        _ffprobe_path(),
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        path,
+    ]
+    result = subprocess.run(command, capture_output=True, text=True, check=True)
+    duration_text = (result.stdout or "").strip()
+    return float(duration_text) if duration_text else 0.0
+
+
+def _refresh_row_thumbnail_from_video(row: dict, offset_seconds: float = 5.0) -> str:
+    if update_thumbnail_link is None:
+        raise RuntimeError("Thumbnail link updates are not supported in this build.")
+
+    media_links = [link.strip() for link in (_cell_text(row.get("Media Drive Link")) or "").split(",") if link.strip()]
+    if not media_links:
+        raise ValueError("This row does not have a Drive video link yet.")
+
+    media_link = media_links[0]
+    metadata = get_drive_file_metadata(media_link)
+    filename = (metadata.get("name") or "").strip()
+    if not filename:
+        raise ValueError("Could not determine the video filename from Drive.")
+
+    row_num = row["row_number"]
+    tmp_dir = tempfile.mkdtemp(prefix="workspace_thumb_")
+    try:
+        local_video_path = os.path.join(tmp_dir, filename or f"row_{row_num}.mp4")
+        download_drive_file(media_link, local_video_path)
+
+        duration_seconds = 0.0
+        try:
+            duration_seconds = _video_duration_seconds(local_video_path)
+        except Exception:
+            duration_seconds = 0.0
+        capture_seconds = offset_seconds
+        if duration_seconds > 0:
+            capture_seconds = min(offset_seconds, max(0.0, duration_seconds - 0.25))
+
+        screenshots_folder_id = get_or_create_subfolder(
+            GOOGLE_DRIVE_FOLDER_ID,
+            GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER,
+        )
+        stem, _ext = os.path.splitext(filename)
+        screenshot_name = f"{stem}_thumb_{int(round(capture_seconds))}s.jpg"
+        screenshot_path = os.path.join(tmp_dir, screenshot_name)
+        command = [
+            shutil.which("ffmpeg") or "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-ss",
+            f"{capture_seconds:.3f}",
+            "-i",
+            local_video_path,
+            "-frames:v",
+            "1",
+            screenshot_path,
+        ]
+        subprocess.run(command, check=True)
+        thumbnail_link = upload_to_drive(screenshot_path, screenshot_name, screenshots_folder_id)
+        update_thumbnail_link(GOOGLE_SHEET_ID, row_num, thumbnail_link)
+        return thumbnail_link
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
 def _render_slide_one_png(
     output_path: str,
     tmp_dir: str,
@@ -966,6 +1065,10 @@ def _upload_preview_pngs(
     slide_text3: str,
     background_url: str,
     media_link: str = "",
+    preview_folder_id: str = "",
+    folder_base_name: str = "",
+    source_filename: str = "",
+    include_source_video: bool = True,
     slide_one_font_adjust: int = 0,
     slide_one_background_adjust: int = 0,
     slide_two_font_adjust: int = 0,
@@ -974,11 +1077,17 @@ def _upload_preview_pngs(
     if not GOOGLE_DRIVE_FOLDER_ID:
         raise RuntimeError("GOOGLE_DRIVE_FOLDER_ID is not configured.")
 
-    preview_root_folder_id = get_or_create_subfolder(GOOGLE_DRIVE_FOLDER_ID, PREVIEW_UPLOAD_SUBFOLDER)
     tmp_dir = tempfile.mkdtemp(prefix="workspace_previews_")
     uploaded: list[dict[str, str]] = []
-    folder_base_name, source_filename = _preview_folder_base_name(username or handle_text, media_link, row_num)
-    preview_folder_id = get_or_create_subfolder(preview_root_folder_id, folder_base_name)
+    if not preview_folder_id or not folder_base_name:
+        preview_folder_id, folder_base_name, resolved_source_filename = _ensure_preview_folder(
+            row_num,
+            username,
+            handle_text,
+            media_link,
+        )
+        if not source_filename:
+            source_filename = resolved_source_filename
     safe_handle = (handle_text or username or f"row_{row_num}").strip()
 
     try:
@@ -1024,8 +1133,8 @@ def _upload_preview_pngs(
         if not slides_to_render:
             raise ValueError("No slide preview text is available to export.")
 
-        if media_link:
-            copied_media_link = copy_drive_file_to_folder(media_link, preview_folder_id, source_filename)
+        if media_link and include_source_video:
+            copied_media_link = _copy_source_video_into_preview_folder(media_link, preview_folder_id, source_filename)
             uploaded.append(
                 {
                     "label": "Source video",
@@ -1047,6 +1156,116 @@ def _upload_preview_pngs(
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
     return uploaded
+
+
+def _segment_name(index: int) -> str:
+    words = [
+        "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+        "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen",
+        "eighteen", "nineteen", "twenty", "twenty_one", "twenty_two", "twenty_three",
+        "twenty_four", "twenty_five", "twenty_six", "twenty_seven", "twenty_eight",
+        "twenty_nine", "thirty", "thirty_one", "thirty_two", "thirty_three",
+        "thirty_four", "thirty_five", "thirty_six", "thirty_seven", "thirty_eight",
+        "thirty_nine", "forty", "forty_one", "forty_two", "forty_three", "forty_four",
+        "forty_five", "forty_six", "forty_seven", "forty_eight", "forty_nine", "fifty",
+        "fifty_one", "fifty_two", "fifty_three", "fifty_four", "fifty_five", "fifty_six",
+        "fifty_seven", "fifty_eight", "fifty_nine", "sixty",
+    ]
+    if 0 <= index < len(words):
+        return words[index]
+    return f"{index + 1:02d}"
+
+
+def _ensure_preview_folder(row_num: int, username: str, handle_text: str, media_link: str) -> tuple[str, str, str]:
+    if not GOOGLE_DRIVE_FOLDER_ID:
+        raise RuntimeError("GOOGLE_DRIVE_FOLDER_ID is not configured.")
+    preview_root_folder_id = get_or_create_subfolder(GOOGLE_DRIVE_FOLDER_ID, PREVIEW_UPLOAD_SUBFOLDER)
+    folder_base_name, source_filename = _preview_folder_base_name(username or handle_text, media_link, row_num)
+    preview_folder_id = get_or_create_subfolder(preview_root_folder_id, folder_base_name)
+    return preview_folder_id, folder_base_name, source_filename
+
+
+def _copy_source_video_into_preview_folder(media_link: str, preview_folder_id: str, source_filename: str) -> str:
+    if not media_link:
+        return ""
+    return copy_drive_file_to_folder(media_link, preview_folder_id, source_filename)
+
+
+def _split_video_to_folder(local_video_path: str, output_dir: str) -> list[str]:
+    crop_width = "if(gte(iw/ih\\,4/5)\\,trunc(ih*(4/5)/2)*2\\,iw)"
+    crop_height = "if(gte(iw/ih\\,4/5)\\,ih\\,trunc(iw/(4/5)/2)*2)"
+    video_filter = f"crop={crop_width}:{crop_height}:(iw-ow)/2:(ih-oh)/2,scale=trunc(iw/2)*2:trunc(ih/2)*2"
+    duration = _video_duration_seconds(local_video_path)
+    if duration <= 0:
+        raise RuntimeError("Could not determine video duration for splitting.")
+
+    ffmpeg_path = shutil.which("ffmpeg") or "ffmpeg"
+    outputs: list[str] = []
+    start_seconds = 0.0
+    segment_index = 0
+    while start_seconds < duration - 0.01:
+        clip_duration = min(60.0, duration - start_seconds)
+        output_path = os.path.join(output_dir, f"{_segment_name(segment_index)}.mp4")
+        command = [
+            ffmpeg_path,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-i",
+            local_video_path,
+            "-ss",
+            f"{start_seconds:.3f}",
+            "-t",
+            f"{clip_duration:.3f}",
+            "-vf",
+            video_filter,
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "18",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            output_path,
+        ]
+        subprocess.run(command, check=True)
+        outputs.append(output_path)
+        start_seconds += 60.0
+        segment_index += 1
+    return outputs
+
+
+def _upload_split_videos(media_link: str, preview_folder_id: str) -> list[dict[str, str]]:
+    if not media_link:
+        return []
+    metadata = get_drive_file_metadata(media_link)
+    filename = (metadata.get("name") or "").strip()
+    if not filename:
+        raise ValueError("Could not determine the source video filename from Drive.")
+
+    tmp_dir = tempfile.mkdtemp(prefix="workspace_splits_")
+    try:
+        local_video_path = os.path.join(tmp_dir, filename)
+        download_drive_file(media_link, local_video_path)
+        split_dir = os.path.join(tmp_dir, "segments")
+        os.makedirs(split_dir, exist_ok=True)
+        segment_paths = _split_video_to_folder(local_video_path, split_dir)
+        uploaded: list[dict[str, str]] = []
+        for segment_path in segment_paths:
+            segment_filename = os.path.basename(segment_path)
+            uploaded.append(
+                {
+                    "label": f"Split {os.path.splitext(segment_filename)[0]}",
+                    "link": upload_to_drive(segment_path, segment_filename, preview_folder_id),
+                }
+            )
+        return uploaded
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 def _is_https_url(value: str) -> bool:
@@ -2306,6 +2525,90 @@ def _generate_caption_for_row(row: dict) -> None:
     _write_carousel_fields(row_num, updated_row)
 
 
+def _write_specific_carousel_fields(row_number: int, carousel: dict[str, str]) -> None:
+    if update_carousel_fields is None:
+        return
+    update_carousel_fields(
+        GOOGLE_SHEET_ID,
+        row_number,
+        carousel.get("name", ""),
+        carousel.get("text1", ""),
+        carousel.get("text2", ""),
+        carousel.get("text3", ""),
+    )
+
+
+def _process_post_online(row: dict) -> None:
+    row_num = row["row_number"]
+    has_media = bool(_cell_text(row.get("Media Drive Link")).strip())
+    updated_row = _fetch_row_with_transcript(
+        row,
+        download_media=not has_media,
+        force_remote=True,
+    )
+    current_inputs = _current_row_caption_inputs(updated_row)
+    update_metadata(
+        GOOGLE_SHEET_ID,
+        row_num,
+        current_inputs["Caption Context"],
+        current_inputs["Speaker Name"],
+        current_inputs["Required Hashtags"],
+        current_inputs["Top Comment"],
+        "",
+    )
+    updated_row.update(current_inputs)
+
+    caption = generate_row_caption(updated_row)
+    next_status = "skipped" if (row.get("Status", "") or "").strip().lower() == "skipped" else "done"
+    update_caption(GOOGLE_SHEET_ID, row_num, caption, next_status)
+
+    carousel = generate_carousel_copy_with_model(updated_row, model="gpt-5.2")
+    _write_specific_carousel_fields(row_num, carousel)
+
+    media_links = [link.strip() for link in (_cell_text(updated_row.get("Media Drive Link")) or "").split(",") if link.strip()]
+    media_link = media_links[0] if media_links else ""
+    preview_folder_id, folder_base_name, source_filename = _ensure_preview_folder(
+        row_num,
+        _cell_text(updated_row.get("Source Username")).strip(),
+        _cell_text(updated_row.get("Speaker Name")).strip() or _cell_text(updated_row.get("Source Username")).strip(),
+        media_link,
+    )
+
+    uploaded_assets: list[dict[str, str]] = []
+    if media_link:
+        uploaded_assets.append(
+            {
+                "label": "Source video",
+                "link": _copy_source_video_into_preview_folder(media_link, preview_folder_id, source_filename),
+            }
+        )
+
+    slide_handle = _cell_text(updated_row.get("Speaker Name")).strip() or _cell_text(updated_row.get("Source Username")).strip()
+    if slide_handle and slide_handle == _cell_text(updated_row.get("Source Username")).strip() and not slide_handle.startswith("@"):
+        slide_handle = f"@{slide_handle}"
+
+    uploaded_assets.extend(
+        _upload_preview_pngs(
+            row_num,
+            _cell_text(updated_row.get("Source Username")).strip(),
+            slide_handle,
+            carousel.get("text1", ""),
+            carousel.get("text2", ""),
+            carousel.get("text3", ""),
+            _safe_browser_image_url(_cell_text(updated_row.get("Thumbnail Drive Link")).strip()),
+            media_link,
+            preview_folder_id=preview_folder_id,
+            folder_base_name=folder_base_name,
+            source_filename=source_filename,
+            include_source_video=False,
+        )
+    )
+    if media_link:
+        uploaded_assets.extend(_upload_split_videos(media_link, preview_folder_id))
+
+    st.session_state[f"workspace_preview_upload_links_{row_num}"] = uploaded_assets
+
+
 def _queue_workspace_action(row_number: int, action: str) -> None:
     queue = st.session_state.setdefault("workspace_action_queue", [])
     queue.append({"row_number": row_number, "action": action})
@@ -2350,7 +2653,13 @@ def _process_next_workspace_action() -> None:
         return
 
     try:
-        if action == "transcript":
+        if action == "process_post":
+            with st.spinner(f"Processing row {row_number}..."):
+                _process_post_online(row)
+            st.session_state["workspace_success"] = (
+                f"Row {row_number}: processed with transcript, slide copy, previews, and splits."
+            )
+        elif action == "transcript":
             with st.spinner(f"Refreshing row {row_number} with transcript..."):
                 transcript_found = _rerun_with_transcript(row, force_remote=True)
             if transcript_found:
@@ -2367,6 +2676,10 @@ def _process_next_workspace_action() -> None:
             with st.spinner(f"Extracting image text for row {row_number}..."):
                 _redo_caption_from_image_text(row)
             st.session_state["workspace_success"] = f"Row {row_number}: caption regenerated from image text."
+        elif action == "refresh_thumbnail_5s":
+            with st.spinner(f"Updating screenshot for row {row_number}..."):
+                _refresh_row_thumbnail_from_video(row, offset_seconds=5.0)
+            st.session_state["workspace_success"] = f"Row {row_number}: screenshot updated from 5 seconds into the video."
         else:
             raise ValueError(f"Unknown action: {action}")
         _mark_workspace_action_complete(row_number, action)
@@ -3182,7 +3495,7 @@ if active_tab == "Home":
                         st.info("Thumbnail will appear here after ingest.")
 
                 with top_right:
-                    menu_label = "Photo run" if not _is_reel_url(url) else "Transcribe"
+                    menu_label = "Photo run" if not _is_reel_url(url) else "Process post"
                     schedule_suffix = (row.get("Scheduled Time", "") or "").strip()
                     status_line = f"Row {row_num} · {media_type or 'pending'} · {status or 'blank'}"
                     if schedule_suffix:
@@ -3210,7 +3523,7 @@ if active_tab == "Home":
                                 pending for pending in pending_transcribe_resets if pending != transcribe_key
                             ]
                         st.checkbox(
-                            "Check to transcribe",
+                            "Check to process",
                             value=bool(st.session_state.get(transcribe_key, False)),
                             key=transcribe_key,
                         )
@@ -3219,8 +3532,12 @@ if active_tab == "Home":
                         menu_nonce = st.session_state.get(menu_nonce_key, 0)
                         menu_label_with_nonce = f"Actions{chr(0x200B) * menu_nonce}"
                         with st.popover(menu_label_with_nonce, use_container_width=True):
-                            primary_action = "transcript" if _is_reel_url(url) else "image_text"
-                            primary_help = "Fetch transcript and regenerate caption." if _is_reel_url(url) else "Extract text from images and regenerate caption."
+                            primary_action = "process_post" if _is_reel_url(url) else "image_text"
+                            primary_help = (
+                                "Transcribe, generate slide copy, upload previews, and split the video."
+                                if _is_reel_url(url)
+                                else "Extract text from images and regenerate caption."
+                            )
                             if is_instagram and st.button(
                                 menu_label,
                                 key=f"workspace_menu_primary_{row_num}",
@@ -3228,7 +3545,7 @@ if active_tab == "Home":
                                 width="stretch",
                                 help=primary_help,
                             ):
-                                if primary_action == "transcript" and not transcript:
+                                if primary_action == "process_post" and not transcript:
                                     try:
                                         warning = _check_reel_transcript_risk(row)
                                     except Exception as e:
@@ -3251,6 +3568,15 @@ if active_tab == "Home":
                                 _close_workspace_menu(row)
                                 _queue_workspace_action(row_num, "generate_caption")
                                 _rerun_workspace("Edit")
+                            if _is_reel_url(url) and _cell_text(row.get("Media Drive Link")).strip() and st.button(
+                                "Update screenshot (+5s)",
+                                key=f"workspace_menu_thumbnail_5s_{row_num}",
+                                width="stretch",
+                                help="Replace the current screenshot with a frame taken about 5 seconds into the video.",
+                            ):
+                                _close_workspace_menu(row)
+                                _queue_workspace_action(row_num, "refresh_thumbnail_5s")
+                                _rerun_workspace("Edit")
                             if st.button(
                                 "Update all names",
                                 key=f"workspace_menu_update_all_names_{row_num}",
@@ -3259,16 +3585,6 @@ if active_tab == "Home":
                             ):
                                 _close_workspace_menu(row)
                                 _handle_update_all_workspace_speaker_names(editor_rows)
-                            if url and st.button("Add Watch", key=f"workspace_watch_add_{row_num}", width="stretch"):
-                                top_comment = _build_watch_cta(username or speaker_name, url)
-                                try:
-                                    _apply_top_comment_to_caption(row, row_num, speaker_name, top_comment)
-                                except Exception as e:
-                                    st.session_state["workspace_error"] = f"Row {row_num}: could not save watch CTA - {describe_error(e)}"
-                                else:
-                                    st.session_state["workspace_success"] = f"Row {row_num}: watch CTA saved to generated caption."
-                                _close_workspace_menu(row)
-                                _rerun_workspace("Edit")
                             skip_label = "Unskip" if status.strip().lower() == "skipped" else "Skip"
                             if st.button(
                                 skip_label,
@@ -3316,13 +3632,13 @@ if active_tab == "Home":
                             "Transcription may cost more than usual."
                         )
                         if st.button(
-                            "Transcribe anyway",
+                            "Process post anyway",
                             key=f"workspace_warning_transcribe_{row_num}",
                             type="primary",
                             width="stretch",
                         ):
                             st.session_state.pop(warning_key, None)
-                            _queue_workspace_action(row_num, "transcript")
+                            _queue_workspace_action(row_num, "process_post")
                             _rerun_workspace("Edit")
 
                     st.markdown('<div class="workspace-section-label workspace-content-tabs">Content</div>', unsafe_allow_html=True)

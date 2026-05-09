@@ -273,6 +273,13 @@ def update_transcript(sheet_id: str, row_number: int, transcript: str) -> None:
     _invalidate_rows_cache(sheet_id)
 
 
+def update_thumbnail_link(sheet_id: str, row_number: int, thumbnail_link: str) -> None:
+    """Write thumbnail drive link to col H for a single row."""
+    ws = _worksheet(sheet_id)
+    _with_backoff(ws.update, f"H{row_number}", [[thumbnail_link]])
+    _invalidate_rows_cache(sheet_id)
+
+
 def update_caption_context(sheet_id: str, row_number: int, caption_context: str) -> None:
     """Write caption context to col O for a single row."""
     ws = _worksheet(sheet_id)
