@@ -1326,9 +1326,9 @@ def _render_workspace_preview_control_bar(
                     elif action == "font_up":
                         st.session_state[font_adjust_key] = min(24, current_font_adjust + 4)
                     elif action == "bg_up" and background_adjust_key is not None:
-                        st.session_state[background_adjust_key] = max(-200, current_background_adjust - 24)
+                        st.session_state[background_adjust_key] = max(-200, current_background_adjust - 48)
                     elif action == "bg_down" and background_adjust_key is not None:
-                        st.session_state[background_adjust_key] = min(200, current_background_adjust + 24)
+                        st.session_state[background_adjust_key] = min(200, current_background_adjust + 48)
                     _rerun_workspace("Edit")
 
 
