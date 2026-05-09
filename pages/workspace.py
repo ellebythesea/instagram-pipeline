@@ -1140,6 +1140,21 @@ def _render_slide_one_preview(
     <div style="margin-top: 1rem;">
       <style>
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap');
+        .workspace-preview-bleed {{
+          width: 100vw;
+          margin-left: calc(50% - 50vw);
+          margin-right: calc(50% - 50vw);
+        }}
+        .workspace-preview-card {{
+          width: 100%;
+          border-radius: 0;
+          overflow: hidden;
+          box-shadow: 0 24px 80px rgba(15, 23, 42, 0.22);
+        }}
+        .workspace-preview-canvas {{
+          width: 100%;
+          aspect-ratio: 4 / 5;
+        }}
         .workspace-slide-preview-copy {{
           font-family: {PREVIEW_SLIDE_FONT_FAMILY} !important;
         }}
@@ -1155,19 +1170,11 @@ def _render_slide_one_preview(
       <div style="font-size: 0.82rem; font-weight: 500; color: #475569; margin-bottom: 0.5rem;">
         Slide 1 preview
       </div>
-      <div style="
-        width: 100%;
-        max-width: {PREVIEW_CANVAS_WIDTH_PX}px;
-        margin: 0 auto;
-        border-radius: 0;
-        overflow: hidden;
-        box-shadow: 0 24px 80px rgba(15, 23, 42, 0.22);
-        background: #0f172a;
-      ">
-        <div style="
+      <div class="workspace-preview-bleed">
+        <div class="workspace-preview-card" style="background: #0f172a;">
+          <div class="workspace-preview-canvas" style="
           position: relative;
           width: 100%;
-          height: {PREVIEW_CANVAS_HEIGHT_PX}px;
           display: flex;
           flex-direction: column;
           justify-content: flex-end;
@@ -1250,6 +1257,21 @@ def _render_text_slide_preview(
     <div style="margin-top: 1rem;">
       <style>
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+        .workspace-preview-bleed {{
+          width: 100vw;
+          margin-left: calc(50% - 50vw);
+          margin-right: calc(50% - 50vw);
+        }}
+        .workspace-preview-card {{
+          width: 100%;
+          border-radius: 0;
+          overflow: hidden;
+          box-shadow: 0 24px 80px rgba(15, 23, 42, 0.22);
+        }}
+        .workspace-preview-canvas {{
+          width: 100%;
+          aspect-ratio: 4 / 5;
+        }}
         .workspace-text-slide-preview-copy {{
           font-family: {PREVIEW_SLIDE_FONT_FAMILY} !important;
           font-weight: {PREVIEW_SLIDE_FONT_WEIGHT} !important;
@@ -1258,17 +1280,9 @@ def _render_text_slide_preview(
       <div style="font-size: 0.82rem; font-weight: 600; color: #475569; margin-bottom: 0.5rem;">
         Slide {slide_number} preview
       </div>
-      <div style="
-        width: 100%;
-        max-width: {PREVIEW_CANVAS_WIDTH_PX}px;
-        margin: 0 auto;
-        border-radius: 0;
-        overflow: hidden;
-        box-shadow: 0 24px 80px rgba(15, 23, 42, 0.22);
-        background: #121722;
-      ">
-        <div class="workspace-text-slide-preview-copy" style="
-          height: {PREVIEW_CANVAS_HEIGHT_PX}px;
+      <div class="workspace-preview-bleed">
+        <div class="workspace-preview-card" style="background: #121722;">
+          <div class="workspace-preview-canvas workspace-text-slide-preview-copy" style="
           padding: 28px 26px 28px 26px;
           color: #ffffff;
           background: #121722;
@@ -1300,32 +1314,22 @@ def _render_workspace_preview_control_bar(
 ) -> None:
     with st.container():
         st.markdown('<div class="workspace-preview-controls-anchor"></div>', unsafe_allow_html=True)
-        options = ["A-", "A+"]
+        controls = [("A-", "font_down"), ("A+", "font_up")]
         if background_adjust_key is not None:
-            options.extend(["Up", "Down"])
-        action_key = f"workspace_preview_action_picker_{control_id}"
-        action_reset_key = f"{action_key}_reset"
-        if st.session_state.pop(action_reset_key, False):
-            st.session_state.pop(action_key, None)
-        picked_action = st.radio(
-            "Preview controls",
-            options=options,
-            index=None,
-            key=action_key,
-            horizontal=True,
-            label_visibility="collapsed",
-        )
-        if picked_action:
-            if picked_action == "A-":
-                st.session_state[font_adjust_key] = max(-16, current_font_adjust - 2)
-            elif picked_action == "A+":
-                st.session_state[font_adjust_key] = min(24, current_font_adjust + 2)
-            elif picked_action == "Up" and background_adjust_key is not None:
-                st.session_state[background_adjust_key] = max(-200, current_background_adjust - 12)
-            elif picked_action == "Down" and background_adjust_key is not None:
-                st.session_state[background_adjust_key] = min(200, current_background_adjust + 12)
-            st.session_state[action_reset_key] = True
-            _rerun_workspace("Edit")
+            controls.extend([("Up", "bg_up"), ("Down", "bg_down")])
+        columns = st.columns(len(controls), gap="small")
+        for column, (label, action) in zip(columns, controls):
+            with column:
+                if st.button(label, key=f"workspace_preview_{control_id}_{action}", width="stretch"):
+                    if action == "font_down":
+                        st.session_state[font_adjust_key] = max(-16, current_font_adjust - 4)
+                    elif action == "font_up":
+                        st.session_state[font_adjust_key] = min(24, current_font_adjust + 4)
+                    elif action == "bg_up" and background_adjust_key is not None:
+                        st.session_state[background_adjust_key] = max(-200, current_background_adjust - 24)
+                    elif action == "bg_down" and background_adjust_key is not None:
+                        st.session_state[background_adjust_key] = min(200, current_background_adjust + 24)
+                    _rerun_workspace("Edit")
 
 
 def _copy_tabs(
