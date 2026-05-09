@@ -95,7 +95,7 @@ PREVIEW_CANVAS_HEIGHT_PX = round(
 PREVIEW_SLIDE_FONT_FAMILY = "'Poppins', sans-serif"
 PREVIEW_SLIDE_FONT_WEIGHT = 500
 PREVIEW_SLIDE_LETTER_SPACING = "0.01em"
-PREVIEW_SLIDE_LINE_HEIGHT = "1.16"
+PREVIEW_SLIDE_LINE_HEIGHT = "1.36"
 SLIDE_TWO_FONT_MIN_REM = 1.5
 SLIDE_TWO_FONT_VW = 4.4
 SLIDE_TWO_FONT_MAX_REM = 3.35
@@ -1149,7 +1149,7 @@ def _upload_preview_pngs(
             uploaded.append(
                 {
                     "label": suffix.replace("slide", "Slide "),
-                    "link": upload_to_drive(output_path, output_filename, preview_folder_id),
+                    "link": upload_to_drive(output_path, output_filename, preview_folder_id, overwrite=True),
                 }
             )
     finally:
@@ -1961,24 +1961,11 @@ def _copy_tabs(
     thumbnail_link: str = "",
 ) -> None:
     tab_labels = ["Caption", "Original caption"]
-    if is_instagram:
-        tab_labels.append("Transcript")
     tab_labels.append("Slides")
     media_links = [link.strip() for link in (media_link or "").split(",") if link.strip()]
     if media_links:
         tab_labels.append("Media")
-    tab_key = f"workspace_row_content_tab_{row_num}"
-    current_tab = st.session_state.get(tab_key, tab_labels[0])
-    if current_tab not in tab_labels:
-        current_tab = tab_labels[0]
-    selected_tab = st.radio(
-        "Content section",
-        tab_labels,
-        index=tab_labels.index(current_tab),
-        key=tab_key,
-        horizontal=True,
-        label_visibility="collapsed",
-    )
+    content_tabs = st.tabs(tab_labels)
     original_preview = _build_original_caption_preview(
         original_caption,
         username,
@@ -1986,7 +1973,7 @@ def _copy_tabs(
         required_hashtags,
         is_instagram=is_instagram,
     )
-    if selected_tab == "Caption":
+    with content_tabs[0]:
         _tab_copy_preview(
             _caption_tab_value(
                 generated,
@@ -1997,11 +1984,12 @@ def _copy_tabs(
                 is_instagram,
             )
         )
-    elif selected_tab == "Original caption":
+    with content_tabs[1]:
         _tab_copy_preview(original_preview)
-    elif selected_tab == "Transcript" and is_instagram:
-        _tab_copy_preview(transcript)
-    elif selected_tab == "Slides":
+        if is_instagram:
+            st.caption("Transcript")
+            _tab_copy_preview(transcript)
+    with content_tabs[2]:
         prompt_key = f"workspace_row_slides_prompt_{row_num}"
         slide_one_font_adjust_key = f"workspace_slide_preview_font_adjust_{row_num}"
         slide_one_background_adjust_key = f"workspace_slide_preview_background_adjust_{row_num}"
@@ -2047,27 +2035,27 @@ def _copy_tabs(
                 slide_three_font_adjust_key,
                 current_slide_three_font_adjust,
             )
-        if st.button("Upload preview PNGs to Drive", key=f"workspace_preview_upload_{row_num}", width="stretch"):
+        if st.button("Redo preview PNGs in Drive", key=f"workspace_preview_upload_{row_num}", width="stretch"):
             try:
                 with st.spinner("Rendering preview PNGs and uploading to Drive..."):
                     st.session_state[preview_links_key] = _upload_preview_pngs(
-                        row_num,
-                        username,
-                        slide_handle,
-                        slide_text1,
-                        slide_text2,
-                        slide_text3,
-                        _safe_browser_image_url(thumbnail_link),
-                        media_links[0] if media_links else "",
-                        current_slide_one_font_adjust,
-                        current_slide_one_background_adjust,
-                        current_slide_two_font_adjust,
-                        current_slide_three_font_adjust,
+                        row_num=row_num,
+                        username=username,
+                        handle_text=slide_handle,
+                        slide_text1=slide_text1,
+                        slide_text2=slide_text2,
+                        slide_text3=slide_text3,
+                        background_url=_safe_browser_image_url(thumbnail_link),
+                        media_link=media_links[0] if media_links else "",
+                        slide_one_font_adjust=current_slide_one_font_adjust,
+                        slide_one_background_adjust=current_slide_one_background_adjust,
+                        slide_two_font_adjust=current_slide_two_font_adjust,
+                        slide_three_font_adjust=current_slide_three_font_adjust,
                     )
             except Exception as e:
                 st.error(f"Could not upload preview PNGs: {describe_error(e)}")
             else:
-                st.success("Preview PNGs uploaded to Drive.")
+                st.success("Preview PNGs updated in Drive.")
         preview_links = st.session_state.get(preview_links_key, [])
         if preview_links:
             st.caption("Preview PNGs")
@@ -2082,22 +2070,23 @@ def _copy_tabs(
         row_prompt = st.session_state.get(prompt_key, "")
         if row_prompt:
             _one_line_copy_preview("slide prompt", row_prompt, f"workspace_row_slides_prompt_preview_{row_num}")
-    elif selected_tab == "Media" and media_links:
-        _one_line_copy_preview("media", "\n".join(media_links), f"workspace_media_links_{row_num}")
-        st.markdown(
-            f'<div class="workspace-plain-copy-text">Drive media link{"" if len(media_links) == 1 else "s"}.</div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            f'<div class="workspace-plain-copy-text">{html.escape(chr(10).join(media_links))}</div>',
-            unsafe_allow_html=True,
-        )
-        if (media_type or "").strip().lower() == "reel" and media_links:
-            st.link_button("Open reel in Drive", media_links[0], width="stretch")
-        else:
-            for index, link in enumerate(media_links, start=1):
-                label = "Open media in Drive" if len(media_links) == 1 else f"Open media {index} in Drive"
-                st.link_button(label, link, width="stretch")
+    if media_links:
+        with content_tabs[3]:
+            _one_line_copy_preview("media", "\n".join(media_links), f"workspace_media_links_{row_num}")
+            st.markdown(
+                f'<div class="workspace-plain-copy-text">Drive media link{"" if len(media_links) == 1 else "s"}.</div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                f'<div class="workspace-plain-copy-text">{html.escape(chr(10).join(media_links))}</div>',
+                unsafe_allow_html=True,
+            )
+            if (media_type or "").strip().lower() == "reel" and media_links:
+                st.link_button("Open reel in Drive", media_links[0], width="stretch")
+            else:
+                for index, link in enumerate(media_links, start=1):
+                    label = "Open media in Drive" if len(media_links) == 1 else f"Open media {index} in Drive"
+                    st.link_button(label, link, width="stretch")
 
 
 def _icon_copy_button(label: str, value: str) -> None:

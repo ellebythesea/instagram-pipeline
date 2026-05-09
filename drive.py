@@ -62,26 +62,66 @@ def _get_service():
     return build("drive", "v3", credentials=creds)
 
 
-def upload_to_drive(file_path: str, filename: str, folder_id: str) -> str:
-    """Upload a file to Google Drive and return the web view link."""
-    service = _get_service()
-
-    uploaded = (
+def _find_file_in_folder(service, folder_id: str, filename: str) -> dict:
+    escaped_name = (filename or "").replace("\\", "\\\\").replace("'", "\\'")
+    query = (
+        f"name = '{escaped_name}' and "
+        f"'{folder_id}' in parents and trashed = false"
+    )
+    result = (
         service.files()
-        .create(
-            body={"name": filename, "parents": [folder_id]},
-            media_body=MediaFileUpload(file_path, resumable=True),
-            fields="id,webViewLink",
+        .list(
+            q=query,
+            fields="files(id,name,webViewLink)",
+            pageSize=1,
             supportsAllDrives=True,
+            includeItemsFromAllDrives=True,
         )
         .execute()
     )
+    files = result.get("files", [])
+    return files[0] if files else {}
 
-    service.permissions().create(
-        fileId=uploaded["id"],
-        body={"type": "anyone", "role": "reader"},
-        supportsAllDrives=True,
-    ).execute()
+
+def upload_to_drive(file_path: str, filename: str, folder_id: str, overwrite: bool = False) -> str:
+    """Upload a file to Google Drive and return the web view link."""
+    service = _get_service()
+    media_body = MediaFileUpload(file_path, resumable=True)
+
+    existing = _find_file_in_folder(service, folder_id, filename) if overwrite else {}
+    if existing.get("id"):
+        uploaded = (
+            service.files()
+            .update(
+                fileId=existing["id"],
+                body={"name": filename},
+                media_body=media_body,
+                fields="id,webViewLink",
+                supportsAllDrives=True,
+            )
+            .execute()
+        )
+    else:
+        uploaded = (
+            service.files()
+            .create(
+                body={"name": filename, "parents": [folder_id]},
+                media_body=media_body,
+                fields="id,webViewLink",
+                supportsAllDrives=True,
+            )
+            .execute()
+        )
+
+    try:
+        service.permissions().create(
+            fileId=uploaded["id"],
+            body={"type": "anyone", "role": "reader"},
+            supportsAllDrives=True,
+        ).execute()
+    except Exception:
+        # Overwrites keep the existing file id, which often already has sharing set.
+        pass
 
     return uploaded.get("webViewLink", "")
 
