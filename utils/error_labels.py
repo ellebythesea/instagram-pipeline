@@ -50,7 +50,7 @@ def describe_error(error: Exception) -> str:
     if "APIFY_API_TOKEN is not configured" in message:
         return "Apify auth failed. APIFY_API_TOKEN is missing from Streamlit secrets."
     if "GOOGLE_SERVICE_ACCOUNT_JSON is not configured" in message:
-        return "Google auth failed. GOOGLE_SERVICE_ACCOUNT_JSON is missing from Streamlit secrets."
+        return "Google auth failed. GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_CREDENTIALS_BASE64 is missing from Streamlit secrets."
     if "GOOGLE_OAUTH_TOKEN_JSON is not configured" in message:
         return "Google Drive auth failed. GOOGLE_OAUTH_TOKEN_JSON is missing for personal My Drive uploads."
     if "GOOGLE_OAUTH_TOKEN_JSON is malformed" in message or "GOOGLE_OAUTH_TOKEN_JSON is not valid JSON" in message:
@@ -101,15 +101,15 @@ def describe_error(error: Exception) -> str:
         if "worksheetnotfound" in exc_name:
             return "Google Sheets worksheet not found. Check GOOGLE_WORKSHEET_NAME."
         if "malformederror" in exc_name or "service account info was not in the expected format" in lowered:
-            return "Google service account credentials are malformed. Check GOOGLE_SERVICE_ACCOUNT_JSON."
+            return "Google service account credentials are malformed. Check GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_CREDENTIALS_BASE64."
         if any(token in lowered for token in ["invalid_grant", "reauth", "refresh token", "token has been expired", "authorized user"]):
             return (
-                "Google auth failed. Check GOOGLE_SERVICE_ACCOUNT_JSON, "
+                "Google auth failed. Check GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_CREDENTIALS_BASE64, "
                 "and make sure the Sheet/Drive folder is shared with the service account."
             )
         if status in {401, 403} or any(token in lowered for token in ["permission denied", "forbidden", "unauthorized", "insufficient authentication scopes"]):
             return (
-                "Google auth/permission failed. Check GOOGLE_SERVICE_ACCOUNT_JSON, "
+                "Google auth/permission failed. Check GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_CREDENTIALS_BASE64, "
                 "and make sure the Sheet/Drive folder is shared with the service account."
             )
         if status == 404 or "not found" in lowered:
@@ -135,7 +135,7 @@ def describe_error(error: Exception) -> str:
 
     if any(token in lowered for token in ["invalid_grant", "token has been expired", "reauth", "refresh", "authorized user"]) and "google" in lowered:
         return (
-            "Google auth failed. Check GOOGLE_SERVICE_ACCOUNT_JSON, "
+            "Google auth failed. Check GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_CREDENTIALS_BASE64, "
             f"and sharing permissions for the service account. Raw error: {message}"
         )
 
