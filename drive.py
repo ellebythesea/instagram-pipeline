@@ -7,11 +7,14 @@ import re
 from json import JSONDecodeError
 from urllib.parse import parse_qs, urlparse
 
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials as UserCredentials
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 
 from config import (
+    GOOGLE_OAUTH_TOKEN_JSON,
     GOOGLE_SERVICE_ACCOUNT_JSON,
 )
 
@@ -23,12 +26,30 @@ def _raise_drive_step_error(step: str, exc: Exception) -> None:
 
 
 def _get_service():
+    if GOOGLE_OAUTH_TOKEN_JSON:
+        try:
+            oauth_info = json.loads(GOOGLE_OAUTH_TOKEN_JSON)
+            creds = UserCredentials.from_authorized_user_info(
+                oauth_info,
+                scopes=_SCOPES,
+            )
+        except JSONDecodeError as exc:
+            raise RuntimeError("GOOGLE_OAUTH_TOKEN_JSON is not valid JSON.") from exc
+        except Exception as exc:
+            raise RuntimeError("GOOGLE_OAUTH_TOKEN_JSON is malformed or incomplete.") from exc
+        if creds.expired and creds.refresh_token:
+            try:
+                creds.refresh(Request())
+            except Exception as exc:
+                raise RuntimeError("Google OAuth refresh failed. Regenerate GOOGLE_OAUTH_TOKEN_JSON.") from exc
+        return build("drive", "v3", credentials=creds)
+
     creds_src = GOOGLE_SERVICE_ACCOUNT_JSON
     if not creds_src:
         raise RuntimeError(
-            "GOOGLE_SERVICE_ACCOUNT_JSON is not configured. Set it in "
-            ".streamlit/local_secrets.toml, as an environment variable, "
-            "or as a service-account JSON file path."
+            "Neither GOOGLE_OAUTH_TOKEN_JSON nor GOOGLE_SERVICE_ACCOUNT_JSON is configured. "
+            "Set GOOGLE_OAUTH_TOKEN_JSON for personal My Drive uploads, or "
+            "GOOGLE_SERVICE_ACCOUNT_JSON for shared-drive/service-account access."
         )
     if os.path.isfile(creds_src):
         creds = Credentials.from_service_account_file(creds_src, scopes=_SCOPES)

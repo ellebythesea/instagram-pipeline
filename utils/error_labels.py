@@ -51,6 +51,12 @@ def describe_error(error: Exception) -> str:
         return "Apify auth failed. APIFY_API_TOKEN is missing from Streamlit secrets."
     if "GOOGLE_SERVICE_ACCOUNT_JSON is not configured" in message:
         return "Google auth failed. GOOGLE_SERVICE_ACCOUNT_JSON is missing from Streamlit secrets."
+    if "GOOGLE_OAUTH_TOKEN_JSON is not configured" in message:
+        return "Google Drive auth failed. GOOGLE_OAUTH_TOKEN_JSON is missing for personal My Drive uploads."
+    if "GOOGLE_OAUTH_TOKEN_JSON is malformed" in message or "GOOGLE_OAUTH_TOKEN_JSON is not valid JSON" in message:
+        return "Google Drive auth failed. GOOGLE_OAUTH_TOKEN_JSON is malformed."
+    if "Google OAuth refresh failed" in message:
+        return "Google Drive auth failed. Refresh GOOGLE_OAUTH_TOKEN_JSON."
     if "no audio stream to transcribe" in lowered:
         return "Local media file has no audio track, so there is nothing to transcribe."
     if "tuple index out of range" in lowered:
