@@ -2544,6 +2544,14 @@ def _verify_carousel_fields_saved(row_number: int) -> dict[str, str]:
     return saved_carousel
 
 
+def _reload_row_from_sheet(row_number: int) -> dict:
+    rows = get_all_rows(GOOGLE_SHEET_ID)
+    reloaded = next((item for item in rows if int(item.get("row_number") or 0) == row_number), None)
+    if not reloaded:
+        raise ValueError("Processed row could not be reloaded from the sheet.")
+    return reloaded
+
+
 def _process_post_online(row: dict) -> None:
     row_num = row["row_number"]
     has_media = bool(_cell_text(row.get("Media Drive Link")).strip())
@@ -2586,6 +2594,54 @@ def _process_post_online(row: dict) -> None:
     _write_specific_carousel_fields(row_num, carousel)
     _verify_carousel_fields_saved(row_num)
     st.session_state.pop(f"workspace_preview_upload_links_{row_num}", None)
+
+
+def _process_photo_post_online(row: dict) -> None:
+    row_num = row["row_number"]
+    working_row = dict(row)
+    if not _cell_text(working_row.get("Media Drive Link")).strip():
+        _download_media_to_drive(working_row)
+        working_row = _reload_row_from_sheet(row_num)
+
+    current_inputs = _current_row_caption_inputs(working_row)
+    update_metadata(
+        GOOGLE_SHEET_ID,
+        row_num,
+        current_inputs["Caption Context"],
+        current_inputs["Speaker Name"],
+        current_inputs["Required Hashtags"],
+        current_inputs["Top Comment"],
+        "",
+    )
+    working_row.update(current_inputs)
+
+    if not _cell_text(working_row.get("Transcript")).strip() and not _cell_text(working_row.get("Caption Context")).strip():
+        extracted_text = _extract_image_text(working_row)
+        update_caption_context(GOOGLE_SHEET_ID, row_num, extracted_text)
+        update_transcript(GOOGLE_SHEET_ID, row_num, extracted_text)
+        working_row["Caption Context"] = extracted_text
+        working_row["Transcript"] = extracted_text
+
+    existing_caption = _cell_text(working_row.get("Generated Caption")).strip()
+    caption = existing_caption or generate_row_caption(working_row)
+    next_status = "skipped" if (row.get("Status", "") or "").strip().lower() == "skipped" else "done"
+    if not existing_caption:
+        update_caption(GOOGLE_SHEET_ID, row_num, caption, next_status)
+    working_row["Generated Caption"] = caption
+    working_row["Status"] = next_status
+
+    existing_carousel = {
+        "name": _cell_text(working_row.get("name")).strip(),
+        "text1": _cell_text(working_row.get("text1")).strip(),
+        "text2": _cell_text(working_row.get("text2")).strip(),
+        "text3": _cell_text(working_row.get("text3")).strip(),
+    }
+    if _carousel_has_required_text(existing_carousel):
+        return
+
+    carousel = _generate_reliable_carousel_copy(working_row, model="gpt-5.2")
+    _write_specific_carousel_fields(row_num, carousel)
+    _verify_carousel_fields_saved(row_num)
 
 
 def _queue_workspace_action(row_number: int, action: str) -> None:
@@ -2634,10 +2690,14 @@ def _process_next_workspace_action() -> None:
     try:
         if action == "process_post":
             with st.spinner(f"Processing row {row_number}..."):
-                _process_post_online(row)
-            st.session_state["workspace_success"] = (
-                f"Row {row_number}: processed with transcript, caption, and slide copy."
-            )
+                row_url = _cell_text(row.get("Instagram URL")).strip()
+                if _is_reel_url(row_url):
+                    _process_post_online(row)
+                    success_message = f"Row {row_number}: processed with transcript, caption, and slide copy."
+                else:
+                    _process_photo_post_online(row)
+                    success_message = f"Row {row_number}: processed with caption and slide copy."
+            st.session_state["workspace_success"] = success_message
         elif action == "transcript":
             with st.spinner(f"Refreshing row {row_number} with transcript..."):
                 transcript_found = _rerun_with_transcript(row, force_remote=True)
@@ -3504,11 +3564,11 @@ if active_tab == "Home":
                                 url,
                                 width="stretch",
                             )
-                            primary_action = "process_post" if _is_reel_url(url) else "image_text"
+                            primary_action = "process_post" if is_instagram else "image_text"
                             primary_help = (
                                 "Transcribe, generate the caption, and generate slide copy."
                                 if _is_reel_url(url)
-                                else "Extract text from images and regenerate caption."
+                                else "Use available post text and image text to generate the caption and slide copy."
                             )
                             if is_instagram and st.button(
                                 menu_label,

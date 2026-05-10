@@ -320,7 +320,7 @@ def _carousel_slide_prompt_instructions(include_row_numbers: bool) -> str:
         "* No commentary outside JSON\n"
         "* Use plain straight double quotes for all JSON keys and string values — no smart quotes, no escaped quotes inside key names\n"
         "* name = short lowercase account username (no @ symbol)\n"
-        "* text1 = strongest opening carousel slide under 350 chars\n"
+        "* text1 = strongest opening carousel slide under 250 chars\n"
         "* text2 and text3 = under 900 chars each\n"
         "* No em dashes\n"
         "* No speculation\n"
