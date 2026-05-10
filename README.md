@@ -233,7 +233,6 @@ You still need one Google bootstrap credential outside Secret Manager so the app
 
 Use one of:
 
-- `GOOGLE_CREDENTIALS_BASE64`
 - `GOOGLE_SERVICE_ACCOUNT_JSON`
 
 That bootstrap credential can live in:
@@ -257,8 +256,6 @@ APIFY_API_TOKEN = "..."
 GOOGLE_SHEET_ID = "..."
 GOOGLE_WORKSHEET_NAME = "..."
 GOOGLE_DRIVE_FOLDER_ID = "..."
-GOOGLE_CREDENTIALS_BASE64 = "..."
-# or
 GOOGLE_SERVICE_ACCOUNT_JSON = '''{...}'''
 APP_PASSWORD = "..."
 ```
@@ -267,7 +264,7 @@ Notes:
 
 - `OPENAI_API_KEY` powers caption/headline generation and some OCR/image-text flows.
 - `APIFY_API_TOKEN` powers Instagram scraping.
-- `GOOGLE_SERVICE_ACCOUNT_JSON` or `GOOGLE_CREDENTIALS_BASE64` is used for Sheets access and as the Secret Manager bootstrap credential.
+- `GOOGLE_SERVICE_ACCOUNT_JSON` is used for Sheets and Drive access and as the Secret Manager bootstrap credential.
 - Share the Google Sheet and Drive folder with the service account email so both Sheets and Drive access work.
 
 ## Current Caption Behavior

@@ -1,7 +1,6 @@
 # config.py
 from __future__ import annotations
 
-import base64
 import json
 import os
 import re
@@ -84,17 +83,14 @@ def _runtime_secret(key: str, default: Any = "") -> Any:
     return os.getenv(key, default)
 
 
-def _decode_service_account_json(raw_json: str, b64_json: str) -> str:
+def _decode_service_account_json(raw_json: str) -> str:
     if raw_json:
         return raw_json
-    if b64_json:
-        return base64.b64decode(b64_json).decode()
     return ""
 
 
 BOOTSTRAP_SERVICE_ACCOUNT_JSON = _decode_service_account_json(
     str(_runtime_secret("GOOGLE_SERVICE_ACCOUNT_JSON", "") or ""),
-    str(_runtime_secret("GOOGLE_CREDENTIALS_BASE64", "") or ""),
 )
 
 
@@ -123,7 +119,6 @@ SECRET_MANAGER_SECRET_NAMES: dict[str, str | tuple[str, ...]] = {
         str(_runtime_secret("SECRET_MANAGER_GOOGLE_SERVICE_ACCOUNT_JSON_NAME", "google-service-account-json") or "google-service-account-json"),
         "google-service-account",
     ),
-    "GOOGLE_CREDENTIALS_BASE64": str(_runtime_secret("SECRET_MANAGER_GOOGLE_CREDENTIALS_BASE64_NAME", "google-service-account") or "google-service-account"),
     "GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER": str(_runtime_secret("SECRET_MANAGER_GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER_NAME", "google-screenshots-subfolder") or "google-screenshots-subfolder"),
     "APIFY_REEL_ACTOR_ID": str(_runtime_secret("SECRET_MANAGER_APIFY_REEL_ACTOR_ID_NAME", "apify-reel-actor-id") or "apify-reel-actor-id"),
     "APIFY_POST_ACTOR_ID": str(_runtime_secret("SECRET_MANAGER_APIFY_POST_ACTOR_ID_NAME", "apify-post-actor-id") or "apify-post-actor-id"),
@@ -210,15 +205,12 @@ GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER = _get_secret("GOOGLE_DRIVE_SCREENSHOTS_SUBFO
 
 
 def _get_google_credentials_json() -> str:
-    """Accept credentials as raw JSON or as a base64-encoded string."""
+    """Accept credentials as raw JSON."""
     if BOOTSTRAP_SERVICE_ACCOUNT_JSON:
         return BOOTSTRAP_SERVICE_ACCOUNT_JSON
     raw = _get_secret("GOOGLE_SERVICE_ACCOUNT_JSON")
     if raw:
         return raw
-    b64 = _get_secret("GOOGLE_CREDENTIALS_BASE64")
-    if b64:
-        return base64.b64decode(b64).decode()
     return ""
 
 
