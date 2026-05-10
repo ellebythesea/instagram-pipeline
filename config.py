@@ -125,6 +125,10 @@ SECRET_MANAGER_SECRET_NAMES: dict[str, str | tuple[str, ...]] = {
 }
 
 
+def _truthy_env_flag(key: str) -> bool:
+    return str(_runtime_secret(key, "") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 @lru_cache(maxsize=1)
 def _secret_manager_client():
     if secretmanager is None:
@@ -215,3 +219,19 @@ def _get_google_credentials_json() -> str:
 
 
 GOOGLE_SERVICE_ACCOUNT_JSON = _get_google_credentials_json()
+
+
+if _truthy_env_flag("DEBUG_SECRET_LOOKUPS"):
+    openai_secret_name = SECRET_MANAGER_SECRET_NAMES.get("OPENAI_API_KEY", "")
+    if isinstance(openai_secret_name, tuple):
+        openai_secret_name = ",".join(openai_secret_name)
+    openai_secret_raw = ""
+    if isinstance(SECRET_MANAGER_SECRET_NAMES.get("OPENAI_API_KEY", ""), str):
+        openai_secret_raw = _secret_manager_value(str(SECRET_MANAGER_SECRET_NAMES["OPENAI_API_KEY"]))
+    print(
+        "[config] "
+        f"secret_manager_project_id={SECRET_MANAGER_PROJECT_ID or '(missing)'} "
+        f"openai_secret_name={openai_secret_name or '(missing)'} "
+        f"openai_secret_found={'yes' if openai_secret_raw else 'no'} "
+        f"openai_api_key_loaded={'yes' if bool(OPENAI_API_KEY) else 'no'}"
+    )
