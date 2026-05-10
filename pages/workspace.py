@@ -3500,24 +3500,17 @@ if active_tab == "Home":
                         value=speaker_name,
                         key=speaker_key,
                         placeholder="Enter name",
+                        label_visibility="collapsed",
                     )
-                    if _is_reel_url(url):
-                        pending_transcribe_resets = st.session_state.setdefault("workspace_transcribe_reset_rows", [])
-                        if transcribe_key in pending_transcribe_resets:
-                            st.session_state.pop(transcribe_key, None)
-                            st.session_state["workspace_transcribe_reset_rows"] = [
-                                pending for pending in pending_transcribe_resets if pending != transcribe_key
-                            ]
-                        st.checkbox(
-                            "Check to process",
-                            value=bool(st.session_state.get(transcribe_key, False)),
-                            key=transcribe_key,
-                        )
                     if url:
-                        st.link_button("Open in Instagram" if is_instagram else "Open source link", url, width="stretch")
                         menu_nonce = st.session_state.get(menu_nonce_key, 0)
                         menu_label_with_nonce = f"Actions{chr(0x200B) * menu_nonce}"
                         with st.popover(menu_label_with_nonce, use_container_width=True):
+                            st.link_button(
+                                "Open in Instagram" if is_instagram else "Open source link",
+                                url,
+                                width="stretch",
+                            )
                             primary_action = "process_post" if _is_reel_url(url) else "image_text"
                             primary_help = (
                                 "Transcribe, generate the caption, and generate slide copy."
@@ -3619,7 +3612,6 @@ if active_tab == "Home":
                             _queue_workspace_action(row_num, "process_post")
                             _rerun_workspace("Edit")
 
-                    st.markdown('<div class="workspace-section-label workspace-content-tabs">Content</div>', unsafe_allow_html=True)
                     _copy_tabs(
                         row_num,
                         generated,
