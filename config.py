@@ -174,6 +174,11 @@ def _secret_manager_value(secret_name: str) -> str:
 
 def _get_secret(key: str, default: str = "") -> str:
     """Read a secret from Secret Manager first, then runtime secrets."""
+    if key in {"GOOGLE_OAUTH_CLIENT_JSON", "GOOGLE_OAUTH_TOKEN_JSON"}:
+        runtime_value = _runtime_secret(key, default)
+        if runtime_value not in (None, ""):
+            return str(runtime_value)
+
     secret_names = SECRET_MANAGER_SECRET_NAMES.get(key, "")
     if isinstance(secret_names, str):
         secret_names = (secret_names,) if secret_names else ()
