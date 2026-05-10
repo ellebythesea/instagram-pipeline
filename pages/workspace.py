@@ -3552,14 +3552,6 @@ if active_tab == "Home":
                                 _close_workspace_menu(row)
                                 _queue_workspace_action(row_num, "refresh_thumbnail_5s")
                                 _rerun_workspace("Edit")
-                            if st.button(
-                                "Update all names",
-                                key=f"workspace_menu_update_all_names_{row_num}",
-                                width="stretch",
-                                help="Save all edited speaker names to the sheet.",
-                            ):
-                                _close_workspace_menu(row)
-                                _handle_update_all_workspace_speaker_names(editor_rows)
                             skip_label = "Unskip" if status.strip().lower() == "skipped" else "Skip"
                             if st.button(
                                 skip_label,
