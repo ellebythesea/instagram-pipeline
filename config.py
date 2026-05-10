@@ -221,17 +221,31 @@ def _get_google_credentials_json() -> str:
 GOOGLE_SERVICE_ACCOUNT_JSON = _get_google_credentials_json()
 
 
-if _truthy_env_flag("DEBUG_SECRET_LOOKUPS"):
-    openai_secret_name = SECRET_MANAGER_SECRET_NAMES.get("OPENAI_API_KEY", "")
-    if isinstance(openai_secret_name, tuple):
-        openai_secret_name = ",".join(openai_secret_name)
-    openai_secret_raw = ""
-    if isinstance(SECRET_MANAGER_SECRET_NAMES.get("OPENAI_API_KEY", ""), str):
-        openai_secret_raw = _secret_manager_value(str(SECRET_MANAGER_SECRET_NAMES["OPENAI_API_KEY"]))
-    print(
-        "[config] "
-        f"secret_manager_project_id={SECRET_MANAGER_PROJECT_ID or '(missing)'} "
-        f"openai_secret_name={openai_secret_name or '(missing)'} "
-        f"openai_secret_found={'yes' if openai_secret_raw else 'no'} "
-        f"openai_api_key_loaded={'yes' if bool(OPENAI_API_KEY) else 'no'}"
-    )
+google_service_account_client_email = ""
+google_service_account_json_loaded = "no"
+google_service_account_json_valid = "no"
+if GOOGLE_SERVICE_ACCOUNT_JSON:
+    google_service_account_json_loaded = "yes"
+    try:
+        google_service_account_info = json.loads(GOOGLE_SERVICE_ACCOUNT_JSON)
+        google_service_account_client_email = str(google_service_account_info.get("client_email", "") or "")
+        google_service_account_json_valid = "yes"
+    except Exception:
+        google_service_account_client_email = "(parse failed)"
+
+openai_secret_name = SECRET_MANAGER_SECRET_NAMES.get("OPENAI_API_KEY", "")
+if isinstance(openai_secret_name, tuple):
+    openai_secret_name = ",".join(openai_secret_name)
+openai_secret_raw = ""
+if isinstance(SECRET_MANAGER_SECRET_NAMES.get("OPENAI_API_KEY", ""), str):
+    openai_secret_raw = _secret_manager_value(str(SECRET_MANAGER_SECRET_NAMES["OPENAI_API_KEY"]))
+print(
+    "[config] "
+    f"secret_manager_project_id={SECRET_MANAGER_PROJECT_ID or '(missing)'} "
+    f"google_service_account_json_loaded={google_service_account_json_loaded} "
+    f"google_service_account_json_valid={google_service_account_json_valid} "
+    f"google_service_account_client_email={google_service_account_client_email or '(missing)'} "
+    f"openai_secret_name={openai_secret_name or '(missing)'} "
+    f"openai_secret_found={'yes' if openai_secret_raw else 'no'} "
+    f"openai_api_key_loaded={'yes' if bool(OPENAI_API_KEY) else 'no'}"
+)
