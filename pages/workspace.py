@@ -84,7 +84,7 @@ ORG_HASHTAG_MAP = {
     "American Experiment Project": "#usa",
 }
 
-EDITABLE_STATUSES = {"ingested", "done"}
+EDITABLE_STATUSES = {"ingested", "done", "slides"}
 TRANSCRIPT_SIZE_WARNING_BYTES = 100 * 1024 * 1024
 EDITOR_INITIAL_RENDER_LIMIT = 12
 INSTAGRAM_CANVAS_WIDTH_PX = 1080
