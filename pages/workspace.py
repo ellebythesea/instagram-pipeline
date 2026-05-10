@@ -1965,7 +1965,7 @@ def _copy_tabs(
     prompt_row: dict | None = None,
     thumbnail_link: str = "",
 ) -> None:
-    tab_labels = ["Caption", "Original caption"]
+    tab_labels = ["Caption", "Original"]
     tab_labels.append("Slides")
     media_links = [link.strip() for link in (media_link or "").split(",") if link.strip()]
     if media_links:
@@ -2556,10 +2556,11 @@ def _generate_reliable_carousel_copy(row: dict, model: str = "gpt-5.2") -> dict[
 def _process_post_online(row: dict) -> None:
     row_num = row["row_number"]
     has_media = bool(_cell_text(row.get("Media Drive Link")).strip())
+    existing_transcript = _cell_text(row.get("Transcript")).strip()
     updated_row = _fetch_row_with_transcript(
         row,
         download_media=not has_media,
-        force_remote=True,
+        force_remote=not bool(existing_transcript),
     )
     current_inputs = _current_row_caption_inputs(updated_row)
     update_metadata(
