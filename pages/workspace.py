@@ -60,6 +60,11 @@ generate_carousel_copy = getattr(
     "generate_carousel_copy",
     lambda _row: {"name": "", "text1": "", "text2": "", "text3": ""},
 )
+generate_batch_carousel_copy_with_model = getattr(
+    pipeline_caption_ops,
+    "generate_batch_carousel_copy_with_model",
+    lambda rows, model="gpt-5.2": {},
+)
 
 MODE_OPTIONS = [
     "Add to sheet",
@@ -2527,6 +2532,27 @@ def _write_specific_carousel_fields(row_number: int, carousel: dict[str, str]) -
     )
 
 
+def _carousel_has_required_text(carousel: dict[str, str]) -> bool:
+    return bool(
+        _cell_text(carousel.get("text1")).strip()
+        and _cell_text(carousel.get("text2")).strip()
+        and _cell_text(carousel.get("text3")).strip()
+    )
+
+
+def _generate_reliable_carousel_copy(row: dict, model: str = "gpt-5.2") -> dict[str, str]:
+    carousel = generate_carousel_copy_with_model(row, model=model)
+    if _carousel_has_required_text(carousel):
+        return carousel
+
+    batch_results = generate_batch_carousel_copy_with_model([row], model=model)
+    batch_carousel = batch_results.get(int(row.get("row_number") or 0), {})
+    if _carousel_has_required_text(batch_carousel):
+        return batch_carousel
+
+    raise ValueError("Slide generation returned incomplete text.")
+
+
 def _process_post_online(row: dict) -> None:
     row_num = row["row_number"]
     has_media = bool(_cell_text(row.get("Media Drive Link")).strip())
@@ -2550,8 +2576,10 @@ def _process_post_online(row: dict) -> None:
     caption = generate_row_caption(updated_row)
     next_status = "skipped" if (row.get("Status", "") or "").strip().lower() == "skipped" else "done"
     update_caption(GOOGLE_SHEET_ID, row_num, caption, next_status)
+    updated_row["Generated Caption"] = caption
+    updated_row["Status"] = next_status
 
-    carousel = generate_carousel_copy_with_model(updated_row, model="gpt-5.2")
+    carousel = _generate_reliable_carousel_copy(updated_row, model="gpt-5.2")
     _write_specific_carousel_fields(row_num, carousel)
 
     media_links = [link.strip() for link in (_cell_text(updated_row.get("Media Drive Link")) or "").split(",") if link.strip()]

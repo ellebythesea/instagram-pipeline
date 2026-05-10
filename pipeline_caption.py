@@ -197,19 +197,24 @@ def generate_carousel_copy(row: dict) -> dict[str, str]:
     return generate_carousel_copy_with_model(row, model="gpt-4o")
 
 
+def _carousel_display_name(row: dict) -> str:
+    speaker_name = row.get("Speaker Name", "").strip()
+    username = row.get("Source Username", "").strip()
+    media_type = (row.get("Media Type", "") or "").strip().lower()
+    if speaker_name:
+        return speaker_name
+    if media_type != "article" and username:
+        return f"@{username.lstrip('@')}"
+    return username
+
+
 def generate_carousel_copy_with_model(row: dict, model: str = "gpt-4o") -> dict[str, str]:
     """Generate Figma/Google Sync carousel fields."""
     if not OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY is not configured.")
 
     transcript, original_caption, caption_context = _row_source_text(row)
-    speaker_name = row.get("Speaker Name", "").strip()
-    username = row.get("Source Username", "").strip()
-    media_type = (row.get("Media Type", "") or "").strip().lower()
-    if speaker_name:
-        display_name = speaker_name
-    else:
-        display_name = f"@{username.lstrip('@')}" if media_type != "article" and username else username
+    display_name = _carousel_display_name(row)
 
     user_parts = []
     if transcript:
@@ -254,3 +259,94 @@ def generate_carousel_copy_with_model(row: dict, model: str = "gpt-4o") -> dict[
         "text2": (payload.get("text2") or "").strip()[:300],
         "text3": (payload.get("text3") or "").strip()[:300],
     }
+
+
+def generate_batch_carousel_copy_with_model(rows: list[dict], model: str = "gpt-5.2") -> dict[int, dict[str, str]]:
+    """Generate carousel fields for multiple rows in one API call."""
+    if not OPENAI_API_KEY:
+        raise RuntimeError("OPENAI_API_KEY is not configured.")
+    if not rows:
+        return {}
+
+    blocks: list[str] = []
+    display_names: dict[int, str] = {}
+    for row in rows:
+        row_number = int(row.get("row_number") or 0)
+        if row_number <= 0:
+            continue
+        transcript, original_caption, caption_context = _row_source_text(row)
+        display_name = _carousel_display_name(row)
+        display_names[row_number] = display_name
+        blocks.append(
+            "\n".join(
+                [
+                    f"ROW {row_number}",
+                    f"display_name: {display_name or 'unknown'}",
+                    f"username: {(row.get('Source Username') or '').strip() or 'unknown'}",
+                    f"media_type: {(row.get('Media Type') or '').strip().lower() or 'post'}",
+                    f"speaker_name: {(row.get('Speaker Name') or '').strip() or '(none)'}",
+                    f"generated_caption:\n{(row.get('Generated Caption') or '').strip() or '(none)'}",
+                    f"transcript:\n{transcript or '(none)'}",
+                    f"original_caption:\n{original_caption or '(none)'}",
+                    f"caption_context:\n{caption_context or '(none)'}",
+                ]
+            )
+        )
+
+    if not blocks:
+        return {}
+
+    prompt = (
+        "Return ONLY valid JSON as an array.\n"
+        "Each object must include: row_number, name, text1, text2, text3.\n"
+        "Rules:\n"
+        "- Keep row_number exactly the same as the input row block\n"
+        "- name: short username/domain/person label only\n"
+        "- text1: strongest opening carousel slide, max 150 characters\n"
+        "- text2: max 300 characters\n"
+        "- text3: max 300 characters\n"
+        "- no hashtags\n"
+        "- no markdown\n"
+        "- no commentary outside JSON\n"
+        "- no intro labels like Slide 1\n"
+        "- no em dashes\n"
+        "- use the generated_caption as a summary signal when it helps, but stay grounded in the source text\n"
+        "- write like a punchy viral political Instagram carousel account\n"
+        "- prioritize names, numbers, accusations, quotes, stakes, and consequences\n"
+        "- make each text field feel like a standalone slide\n"
+    )
+
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {
+                "role": "system",
+                "content": "You write concise viral political carousel copy and return valid JSON only.",
+            },
+            {"role": "user", "content": prompt + "\n\n" + "\n\n---\n\n".join(blocks)},
+        ],
+        max_tokens=max(900, min(4000, 450 * len(blocks))),
+        temperature=0.45,
+    )
+    raw = response.choices[0].message.content.strip()
+    match = re.search(r"\[[\s\S]*\]", raw)
+    payload = json.loads(match.group(0) if match else raw)
+    items = payload if isinstance(payload, list) else [payload]
+
+    results: dict[int, dict[str, str]] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        try:
+            row_number = int(item.get("row_number") or 0)
+        except Exception:
+            continue
+        if row_number <= 0:
+            continue
+        results[row_number] = {
+            "name": (item.get("name") or display_names.get(row_number) or "").strip(),
+            "text1": (item.get("text1") or "").strip()[:150],
+            "text2": (item.get("text2") or "").strip()[:300],
+            "text3": (item.get("text3") or "").strip()[:300],
+        }
+    return results
