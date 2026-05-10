@@ -111,7 +111,7 @@ if not SECRET_MANAGER_PROJECT_ID and BOOTSTRAP_SERVICE_ACCOUNT_JSON:
         SECRET_MANAGER_PROJECT_ID = ""
 
 
-SECRET_MANAGER_SECRET_NAMES: dict[str, str] = {
+SECRET_MANAGER_SECRET_NAMES: dict[str, str | tuple[str, ...]] = {
     "OPENAI_API_KEY": str(_runtime_secret("SECRET_MANAGER_OPENAI_API_KEY_NAME", "openai-api-key") or "openai-api-key"),
     "SERPER_API_KEY": str(_runtime_secret("SECRET_MANAGER_SERPER_API_KEY_NAME", "serper-id") or "serper-id"),
     "APP_PASSWORD": str(_runtime_secret("SECRET_MANAGER_APP_PASSWORD_NAME", "password") or "password"),
@@ -119,7 +119,10 @@ SECRET_MANAGER_SECRET_NAMES: dict[str, str] = {
     "GOOGLE_SHEET_ID": str(_runtime_secret("SECRET_MANAGER_GOOGLE_SHEET_ID_NAME", "google-sheet-id") or "google-sheet-id"),
     "GOOGLE_WORKSHEET_NAME": str(_runtime_secret("SECRET_MANAGER_GOOGLE_WORKSHEET_NAME", "google-worksheet-name") or "google-worksheet-name"),
     "GOOGLE_DRIVE_FOLDER_ID": str(_runtime_secret("SECRET_MANAGER_GOOGLE_DRIVE_FOLDER_ID_NAME", "google-folder-id") or "google-folder-id"),
-    "GOOGLE_SERVICE_ACCOUNT_JSON": str(_runtime_secret("SECRET_MANAGER_GOOGLE_SERVICE_ACCOUNT_JSON_NAME", "google-service-account") or "google-service-account"),
+    "GOOGLE_SERVICE_ACCOUNT_JSON": (
+        str(_runtime_secret("SECRET_MANAGER_GOOGLE_SERVICE_ACCOUNT_JSON_NAME", "google-service-account-json") or "google-service-account-json"),
+        "google-service-account",
+    ),
     "GOOGLE_CREDENTIALS_BASE64": str(_runtime_secret("SECRET_MANAGER_GOOGLE_CREDENTIALS_BASE64_NAME", "google-service-account") or "google-service-account"),
     "GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER": str(_runtime_secret("SECRET_MANAGER_GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER_NAME", "google-screenshots-subfolder") or "google-screenshots-subfolder"),
     "APIFY_REEL_ACTOR_ID": str(_runtime_secret("SECRET_MANAGER_APIFY_REEL_ACTOR_ID_NAME", "apify-reel-actor-id") or "apify-reel-actor-id"),
@@ -165,8 +168,10 @@ def _secret_manager_value(secret_name: str) -> str:
 
 def _get_secret(key: str, default: str = "") -> str:
     """Read a secret from Secret Manager first, then runtime secrets."""
-    secret_name = SECRET_MANAGER_SECRET_NAMES.get(key, "")
-    if secret_name:
+    secret_names = SECRET_MANAGER_SECRET_NAMES.get(key, "")
+    if isinstance(secret_names, str):
+        secret_names = (secret_names,) if secret_names else ()
+    for secret_name in secret_names:
         value = _secret_manager_value(secret_name)
         if value:
             return value
