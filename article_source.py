@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import multiprocessing
 import re
+from datetime import datetime, timedelta, timezone
 from html import unescape
 from html.parser import HTMLParser
 from queue import Empty
 from urllib.parse import urljoin, urlparse
 
 import requests
+
+from config import SERPER_API_KEY
 
 
 _USER_AGENT = (
@@ -27,6 +30,8 @@ _REQUEST_HEADERS = {
 _REQUEST_TIMEOUT = (8, 25)
 _ARTICLE_TIMEOUT_SECONDS = 40
 _MAX_HTML_BYTES = 3 * 1024 * 1024
+_SERPER_TIMEOUT = 15
+_SERPER_MAX_AGE_DAYS = 14
 
 _NOISE_PATTERNS = [
     r"^copyright\s+\d{4}.*all rights reserved\.?$",
@@ -187,6 +192,132 @@ def _fallback_source_text(title: str, description: str) -> str:
     return "\n\n".join(parts).strip()
 
 
+def _looks_like_usable_source_text(text: str) -> bool:
+    cleaned = _clean_text(text)
+    if len(cleaned) < 140:
+        return False
+    sentence_count = len(re.findall(r"[.!?](?:\s|$)", cleaned))
+    return sentence_count >= 2 or len(cleaned) >= 220
+
+
+def _slug_terms(url: str) -> str:
+    path = urlparse(url).path or ""
+    slug = path.rstrip("/").split("/")[-1]
+    slug = re.sub(r"[-_]+", " ", slug)
+    slug = re.sub(r"\s+", " ", slug).strip()
+    return slug
+
+
+def _build_serper_query(url: str, title: str, description: str) -> str:
+    parts = [
+        _clean_text(title),
+        _clean_text(description),
+        _slug_terms(url),
+    ]
+    query = next((part for part in parts if part), "")
+    if not query:
+        parsed = urlparse(url)
+        query = parsed.netloc.replace("www.", "").strip()
+    return query[:180]
+
+
+def _parse_recent_date(value: str) -> datetime | None:
+    cleaned = _clean_text(value)
+    if not cleaned:
+        return None
+    now = datetime.now(timezone.utc)
+    lowered = cleaned.lower()
+
+    rel = re.match(r"(\d+)\s+(minute|hour|day|week|month|year)s?\s+ago", lowered)
+    if rel:
+        amount = int(rel.group(1))
+        unit = rel.group(2)
+        if unit == "minute":
+            return now - timedelta(minutes=amount)
+        if unit == "hour":
+            return now - timedelta(hours=amount)
+        if unit == "day":
+            return now - timedelta(days=amount)
+        if unit == "week":
+            return now - timedelta(weeks=amount)
+        if unit == "month":
+            return now - timedelta(days=30 * amount)
+        if unit == "year":
+            return now - timedelta(days=365 * amount)
+
+    for fmt in ("%b %d, %Y", "%B %d, %Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(cleaned, fmt).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    return None
+
+
+def _fetch_serper_fallback(url: str, title: str, description: str, image_url: str = "") -> dict:
+    if not SERPER_API_KEY:
+        raise RuntimeError("SERPER_API_KEY is not configured.")
+
+    query = _build_serper_query(url, title, description)
+    if not query:
+        raise RuntimeError("Serper fallback could not build a search query.")
+
+    response = requests.post(
+        "https://google.serper.dev/search",
+        json={
+            "q": query,
+            "num": 5,
+            "tbm": "nws",
+            "tbs": "qdr:w",
+            "gl": "us",
+            "hl": "en",
+        },
+        headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
+        timeout=_SERPER_TIMEOUT,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    items = payload.get("news", []) or []
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=_SERPER_MAX_AGE_DAYS)
+    recent_items: list[dict] = []
+    for item in items:
+        published = _parse_recent_date(item.get("date", ""))
+        if published is not None and published < cutoff:
+            continue
+        recent_items.append(item)
+
+    if not recent_items:
+        raise RuntimeError("Serper fallback returned no recent news results.")
+
+    best_title = _clean_text(title) or _clean_text(recent_items[0].get("title", ""))
+    best_description = _clean_text(description) or _clean_text(recent_items[0].get("snippet", ""))
+    snippets: list[str] = []
+    for item in recent_items[:4]:
+        line = _clean_text(item.get("snippet", ""))
+        if not line:
+            title_line = _clean_text(item.get("title", ""))
+            line = title_line
+        if line and line not in snippets:
+            snippets.append(line)
+
+    source_text = _compose_source_text(best_title, best_description, snippets)
+    if not source_text:
+        source_text = _fallback_source_text(best_title, best_description)
+    if not source_text:
+        raise RuntimeError("Serper fallback did not return enough article context.")
+
+    parsed = urlparse(url)
+    return {
+        "url": url,
+        "domain": parsed.netloc.replace("www.", ""),
+        "title": best_title,
+        "description": best_description,
+        "image_url": image_url,
+        "summary_text": _fallback_source_text(best_title, best_description),
+        "source_text": source_text,
+    }
+
+
 def _reader_fallback_candidates(url: str) -> list[str]:
     parsed = urlparse(url)
     query = f"?{parsed.query}" if parsed.query else ""
@@ -295,21 +426,27 @@ def _fetch_article_source_inner(url: str) -> dict:
     try:
         final_url, html = _fetch_article_html(url)
     except requests.RequestException:
-        fallback = _fetch_reader_fallback(url)
+        fallback: dict | None = None
+        try:
+            fallback = _fetch_reader_fallback(url)
+        except Exception:
+            fallback = None
         parsed = urlparse(url)
         domain = parsed.netloc.replace("www.", "")
-        return {
-            "url": url,
-            "domain": domain,
-            "title": fallback.get("title", ""),
-            "description": fallback.get("description", ""),
-            "image_url": "",
-            "summary_text": _fallback_source_text(
-                fallback.get("title", ""),
-                fallback.get("description", ""),
-            ),
-            "source_text": fallback.get("source_text", ""),
-        }
+        if fallback and fallback.get("source_text"):
+            return {
+                "url": url,
+                "domain": domain,
+                "title": fallback.get("title", ""),
+                "description": fallback.get("description", ""),
+                "image_url": "",
+                "summary_text": _fallback_source_text(
+                    fallback.get("title", ""),
+                    fallback.get("description", ""),
+                ),
+                "source_text": fallback.get("source_text", ""),
+            }
+        return _fetch_serper_fallback(url, "", "")
 
     og_title = _extract_meta(html, "property", "og:title")
     og_description = _extract_meta(html, "property", "og:description")
@@ -324,16 +461,34 @@ def _fetch_article_source_inner(url: str) -> dict:
     description = og_description or twitter_description or meta_description
     summary_text = _fallback_source_text(title, description)
     source_text = _compose_source_text(title, description, paragraphs)
-    if not source_text:
+    if not _looks_like_usable_source_text(source_text):
         source_text = summary_text
-    if not source_text:
-        raise ValueError("Could not extract enough article text from that link.")
-
     parsed = urlparse(final_url)
     domain = parsed.netloc.replace("www.", "")
     image_url = og_image or twitter_image
     if image_url:
         image_url = urljoin(final_url, image_url)
+    if not _looks_like_usable_source_text(source_text):
+        try:
+            fallback = _fetch_reader_fallback(url)
+            fallback_text = fallback.get("source_text", "")
+            if _looks_like_usable_source_text(fallback_text):
+                return {
+                    "url": final_url,
+                    "domain": domain,
+                    "title": fallback.get("title", "") or title,
+                    "description": fallback.get("description", "") or description,
+                    "image_url": image_url,
+                    "summary_text": _fallback_source_text(
+                        fallback.get("title", "") or title,
+                        fallback.get("description", "") or description,
+                    ),
+                    "source_text": fallback_text,
+                }
+        except Exception:
+            pass
+        return _fetch_serper_fallback(final_url, title, description, image_url)
+
     return {
         "url": final_url,
         "domain": domain,
