@@ -261,22 +261,46 @@ def _fetch_serper_fallback(url: str, title: str, description: str, image_url: st
     if not query:
         raise RuntimeError("Serper fallback could not build a search query.")
 
+    headers = {"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"}
+    request_body = {
+        "q": query,
+        "num": 5,
+        "tbm": "nws",
+        "tbs": "qdr:w",
+        "gl": "us",
+        "hl": "en",
+    }
     response = requests.post(
         "https://google.serper.dev/search",
-        json={
-            "q": query,
-            "num": 5,
-            "tbm": "nws",
-            "tbs": "qdr:w",
-            "gl": "us",
-            "hl": "en",
-        },
-        headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
+        json=request_body,
+        headers=headers,
         timeout=_SERPER_TIMEOUT,
     )
     response.raise_for_status()
     payload = response.json()
     items = payload.get("news", []) or []
+    item_title_key = "title"
+    item_snippet_key = "snippet"
+
+    if not items:
+        fallback_body = {
+            "q": query,
+            "num": 5,
+            "tbs": "qdr:w",
+            "gl": "us",
+            "hl": "en",
+        }
+        fallback_response = requests.post(
+            "https://google.serper.dev/search",
+            json=fallback_body,
+            headers=headers,
+            timeout=_SERPER_TIMEOUT,
+        )
+        fallback_response.raise_for_status()
+        fallback_payload = fallback_response.json()
+        items = fallback_payload.get("organic", []) or []
+        item_title_key = "title"
+        item_snippet_key = "snippet"
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=_SERPER_MAX_AGE_DAYS)
     recent_items: list[dict] = []
@@ -287,15 +311,15 @@ def _fetch_serper_fallback(url: str, title: str, description: str, image_url: st
         recent_items.append(item)
 
     if not recent_items:
-        raise RuntimeError("Serper fallback returned no recent news results.")
+        raise RuntimeError(f"Serper fallback returned no recent results for query: {query}")
 
-    best_title = _clean_text(title) or _clean_text(recent_items[0].get("title", ""))
-    best_description = _clean_text(description) or _clean_text(recent_items[0].get("snippet", ""))
+    best_title = _clean_text(title) or _clean_text(recent_items[0].get(item_title_key, ""))
+    best_description = _clean_text(description) or _clean_text(recent_items[0].get(item_snippet_key, ""))
     snippets: list[str] = []
     for item in recent_items[:4]:
-        line = _clean_text(item.get("snippet", ""))
+        line = _clean_text(item.get(item_snippet_key, ""))
         if not line:
-            title_line = _clean_text(item.get("title", ""))
+            title_line = _clean_text(item.get(item_title_key, ""))
             line = title_line
         if line and line not in snippets:
             snippets.append(line)
