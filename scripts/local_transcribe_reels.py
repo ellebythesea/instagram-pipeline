@@ -346,6 +346,27 @@ def _generate_caption_from_existing_sources(row: dict) -> dict:
     return _update_caption_from_transcript(row, (row.get("Transcript") or "").strip())
 
 
+def _row_missing_slide_fields(row: dict) -> bool:
+    return not all(
+        (row.get(field) or "").strip()
+        for field in ("name", "text1", "text2", "text3")
+    )
+
+
+def _rows_needing_slide_generation(rows: list[dict]) -> list[dict]:
+    needed: list[dict] = []
+    for row in rows:
+        status = (row.get("Status") or "").strip().lower()
+        if status.startswith("error"):
+            continue
+        if not _row_missing_slide_fields(row):
+            continue
+        if not _row_has_caption_source(row):
+            continue
+        needed.append(row)
+    return needed
+
+
 def _generate_slides_for_rows(rows: list[dict], model: str = "gpt-5.2") -> tuple[int, list[str]]:
     if not rows:
         return 0, []
@@ -482,10 +503,25 @@ def main() -> int:
             if args.debug:
                 traceback.print_exc()
 
-    if slide_rows:
-        print(f"Generating slide copy for {len({int(row.get('row_number') or 0) for row in slide_rows if row.get('row_number')})} row(s) in one gpt-5.2 call...")
+    rows_after_processing = get_all_rows(GOOGLE_SHEET_ID)
+    slide_row_map: dict[int, dict] = {}
+    for row in rows_after_processing:
+        row_number = int(row.get("row_number") or 0)
+        if row_number > 0:
+            slide_row_map[row_number] = row
+    for row in slide_rows:
+        row_number = int(row.get("row_number") or 0)
+        if row_number > 0:
+            slide_row_map[row_number] = row
+
+    slide_targets = _rows_needing_slide_generation(list(slide_row_map.values()))
+    if args.row > 0:
+        slide_targets = [row for row in slide_targets if int(row.get("row_number") or 0) == args.row]
+
+    if slide_targets:
+        print(f"Generating slide copy for {len({int(row.get('row_number') or 0) for row in slide_targets if row.get('row_number')})} row(s) in one gpt-5.2 call...")
         try:
-            updated_count, issues = _generate_slides_for_rows(slide_rows, model="gpt-5.2")
+            updated_count, issues = _generate_slides_for_rows(slide_targets, model="gpt-5.2")
             print(f"Slide generation complete: updated {updated_count} row(s).")
             for issue in issues:
                 print(issue)

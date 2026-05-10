@@ -101,10 +101,10 @@ PREVIEW_SLIDE_FONT_FAMILY = "'Poppins', sans-serif"
 PREVIEW_SLIDE_FONT_WEIGHT = 500
 PREVIEW_SLIDE_LETTER_SPACING = "0.01em"
 PREVIEW_SLIDE_LINE_HEIGHT = "1.26"
-SLIDE_TWO_FONT_MIN_REM = 1.5
+SLIDE_TWO_FONT_MIN_REM = 1.4
 SLIDE_TWO_FONT_VW = 4.4
 SLIDE_TWO_FONT_MAX_REM = 3.35
-SLIDE_THREE_FONT_MIN_REM = 1.5
+SLIDE_THREE_FONT_MIN_REM = 1.4
 SLIDE_THREE_FONT_VW = 4.0
 SLIDE_THREE_FONT_MAX_REM = 3.0
 PREVIEW_UPLOAD_SUBFOLDER = "previews"
@@ -1799,7 +1799,7 @@ def _render_slide_one_preview(
             background: linear-gradient(180deg, rgba(18, 23, 34, 0) 0%, rgba(18, 23, 34, 0.9) 36.34%, #121722 80.76%);
           ">
             <div class="workspace-slide-preview-handle" style="
-              font-size: clamp(0.8rem, 1.15vw, 1rem);
+              font-size: clamp(0.7rem, 1.15vw, 1rem);
               letter-spacing: 0.3em;
               line-height: 1.38;
               text-transform: uppercase;
