@@ -18,6 +18,10 @@ from config import (
 _SCOPES = ["https://www.googleapis.com/auth/drive"]
 
 
+def _raise_drive_step_error(step: str, exc: Exception) -> None:
+    raise RuntimeError(f"Google Drive step failed during {step}. Raw error: {exc}") from exc
+
+
 def _get_service():
     creds_src = GOOGLE_SERVICE_ACCOUNT_JSON
     if not creds_src:
@@ -46,17 +50,20 @@ def _find_file_in_folder(service, folder_id: str, filename: str) -> dict:
         f"name = '{escaped_name}' and "
         f"'{folder_id}' in parents and trashed = false"
     )
-    result = (
-        service.files()
-        .list(
-            q=query,
-            fields="files(id,name,webViewLink)",
-            pageSize=1,
-            supportsAllDrives=True,
-            includeItemsFromAllDrives=True,
+    try:
+        result = (
+            service.files()
+            .list(
+                q=query,
+                fields="files(id,name,webViewLink)",
+                pageSize=1,
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True,
+            )
+            .execute()
         )
-        .execute()
-    )
+    except Exception as exc:
+        _raise_drive_step_error("listing files in the target folder", exc)
     files = result.get("files", [])
     return files[0] if files else {}
 
@@ -67,29 +74,33 @@ def upload_to_drive(file_path: str, filename: str, folder_id: str, overwrite: bo
     media_body = MediaFileUpload(file_path, resumable=True)
 
     existing = _find_file_in_folder(service, folder_id, filename) if overwrite else {}
-    if existing.get("id"):
-        uploaded = (
-            service.files()
-            .update(
-                fileId=existing["id"],
-                body={"name": filename},
-                media_body=media_body,
-                fields="id,webViewLink",
-                supportsAllDrives=True,
+    try:
+        if existing.get("id"):
+            uploaded = (
+                service.files()
+                .update(
+                    fileId=existing["id"],
+                    body={"name": filename},
+                    media_body=media_body,
+                    fields="id,webViewLink",
+                    supportsAllDrives=True,
+                )
+                .execute()
             )
-            .execute()
-        )
-    else:
-        uploaded = (
-            service.files()
-            .create(
-                body={"name": filename, "parents": [folder_id]},
-                media_body=media_body,
-                fields="id,webViewLink",
-                supportsAllDrives=True,
+        else:
+            uploaded = (
+                service.files()
+                .create(
+                    body={"name": filename, "parents": [folder_id]},
+                    media_body=media_body,
+                    fields="id,webViewLink",
+                    supportsAllDrives=True,
+                )
+                .execute()
             )
-            .execute()
-        )
+    except Exception as exc:
+        step = "updating an existing Drive file" if existing.get("id") else "creating a Drive file"
+        _raise_drive_step_error(step, exc)
 
     try:
         service.permissions().create(
@@ -97,9 +108,8 @@ def upload_to_drive(file_path: str, filename: str, folder_id: str, overwrite: bo
             body={"type": "anyone", "role": "reader"},
             supportsAllDrives=True,
         ).execute()
-    except Exception:
-        # Overwrites keep the existing file id, which often already has sharing set.
-        pass
+    except Exception as exc:
+        _raise_drive_step_error("setting public reader permission on the uploaded file", exc)
 
     return uploaded.get("webViewLink", "")
 
@@ -117,15 +127,18 @@ def get_drive_file_metadata(link_or_file_id: str) -> dict:
     file_id = extract_drive_file_id(link_or_file_id) or (link_or_file_id or "").strip()
     if not file_id:
         raise ValueError(f"Could not parse a Drive file id from {link_or_file_id!r}")
-    return (
-        service.files()
-        .get(
-            fileId=file_id,
-            fields="id,name,webViewLink,mimeType",
-            supportsAllDrives=True,
+    try:
+        return (
+            service.files()
+            .get(
+                fileId=file_id,
+                fields="id,name,webViewLink,mimeType",
+                supportsAllDrives=True,
+            )
+            .execute()
         )
-        .execute()
-    )
+    except Exception as exc:
+        _raise_drive_step_error("reading Drive file metadata", exc)
 
 
 def copy_drive_file_to_folder(link_or_file_id: str, folder_id: str, filename: str = "") -> str:
@@ -134,33 +147,42 @@ def copy_drive_file_to_folder(link_or_file_id: str, folder_id: str, filename: st
     body = {"parents": [folder_id]}
     if filename.strip():
         body["name"] = filename.strip()
-    copied = (
-        service.files()
-        .copy(
-            fileId=metadata["id"],
-            body=body,
-            fields="id,webViewLink",
-            supportsAllDrives=True,
+    try:
+        copied = (
+            service.files()
+            .copy(
+                fileId=metadata["id"],
+                body=body,
+                fields="id,webViewLink",
+                supportsAllDrives=True,
+            )
+            .execute()
         )
-        .execute()
-    )
-    service.permissions().create(
-        fileId=copied["id"],
-        body={"type": "anyone", "role": "reader"},
-        supportsAllDrives=True,
-    ).execute()
+    except Exception as exc:
+        _raise_drive_step_error("copying a Drive file into the target folder", exc)
+    try:
+        service.permissions().create(
+            fileId=copied["id"],
+            body={"type": "anyone", "role": "reader"},
+            supportsAllDrives=True,
+        ).execute()
+    except Exception as exc:
+        _raise_drive_step_error("setting public reader permission on the copied file", exc)
     return copied.get("webViewLink", "")
 
 
 def download_drive_file(link_or_file_id: str, dest_path: str) -> str:
     service = _get_service()
     metadata = get_drive_file_metadata(link_or_file_id)
-    request = service.files().get_media(fileId=metadata["id"], supportsAllDrives=True)
-    buffer = io.BytesIO()
-    downloader = MediaIoBaseDownload(buffer, request)
-    done = False
-    while not done:
-        _status, done = downloader.next_chunk()
+    try:
+        request = service.files().get_media(fileId=metadata["id"], supportsAllDrives=True)
+        buffer = io.BytesIO()
+        downloader = MediaIoBaseDownload(buffer, request)
+        done = False
+        while not done:
+            _status, done = downloader.next_chunk()
+    except Exception as exc:
+        _raise_drive_step_error("downloading a Drive file", exc)
     with open(dest_path, "wb") as handle:
         handle.write(buffer.getvalue())
     return dest_path
@@ -175,32 +197,38 @@ def get_or_create_subfolder(parent_folder_id: str, folder_name: str) -> str:
         "mimeType = 'application/vnd.google-apps.folder' and "
         f"'{parent_folder_id}' in parents and trashed = false"
     )
-    result = (
-        service.files()
-        .list(
-            q=query,
-            fields="files(id,name)",
-            pageSize=1,
-            supportsAllDrives=True,
-            includeItemsFromAllDrives=True,
+    try:
+        result = (
+            service.files()
+            .list(
+                q=query,
+                fields="files(id,name)",
+                pageSize=1,
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True,
+            )
+            .execute()
         )
-        .execute()
-    )
+    except Exception as exc:
+        _raise_drive_step_error("listing subfolders in the target Drive folder", exc)
     files = result.get("files", [])
     if files:
         return files[0]["id"]
 
-    created = (
-        service.files()
-        .create(
-            body={
-                "name": folder_name,
-                "mimeType": "application/vnd.google-apps.folder",
-                "parents": [parent_folder_id],
-            },
-            fields="id",
-            supportsAllDrives=True,
+    try:
+        created = (
+            service.files()
+            .create(
+                body={
+                    "name": folder_name,
+                    "mimeType": "application/vnd.google-apps.folder",
+                    "parents": [parent_folder_id],
+                },
+                fields="id",
+                supportsAllDrives=True,
+            )
+            .execute()
         )
-        .execute()
-    )
+    except Exception as exc:
+        _raise_drive_step_error("creating a Drive subfolder", exc)
     return created["id"]
