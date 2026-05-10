@@ -1970,7 +1970,19 @@ def _copy_tabs(
     media_links = [link.strip() for link in (media_link or "").split(",") if link.strip()]
     if media_links:
         tab_labels.append("Media")
-    content_tabs = st.tabs(tab_labels)
+    content_tab_key = f"workspace_row_content_tab_{row_num}"
+    current_content_tab = st.session_state.get(content_tab_key, "Caption")
+    if current_content_tab not in tab_labels:
+        current_content_tab = "Caption"
+        st.session_state[content_tab_key] = current_content_tab
+    selected_content_tab = st.segmented_control(
+        "Content",
+        tab_labels,
+        default=current_content_tab,
+        key=content_tab_key,
+        label_visibility="collapsed",
+        width="stretch",
+    ) or "Caption"
     original_preview = _build_original_caption_preview(
         original_caption,
         username,
@@ -1978,7 +1990,7 @@ def _copy_tabs(
         required_hashtags,
         is_instagram=is_instagram,
     )
-    with content_tabs[0]:
+    if selected_content_tab == "Caption":
         _tab_copy_preview(
             _caption_tab_value(
                 generated,
@@ -1989,12 +2001,12 @@ def _copy_tabs(
                 is_instagram,
             )
         )
-    with content_tabs[1]:
+    elif selected_content_tab == "Original":
         _tab_copy_preview(original_preview)
         if is_instagram:
             st.caption("Transcript")
             _tab_copy_preview(transcript)
-    with content_tabs[2]:
+    elif selected_content_tab == "Slides":
         prompt_key = f"workspace_row_slides_prompt_{row_num}"
         slide_one_font_adjust_key = f"workspace_slide_preview_font_adjust_{row_num}"
         slide_one_background_adjust_key = f"workspace_slide_preview_background_adjust_{row_num}"
@@ -2050,8 +2062,7 @@ def _copy_tabs(
         row_prompt = st.session_state.get(prompt_key, "")
         if row_prompt:
             _one_line_copy_preview("slide prompt", row_prompt, f"workspace_row_slides_prompt_preview_{row_num}")
-    if media_links:
-        with content_tabs[3]:
+    elif selected_content_tab == "Media" and media_links:
             _one_line_copy_preview("media", "\n".join(media_links), f"workspace_media_links_{row_num}")
             st.markdown(
                 f'<div class="workspace-plain-copy-text">Drive media link{"" if len(media_links) == 1 else "s"}.</div>',
@@ -3417,15 +3428,6 @@ if active_tab == "Slides":
         _tab_copy_preview(slides_prompt, show_plain_text=False, key="workspace_slides_prompt_copy")
 
 if active_tab == "Home":
-    default_day, default_time = _schedule_day_defaults()
-    default_hour, default_minute, default_suffix = _time_parts(default_time)
-    st.session_state.setdefault("workspace_schedule_day", default_day)
-    st.session_state.setdefault("workspace_schedule_hour", default_hour)
-    st.session_state.setdefault("workspace_schedule_minute", default_minute)
-    st.session_state.setdefault("workspace_schedule_suffix", default_suffix)
-
-    schedule_apply_requested = False
-
     try:
         _all_rows = _run_with_sheet_quota_countdown(
             lambda: get_all_rows(GOOGLE_SHEET_ID),
@@ -3463,8 +3465,6 @@ if active_tab == "Home":
             st.session_state.pop("workspace_link_dialog_row", None)
         else:
             _render_workspace_link_dialog(dialog_row)
-
-    last_scheduled_times = _persisted_last_scheduled_time_labels(editor_rows)
 
     if not editor_rows:
         st.info("No rows yet. Add a link on Actions or process new rows on Data.")
@@ -3706,66 +3706,6 @@ if active_tab == "Home":
             help="Save all edited speaker names to the sheet.",
         ):
             _handle_update_all_workspace_speaker_names(editor_rows)
-
-    with st.expander("Set times", expanded=False):
-        st.markdown('<div class="workspace-schedule-anchor"></div>', unsafe_allow_html=True)
-        schedule_cols = st.columns([1, 0.7, 0.7, 0.7, 0.4], vertical_alignment="bottom")
-        with schedule_cols[0]:
-            st.selectbox(
-                "Day",
-                WEEKDAY_OPTIONS,
-                key="workspace_schedule_day",
-            )
-        with schedule_cols[1]:
-            st.selectbox(
-                "Hour",
-                list(range(1, 13)),
-                key="workspace_schedule_hour",
-            )
-        with schedule_cols[2]:
-            st.selectbox(
-                "Minute",
-                list(range(60)),
-                key="workspace_schedule_minute",
-                format_func=lambda value: f"{value:02d}",
-            )
-        with schedule_cols[3]:
-            st.selectbox(
-                "AM/PM",
-                ["am", "pm"],
-                key="workspace_schedule_suffix",
-            )
-        with schedule_cols[4]:
-            schedule_apply_requested = st.button("Set", key="workspace_schedule_set", type="primary", width="stretch")
-
-        if schedule_apply_requested:
-            start_day = st.session_state.get("workspace_schedule_day", default_day)
-            start_time = _time_from_parts(
-                int(st.session_state.get("workspace_schedule_hour", default_hour)),
-                int(st.session_state.get("workspace_schedule_minute", default_minute)),
-                st.session_state.get("workspace_schedule_suffix", default_suffix),
-            )
-            schedule_rows = sorted(editor_rows, key=lambda row: row.get("row_number", 0))
-            assignments = _build_schedule_labels(schedule_rows, start_day, start_time)
-            try:
-                update_scheduled_times(GOOGLE_SHEET_ID, assignments)
-                if assignments:
-                    latest_entry = list(assignments.values())[-1]
-                    existing_entries = get_last_scheduled_times(GOOGLE_SHEET_ID)
-                    update_last_scheduled_times(GOOGLE_SHEET_ID, [latest_entry, *existing_entries][:3])
-            except Exception as e:
-                st.session_state["workspace_error"] = f"Could not save schedule: {describe_error(e)}"
-            else:
-                row_word = "row" if len(assignments) == 1 else "rows"
-                st.session_state["workspace_success"] = f"Updated schedule for {len(assignments)} {row_word}."
-            _rerun_workspace("Edit")
-
-    if last_scheduled_times:
-        schedule_summary = " · ".join(last_scheduled_times)
-        st.markdown(
-            f'<div class="workspace-plain-copy-text">Last scheduled entries: {html.escape(schedule_summary)}</div>',
-            unsafe_allow_html=True,
-        )
 
 if active_tab == "Data":
     st.caption("Data view for the Google Sheet plus batch ingest.")
