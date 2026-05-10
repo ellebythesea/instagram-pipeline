@@ -8,7 +8,6 @@ import openai
 
 from config import DEFAULT_POST_FOOTER, OPENAI_API_KEY
 
-client = openai.OpenAI(api_key=OPENAI_API_KEY, timeout=45.0, max_retries=1)
 PINNED_TOP_COMMENT_PREFIX = "[[TOP]] "
 
 SYS_PROMPT = (
@@ -27,6 +26,18 @@ SYS_PROMPT = (
     "Write as if you are describing the underlying event or claim directly. "
     "Avoid speculation, flourish, links, or references to Trump's current office status."
 )
+
+
+_client: openai.OpenAI | None = None
+
+
+def _get_client() -> openai.OpenAI:
+    global _client
+    if _client is None:
+        if not OPENAI_API_KEY:
+            raise RuntimeError("OPENAI_API_KEY is not configured.")
+        _client = openai.OpenAI(api_key=OPENAI_API_KEY, timeout=45.0, max_retries=1)
+    return _client
 
 
 def _extract_hashtags(text: str) -> list[str]:
@@ -231,7 +242,7 @@ def generate_row_caption(row: dict) -> str:
             "If gender is unclear, use they. Do not repeat their name multiple times."
         )
 
-    response = client.chat.completions.create(
+    response = _get_client().chat.completions.create(
         model="gpt-4o",
         messages=[
             {"role": "system", "content": SYS_PROMPT},
@@ -379,7 +390,7 @@ def generate_carousel_copy_with_model(row: dict, model: str = "gpt-4o") -> dict[
         + f"\n* Use this label for name when possible: {display_name or 'unknown'}"
     )
 
-    response = client.chat.completions.create(
+    response = _get_client().chat.completions.create(
         model=model,
         messages=[
             {"role": "system", "content": "You write concise viral political carousel copy and return valid JSON only."},
@@ -437,7 +448,7 @@ def generate_batch_carousel_copy_with_model(rows: list[dict], model: str = "gpt-
 
     prompt = _carousel_slide_prompt_instructions(include_row_numbers=True)
 
-    response = client.chat.completions.create(
+    response = _get_client().chat.completions.create(
         model=model,
         messages=[
             {
