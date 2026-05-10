@@ -2581,49 +2581,7 @@ def _process_post_online(row: dict) -> None:
 
     carousel = _generate_reliable_carousel_copy(updated_row, model="gpt-5.2")
     _write_specific_carousel_fields(row_num, carousel)
-
-    media_links = [link.strip() for link in (_cell_text(updated_row.get("Media Drive Link")) or "").split(",") if link.strip()]
-    media_link = media_links[0] if media_links else ""
-    preview_folder_id, folder_base_name, source_filename = _ensure_preview_folder(
-        row_num,
-        _cell_text(updated_row.get("Source Username")).strip(),
-        _cell_text(updated_row.get("Speaker Name")).strip() or _cell_text(updated_row.get("Source Username")).strip(),
-        media_link,
-    )
-
-    uploaded_assets: list[dict[str, str]] = []
-    if media_link:
-        uploaded_assets.append(
-            {
-                "label": "Source video",
-                "link": _copy_source_video_into_preview_folder(media_link, preview_folder_id, source_filename),
-            }
-        )
-
-    slide_handle = _cell_text(updated_row.get("Speaker Name")).strip() or _cell_text(updated_row.get("Source Username")).strip()
-    if slide_handle and slide_handle == _cell_text(updated_row.get("Source Username")).strip() and not slide_handle.startswith("@"):
-        slide_handle = f"@{slide_handle}"
-
-    uploaded_assets.extend(
-        _upload_preview_pngs(
-            row_num,
-            _cell_text(updated_row.get("Source Username")).strip(),
-            slide_handle,
-            carousel.get("text1", ""),
-            carousel.get("text2", ""),
-            carousel.get("text3", ""),
-            _safe_browser_image_url(_cell_text(updated_row.get("Thumbnail Drive Link")).strip()),
-            media_link,
-            preview_folder_id=preview_folder_id,
-            folder_base_name=folder_base_name,
-            source_filename=source_filename,
-            include_source_video=False,
-        )
-    )
-    if media_link:
-        uploaded_assets.extend(_upload_split_videos(media_link, preview_folder_id))
-
-    st.session_state[f"workspace_preview_upload_links_{row_num}"] = uploaded_assets
+    st.session_state.pop(f"workspace_preview_upload_links_{row_num}", None)
 
 
 def _queue_workspace_action(row_number: int, action: str) -> None:
@@ -2674,7 +2632,7 @@ def _process_next_workspace_action() -> None:
             with st.spinner(f"Processing row {row_number}..."):
                 _process_post_online(row)
             st.session_state["workspace_success"] = (
-                f"Row {row_number}: processed with transcript, slide copy, previews, and splits."
+                f"Row {row_number}: processed with transcript, caption, and slide copy."
             )
         elif action == "transcript":
             with st.spinner(f"Refreshing row {row_number} with transcript..."):
@@ -3551,7 +3509,7 @@ if active_tab == "Home":
                         with st.popover(menu_label_with_nonce, use_container_width=True):
                             primary_action = "process_post" if _is_reel_url(url) else "image_text"
                             primary_help = (
-                                "Transcribe, generate slide copy, upload previews, and split the video."
+                                "Transcribe, generate the caption, and generate slide copy."
                                 if _is_reel_url(url)
                                 else "Extract text from images and regenerate caption."
                             )
