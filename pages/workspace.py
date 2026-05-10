@@ -2040,32 +2040,6 @@ def _copy_tabs(
                 slide_three_font_adjust_key,
                 current_slide_three_font_adjust,
             )
-        if st.button("Redo preview PNGs in Drive", key=f"workspace_preview_upload_{row_num}", width="stretch"):
-            try:
-                with st.spinner("Rendering preview PNGs and uploading to Drive..."):
-                    st.session_state[preview_links_key] = _upload_preview_pngs(
-                        row_num=row_num,
-                        username=username,
-                        handle_text=slide_handle,
-                        slide_text1=slide_text1,
-                        slide_text2=slide_text2,
-                        slide_text3=slide_text3,
-                        background_url=_safe_browser_image_url(thumbnail_link),
-                        media_link=media_links[0] if media_links else "",
-                        slide_one_font_adjust=current_slide_one_font_adjust,
-                        slide_one_background_adjust=current_slide_one_background_adjust,
-                        slide_two_font_adjust=current_slide_two_font_adjust,
-                        slide_three_font_adjust=current_slide_three_font_adjust,
-                    )
-            except Exception as e:
-                st.error(f"Could not upload preview PNGs: {describe_error(e)}")
-            else:
-                st.success("Preview PNGs updated in Drive.")
-        preview_links = st.session_state.get(preview_links_key, [])
-        if preview_links:
-            st.caption("Preview PNGs")
-            for item in preview_links:
-                st.link_button(item.get("label", "Open preview"), item.get("link", ""), width="stretch")
         st.code(slide_text1 or "(none)", language=None)
         st.code(slide_text2 or "(none)", language=None)
         st.code(slide_text3 or "(none)", language=None)
@@ -2553,6 +2527,22 @@ def _generate_reliable_carousel_copy(row: dict, model: str = "gpt-5.2") -> dict[
     raise ValueError("Slide generation returned incomplete text.")
 
 
+def _verify_carousel_fields_saved(row_number: int) -> dict[str, str]:
+    rows = get_all_rows(GOOGLE_SHEET_ID)
+    saved_row = next((item for item in rows if int(item.get("row_number") or 0) == row_number), None)
+    if not saved_row:
+        raise ValueError("Processed row could not be reloaded from the sheet.")
+    saved_carousel = {
+        "name": _cell_text(saved_row.get("name")).strip(),
+        "text1": _cell_text(saved_row.get("text1")).strip(),
+        "text2": _cell_text(saved_row.get("text2")).strip(),
+        "text3": _cell_text(saved_row.get("text3")).strip(),
+    }
+    if not _carousel_has_required_text(saved_carousel):
+        raise ValueError("Slide fields were not saved to the sheet.")
+    return saved_carousel
+
+
 def _process_post_online(row: dict) -> None:
     row_num = row["row_number"]
     has_media = bool(_cell_text(row.get("Media Drive Link")).strip())
@@ -2593,6 +2583,7 @@ def _process_post_online(row: dict) -> None:
 
     carousel = _generate_reliable_carousel_copy(updated_row, model="gpt-5.2")
     _write_specific_carousel_fields(row_num, carousel)
+    _verify_carousel_fields_saved(row_num)
     st.session_state.pop(f"workspace_preview_upload_links_{row_num}", None)
 
 
