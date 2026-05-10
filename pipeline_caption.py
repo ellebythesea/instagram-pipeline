@@ -295,6 +295,66 @@ def _carousel_display_name(row: dict) -> str:
     return username
 
 
+def _carousel_slide_prompt_instructions(include_row_numbers: bool) -> str:
+    header = (
+        "Return ONLY valid JSON as an array.\n\n"
+        "Each object must include:\n"
+        "* row_number\n"
+        "* name\n"
+        "* text1\n"
+        "* text2\n"
+        "* text3\n\n"
+        if include_row_numbers else
+        "Return ONLY valid JSON as an object.\n\n"
+        "The object must include:\n"
+        "* name\n"
+        "* text1\n"
+        "* text2\n"
+        "* text3\n\n"
+    )
+    return (
+        header +
+        "Rules:\n"
+        + ("* Keep row_number exactly the same numeric value shown in the row block\n" if include_row_numbers else "")
+        + "* No markdown\n"
+        "* No commentary outside JSON\n"
+        "* Use plain straight double quotes for all JSON keys and string values — no smart quotes, no escaped quotes inside key names\n"
+        "* name = short lowercase account username (no @ symbol)\n"
+        "* text1 = strongest opening carousel slide under 350 chars\n"
+        "* text2 and text3 = under 900 chars each\n"
+        "* No em dashes\n"
+        "* No speculation\n"
+        "* Avoid repetitive phrasing across fields\n"
+        "Style priority:\n"
+        "* Write like a viral political news account creating Instagram carousel slides\n"
+        "* Sound natural, conversational, and punchy\n"
+        "* Prioritize emotional framing, political stakes, accusations, numbers, and consequences\n"
+        "* Use direct quotes naturally when they strengthen the writing\n"
+        "* Avoid robotic transition phrases\n"
+        '* Never say "the speaker," "the clip," "the transcript," "the video," "the comments," "the argument," "the warning," or "the line said"\n'
+        "* Do not over explain the source material\n"
+        "* Make #text1, #text2, and #text3 feel like three carousel slides\n"
+        "* Put the most important accusation, statistic, conflict, or consequence into #text1\n"
+        "* #text1 should feel like the strongest opening carousel slide, not just a short hook\n"
+        "* Front load critical information into #text1 whenever possible\n"
+        "* Use #text2 to expand the core conflict with context, quotes, or stakes\n"
+        "* Use #text3 to focus on consequences, reactions, fallout, or additional details\n"
+        "* Make each text field feel like a standalone Instagram carousel slide\n"
+        "* Prioritize specificity over vagueness\n"
+        "* Include numbers, names, and direct quotes whenever they strengthen the writing\n"
+        "* Use emotionally charged but factual framing\n"
+        "* Avoid filler phrases and weak transitions\n"
+        "* Do not artificially shorten strong explanations just to save space\n"
+        "* Avoid generic summaries\n\n"
+        "Quote guidance:\n"
+        "* Use the person's name when provided\n"
+        "* If no name is provided, write around the facts naturally\n"
+        "* Prefer short direct quotes when they are strong\n"
+        "* Do not force quotes into awkward sentences\n"
+        '* Never write "the quote said" or "the line said"\n'
+    )
+
+
 def generate_carousel_copy_with_model(row: dict, model: str = "gpt-4o") -> dict[str, str]:
     """Generate Figma/Google Sync carousel fields."""
     if not OPENAI_API_KEY:
@@ -315,16 +375,8 @@ def generate_carousel_copy_with_model(row: dict, model: str = "gpt-4o") -> dict[
         user_parts.append(f"Featured person: {row['Speaker Name'].strip()}")
 
     prompt = (
-        "Create three clickbait carousel slides as JSON with keys "
-        "\"name\", \"text1\", \"text2\", \"text3\".\n"
-        "- name: short username/domain label only\n"
-        "- text1: strong hook, max 150 characters\n"
-        "- text2: max 300 characters\n"
-        "- text3: max 300 characters\n"
-        "- no hashtags\n"
-        "- no intro labels like Slide 1\n"
-        "- keep each field as plain text only\n"
-        f"- use this label for name when possible: {display_name or 'unknown'}"
+        _carousel_slide_prompt_instructions(include_row_numbers=False)
+        + f"\n* Use this label for name when possible: {display_name or 'unknown'}"
     )
 
     response = client.chat.completions.create(
@@ -342,9 +394,9 @@ def generate_carousel_copy_with_model(row: dict, model: str = "gpt-4o") -> dict[
 
     return {
         "name": (payload.get("name") or display_name or "").strip(),
-        "text1": (payload.get("text1") or "").strip()[:150],
-        "text2": (payload.get("text2") or "").strip()[:300],
-        "text3": (payload.get("text3") or "").strip()[:300],
+        "text1": (payload.get("text1") or "").strip()[:350],
+        "text2": (payload.get("text2") or "").strip()[:900],
+        "text3": (payload.get("text3") or "").strip()[:900],
     }
 
 
@@ -383,25 +435,7 @@ def generate_batch_carousel_copy_with_model(rows: list[dict], model: str = "gpt-
     if not blocks:
         return {}
 
-    prompt = (
-        "Return ONLY valid JSON as an array.\n"
-        "Each object must include: row_number, name, text1, text2, text3.\n"
-        "Rules:\n"
-        "- Keep row_number exactly the same as the input row block\n"
-        "- name: short username/domain/person label only\n"
-        "- text1: strongest opening carousel slide, max 150 characters\n"
-        "- text2: max 300 characters\n"
-        "- text3: max 300 characters\n"
-        "- no hashtags\n"
-        "- no markdown\n"
-        "- no commentary outside JSON\n"
-        "- no intro labels like Slide 1\n"
-        "- no em dashes\n"
-        "- use the generated_caption as a summary signal when it helps, but stay grounded in the source text\n"
-        "- write like a punchy viral political Instagram carousel account\n"
-        "- prioritize names, numbers, accusations, quotes, stakes, and consequences\n"
-        "- make each text field feel like a standalone slide\n"
-    )
+    prompt = _carousel_slide_prompt_instructions(include_row_numbers=True)
 
     response = client.chat.completions.create(
         model=model,
@@ -431,8 +465,8 @@ def generate_batch_carousel_copy_with_model(rows: list[dict], model: str = "gpt-
             continue
         results[row_number] = {
             "name": (item.get("name") or display_names.get(row_number) or "").strip(),
-            "text1": (item.get("text1") or "").strip()[:150],
-            "text2": (item.get("text2") or "").strip()[:300],
-            "text3": (item.get("text3") or "").strip()[:300],
+            "text1": (item.get("text1") or "").strip()[:350],
+            "text2": (item.get("text2") or "").strip()[:900],
+            "text3": (item.get("text3") or "").strip()[:900],
         }
     return results
