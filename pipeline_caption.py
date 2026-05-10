@@ -331,8 +331,8 @@ def _carousel_slide_prompt_instructions(include_row_numbers: bool) -> str:
         "* No commentary outside JSON\n"
         "* Use plain straight double quotes for all JSON keys and string values — no smart quotes, no escaped quotes inside key names\n"
         "* name = short lowercase account username (no @ symbol)\n"
-        "* text1 = strongest opening carousel slide under 250 chars\n"
-        "* text2 and text3 = under 800 chars each\n"
+        "* text1 = strongest opening carousel slide under 350 chars\n"
+        "* text2 and text3 = under 900 chars each\n"
         "* No em dashes\n"
         "* No speculation\n"
         "* Avoid repetitive phrasing across fields\n"
@@ -342,6 +342,7 @@ def _carousel_slide_prompt_instructions(include_row_numbers: bool) -> str:
         "* Prioritize emotional framing, political stakes, accusations, numbers, and consequences\n"
         "* Use direct quotes naturally when they strengthen the writing\n"
         "* Avoid robotic transition phrases\n"
+        "* Avoid emojis\n"
         '* Never say "the speaker," "the clip," "the transcript," "the video," "the comments," "the argument," "the warning," or "the line said"\n'
         "* Do not over explain the source material\n"
         "* Make #text1, #text2, and #text3 feel like three carousel slides\n"

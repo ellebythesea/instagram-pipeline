@@ -77,6 +77,55 @@ The local transcription script auto-detects the synced media folder from common 
 
 These are the local scripts in `scripts/` and what they do.
 
+### Google Drive OAuth token refresh
+
+If Drive uploads start failing because the OAuth token expired or refresh stopped working, regenerate `GOOGLE_OAUTH_TOKEN_JSON`.
+
+1. Download or locate your Google OAuth client JSON for the Drive app.
+   This is the `Desktop app` OAuth client file from Google Cloud, not the service-account JSON.
+2. Run:
+
+```bash
+.venv/bin/python scripts/generate_drive_oauth_token.py "/path/to/oauth-client.json"
+```
+
+3. Complete the browser login/consent flow.
+4. Copy the full JSON printed by the script.
+5. Replace `GOOGLE_OAUTH_TOKEN_JSON` in Streamlit secrets with that new JSON.
+6. Redeploy or reload the app.
+
+Expected Streamlit secret format:
+
+```toml
+GOOGLE_OAUTH_TOKEN_JSON = """{
+  "token": "...",
+  "refresh_token": "...",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "client_id": "...",
+  "client_secret": "...",
+  "scopes": ["https://www.googleapis.com/auth/drive"],
+  "expiry": "2026-05-10T19:19:16Z"
+}"""
+```
+
+Notes:
+
+- The `expiry` field changing is normal.
+- The important field is `refresh_token`; if that is missing or revoked, uploads will break again after the access token expires.
+- For this project, keep `GOOGLE_OAUTH_TOKEN_JSON` in Streamlit secrets so personal My Drive uploads use the fresh token immediately.
+
+### Google Drive OAuth health check
+
+To verify that the current Drive OAuth token can still refresh and access the configured Drive folder, run:
+
+```bash
+.venv/bin/python scripts/check_drive_oauth.py
+```
+
+If it exits with `FAILED`, regenerate `GOOGLE_OAUTH_TOKEN_JSON` before uploads break in the app.
+
+You can run this on a schedule from your Mac or any machine that has the same secrets available.
+
 ## Local Reel Transcription
 
 If you want free local transcription on your Mac instead of paying for transcript runs in the cloud app, use the local script:
@@ -234,6 +283,7 @@ You still need one Google bootstrap credential outside Secret Manager so the app
 Use one of:
 
 - `GOOGLE_SERVICE_ACCOUNT_JSON`
+- `GOOGLE_CREDENTIALS_BASE64`
 
 That bootstrap credential can live in:
 
@@ -257,6 +307,8 @@ GOOGLE_SHEET_ID = "..."
 GOOGLE_WORKSHEET_NAME = "..."
 GOOGLE_DRIVE_FOLDER_ID = "..."
 GOOGLE_SERVICE_ACCOUNT_JSON = '''{...}'''
+GOOGLE_CREDENTIALS_BASE64 = "..."
+GOOGLE_OAUTH_TOKEN_JSON = '''{"token":"...","refresh_token":"..."}'''
 APP_PASSWORD = "..."
 ```
 
@@ -264,8 +316,9 @@ Notes:
 
 - `OPENAI_API_KEY` powers caption/headline generation and some OCR/image-text flows.
 - `APIFY_API_TOKEN` powers Instagram scraping.
-- `GOOGLE_SERVICE_ACCOUNT_JSON` is used for Sheets and Drive access and as the Secret Manager bootstrap credential.
-- Share the Google Sheet and Drive folder with the service account email so both Sheets and Drive access work.
+- `GOOGLE_SERVICE_ACCOUNT_JSON` or `GOOGLE_CREDENTIALS_BASE64` is the bootstrap credential for Secret Manager and Sheets access.
+- `GOOGLE_OAUTH_TOKEN_JSON` is used for Drive uploads into a personal My Drive folder.
+- Share the Google Sheet and Drive folder with the service account email so Sheets access and Secret Manager bootstrap work.
 
 ## Current Caption Behavior
 
