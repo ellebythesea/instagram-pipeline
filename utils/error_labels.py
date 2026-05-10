@@ -51,8 +51,6 @@ def describe_error(error: Exception) -> str:
         return "Apify auth failed. APIFY_API_TOKEN is missing from Streamlit secrets."
     if "GOOGLE_SERVICE_ACCOUNT_JSON is not configured" in message:
         return "Google auth failed. GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_CREDENTIALS_BASE64 is missing from Streamlit secrets."
-    if "GOOGLE_OAUTH_TOKEN_JSON" in message:
-        return f"Google OAuth token error. Check or regenerate GOOGLE_OAUTH_TOKEN_JSON. Raw error: {message}"
     if "no audio stream to transcribe" in lowered:
         return "Local media file has no audio track, so there is nothing to transcribe."
     if "tuple index out of range" in lowered:
@@ -99,7 +97,10 @@ def describe_error(error: Exception) -> str:
         if "malformederror" in exc_name or "service account info was not in the expected format" in lowered:
             return "Google service account credentials are malformed. Check GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_CREDENTIALS_BASE64."
         if any(token in lowered for token in ["invalid_grant", "reauth", "refresh token", "token has been expired", "authorized user"]):
-            return "Google OAuth refresh failed. Check or regenerate GOOGLE_OAUTH_TOKEN_JSON."
+            return (
+                "Google auth failed. Check GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_CREDENTIALS_BASE64, "
+                "and make sure the Sheet/Drive folder is shared with the service account."
+            )
         if status in {401, 403} or any(token in lowered for token in ["permission denied", "forbidden", "unauthorized", "insufficient authentication scopes"]):
             return (
                 "Google auth/permission failed. Check GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_CREDENTIALS_BASE64, "
@@ -110,7 +111,7 @@ def describe_error(error: Exception) -> str:
         if status == 429 or "quota exceeded" in lowered or "read requests per minute" in lowered:
             return "Google Sheets quota/rate limit hit. Wait a minute and retry."
         if "service accounts do not have storage quota" in lowered:
-            return "Google Drive upload failed because the app is using a service account without Drive quota. Use OAuth or a shared drive."
+            return "Google Drive upload failed because the service account has no personal Drive quota. Use a shared drive or a shared folder it can access."
         return f"Google API error. Check Google secrets, sharing permissions, and quotas. Raw error: {message}"
 
     if any(token in lowered for token in ["590 upstream502", "upstream502", "proxy responded with 590"]):
@@ -127,10 +128,13 @@ def describe_error(error: Exception) -> str:
         return f"OpenAI auth failed. Check OPENAI_API_KEY. Raw error: {message}"
 
     if any(token in lowered for token in ["invalid_grant", "token has been expired", "reauth", "refresh", "authorized user"]) and "google" in lowered:
-        return f"Google OAuth refresh failed. Check GOOGLE_OAUTH_TOKEN_JSON. Raw error: {message}"
+        return (
+            "Google auth failed. Check GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_CREDENTIALS_BASE64, "
+            f"and sharing permissions for the service account. Raw error: {message}"
+        )
 
     if "service accounts do not have storage quota" in lowered:
-        return "Google Drive upload failed because the app is using a service account without Drive quota. Use the OAuth token flow or a shared drive."
+        return "Google Drive upload failed because the service account has no personal Drive quota. Use a shared drive or a shared folder it can access."
 
     if "quota exceeded" in lowered and "sheets.googleapis.com" in lowered:
         return f"Google Sheets quota exceeded. Wait and retry. Raw error: {message}"

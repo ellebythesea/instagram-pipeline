@@ -119,8 +119,6 @@ SECRET_MANAGER_SECRET_NAMES: dict[str, str] = {
     "GOOGLE_SHEET_ID": str(_runtime_secret("SECRET_MANAGER_GOOGLE_SHEET_ID_NAME", "google-sheet-id") or "google-sheet-id"),
     "GOOGLE_WORKSHEET_NAME": str(_runtime_secret("SECRET_MANAGER_GOOGLE_WORKSHEET_NAME", "google-worksheet-name") or "google-worksheet-name"),
     "GOOGLE_DRIVE_FOLDER_ID": str(_runtime_secret("SECRET_MANAGER_GOOGLE_DRIVE_FOLDER_ID_NAME", "google-folder-id") or "google-folder-id"),
-    "GOOGLE_OAUTH_CLIENT_JSON": str(_runtime_secret("SECRET_MANAGER_GOOGLE_OAUTH_CLIENT_JSON_NAME", "google-oauth-id") or "google-oauth-id"),
-    "GOOGLE_OAUTH_TOKEN_JSON": str(_runtime_secret("SECRET_MANAGER_GOOGLE_OAUTH_TOKEN_JSON_NAME", "google-oauth-token") or "google-oauth-token"),
     "GOOGLE_SERVICE_ACCOUNT_JSON": str(_runtime_secret("SECRET_MANAGER_GOOGLE_SERVICE_ACCOUNT_JSON_NAME", "google-service-account") or "google-service-account"),
     "GOOGLE_CREDENTIALS_BASE64": str(_runtime_secret("SECRET_MANAGER_GOOGLE_CREDENTIALS_BASE64_NAME", "google-service-account") or "google-service-account"),
     "GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER": str(_runtime_secret("SECRET_MANAGER_GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER_NAME", "google-screenshots-subfolder") or "google-screenshots-subfolder"),
@@ -204,8 +202,6 @@ GOOGLE_SHEET_ID = _get_secret("GOOGLE_SHEET_ID")
 GOOGLE_WORKSHEET_NAME = _get_secret("GOOGLE_WORKSHEET_NAME")
 GOOGLE_DRIVE_FOLDER_ID = _get_secret("GOOGLE_DRIVE_FOLDER_ID")
 GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER = _get_secret("GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER", "screenshots")
-GOOGLE_OAUTH_CLIENT_JSON = _get_secret("GOOGLE_OAUTH_CLIENT_JSON")
-GOOGLE_OAUTH_TOKEN_JSON = _get_secret("GOOGLE_OAUTH_TOKEN_JSON")
 
 
 def _get_google_credentials_json() -> str:

@@ -77,14 +77,6 @@ The local transcription script auto-detects the synced media folder from common 
 
 These are the local scripts in `scripts/` and what they do.
 
-### Google Drive OAuth token generator
-
-```bash
-python scripts/generate_drive_oauth_token.py "/path/to/oauth-client.json"
-```
-
-Use this when you need to refresh `GOOGLE_OAUTH_TOKEN_JSON`.
-
 ## Local Reel Transcription
 
 If you want free local transcription on your Mac instead of paying for transcript runs in the cloud app, use the local script:
@@ -268,8 +260,6 @@ GOOGLE_DRIVE_FOLDER_ID = "..."
 GOOGLE_CREDENTIALS_BASE64 = "..."
 # or
 GOOGLE_SERVICE_ACCOUNT_JSON = '''{...}'''
-GOOGLE_OAUTH_TOKEN_JSON = '''{...}'''
-GOOGLE_OAUTH_CLIENT_JSON = '''{...}'''
 APP_PASSWORD = "..."
 ```
 
@@ -278,7 +268,7 @@ Notes:
 - `OPENAI_API_KEY` powers caption/headline generation and some OCR/image-text flows.
 - `APIFY_API_TOKEN` powers Instagram scraping.
 - `GOOGLE_SERVICE_ACCOUNT_JSON` or `GOOGLE_CREDENTIALS_BASE64` is used for Sheets access and as the Secret Manager bootstrap credential.
-- `GOOGLE_OAUTH_TOKEN_JSON` is used for Drive uploads when running with OAuth.
+- Share the Google Sheet and Drive folder with the service account email so both Sheets and Drive access work.
 
 ## Current Caption Behavior
 

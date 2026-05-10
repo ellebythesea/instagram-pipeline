@@ -7,15 +7,11 @@ import re
 from json import JSONDecodeError
 from urllib.parse import parse_qs, urlparse
 
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials as UserCredentials
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 
 from config import (
-    GOOGLE_OAUTH_CLIENT_JSON,
-    GOOGLE_OAUTH_TOKEN_JSON,
     GOOGLE_SERVICE_ACCOUNT_JSON,
 )
 
@@ -23,30 +19,12 @@ _SCOPES = ["https://www.googleapis.com/auth/drive"]
 
 
 def _get_service():
-    if GOOGLE_OAUTH_TOKEN_JSON:
-        try:
-            oauth_info = json.loads(GOOGLE_OAUTH_TOKEN_JSON)
-            creds = UserCredentials.from_authorized_user_info(
-                oauth_info,
-                scopes=_SCOPES,
-            )
-        except JSONDecodeError as exc:
-            raise RuntimeError("GOOGLE_OAUTH_TOKEN_JSON is not valid JSON.") from exc
-        except Exception as exc:
-            raise RuntimeError("GOOGLE_OAUTH_TOKEN_JSON is malformed or incomplete.") from exc
-        if creds.expired and creds.refresh_token:
-            try:
-                creds.refresh(Request())
-            except Exception as exc:
-                raise RuntimeError("Google OAuth refresh failed. Regenerate GOOGLE_OAUTH_TOKEN_JSON.") from exc
-        return build("drive", "v3", credentials=creds)
-
     creds_src = GOOGLE_SERVICE_ACCOUNT_JSON
     if not creds_src:
         raise RuntimeError(
-            "GOOGLE_SERVICE_ACCOUNT_JSON is not configured. Add it to "
-            ".streamlit/local_secrets.toml, set it as an environment variable, "
-            "or set it to a service-account JSON file path."
+            "GOOGLE_SERVICE_ACCOUNT_JSON is not configured. Set it in "
+            ".streamlit/local_secrets.toml, as an environment variable, "
+            "or as a service-account JSON file path."
         )
     if os.path.isfile(creds_src):
         creds = Credentials.from_service_account_file(creds_src, scopes=_SCOPES)
