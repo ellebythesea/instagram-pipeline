@@ -1,5 +1,6 @@
 """Shared caption-generation helpers for the sheet workflow."""
 
+import ast
 import json
 import re
 
@@ -121,6 +122,85 @@ def _completion_limit_arg(model: str, token_limit: int) -> dict:
     if normalized.startswith("gpt-5") or normalized.startswith("o"):
         return {"max_completion_tokens": token_limit}
     return {"max_tokens": token_limit}
+
+
+def _parse_jsonish_payload(raw_text: str):
+    text = (raw_text or "").strip()
+    if not text:
+        raise ValueError("Model returned an empty response.")
+
+    def _strip_comments(candidate: str) -> str:
+        without_block_comments = re.sub(r"/\*[\s\S]*?\*/", "", candidate)
+        return re.sub(r"(?m)^\s*//.*$", "", without_block_comments)
+
+    def _extract_block(candidate: str) -> str:
+        candidate = re.sub(r"^```(?:json)?\s*|\s*```$", "", candidate.strip(), flags=re.IGNORECASE | re.MULTILINE)
+        candidate = _strip_comments(candidate)
+        match = re.search(r"(\[[\s\S]*\]|\{[\s\S]*\})", candidate)
+        return match.group(1) if match else candidate
+
+    def _escape_string_newlines(value: str) -> str:
+        result = []
+        in_string = False
+        i = 0
+        while i < len(value):
+            char = value[i]
+            if not in_string:
+                if char == '"':
+                    in_string = True
+                result.append(char)
+            else:
+                if char == "\\":
+                    result.append(char)
+                    i += 1
+                    if i < len(value):
+                        result.append(value[i])
+                elif char == '"':
+                    in_string = False
+                    result.append(char)
+                elif char == "\n":
+                    result.append("\\n")
+                elif char == "\r":
+                    result.append("\\r")
+                elif char == "\t":
+                    result.append("\\t")
+                else:
+                    result.append(char)
+            i += 1
+        return "".join(result)
+
+    def _repair_jsonish(candidate: str) -> str:
+        repaired = _escape_string_newlines(candidate.strip())
+        repaired = repaired.replace("\u201c", '"').replace("\u201d", '"').replace("\u2018", "'").replace("\u2019", "'")
+        repaired = _strip_comments(repaired)
+        repaired = re.sub(r",\s*([}\]])", r"\1", repaired)
+        repaired = re.sub(
+            r'([{\[,]\s*)(#?[A-Za-z_][A-Za-z0-9_#]*)(\s*:)',
+            lambda match: f'{match.group(1)}"{match.group(2)}"{match.group(3)}',
+            repaired,
+        )
+        repaired = re.sub(
+            r'(?m)^(\s*)(#?[A-Za-z_][A-Za-z0-9_#]*)(\s*:)',
+            lambda match: f'{match.group(1)}"{match.group(2)}"{match.group(3)}',
+            repaired,
+        )
+        repaired = re.sub(r"}\s*\n\s*{", "},\n{", repaired)
+        if repaired.startswith("{") and repaired.endswith("}") and re.search(r"}\s*,\s*{", repaired):
+            repaired = f"[{repaired}]"
+        return repaired
+
+    block = _extract_block(text)
+    try:
+        return json.loads(block)
+    except json.JSONDecodeError:
+        repaired = _repair_jsonish(block)
+        try:
+            return json.loads(repaired)
+        except json.JSONDecodeError:
+            pythonish = re.sub(r"\btrue\b", "True", repaired, flags=re.IGNORECASE)
+            pythonish = re.sub(r"\bfalse\b", "False", pythonish, flags=re.IGNORECASE)
+            pythonish = re.sub(r"\bnull\b", "None", pythonish, flags=re.IGNORECASE)
+            return ast.literal_eval(pythonish)
 
 
 def generate_row_caption(row: dict) -> str:
@@ -255,10 +335,10 @@ def generate_carousel_copy_with_model(row: dict, model: str = "gpt-4o") -> dict[
         ],
         **_completion_limit_arg(model, 500),
         temperature=0.45,
+        response_format={"type": "json_object"},
     )
     raw = response.choices[0].message.content.strip()
-    match = re.search(r"\{.*\}", raw, re.DOTALL)
-    payload = json.loads(match.group(0) if match else raw)
+    payload = _parse_jsonish_payload(raw)
 
     return {
         "name": (payload.get("name") or display_name or "").strip(),
@@ -336,8 +416,7 @@ def generate_batch_carousel_copy_with_model(rows: list[dict], model: str = "gpt-
         temperature=0.45,
     )
     raw = response.choices[0].message.content.strip()
-    match = re.search(r"\[[\s\S]*\]", raw)
-    payload = json.loads(match.group(0) if match else raw)
+    payload = _parse_jsonish_payload(raw)
     items = payload if isinstance(payload, list) else [payload]
 
     results: dict[int, dict[str, str]] = {}
