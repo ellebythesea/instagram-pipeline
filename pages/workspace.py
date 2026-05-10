@@ -2012,20 +2012,21 @@ def _copy_tabs(
         if slide_handle and slide_handle == username.strip() and not slide_handle.startswith("@"):
             slide_handle = f"@{slide_handle}"
         st.markdown('<div class="workspace-row-slides-anchor"></div>', unsafe_allow_html=True)
-        _render_slide_one_preview(
-            slide_handle,
-            slide_text1,
-            _safe_browser_image_url(thumbnail_link),
-            current_slide_one_font_adjust,
-            current_slide_one_background_adjust,
-        )
-        _render_workspace_preview_control_bar(
-            f"{row_num}_slide1",
-            slide_one_font_adjust_key,
-            current_slide_one_font_adjust,
-            slide_one_background_adjust_key,
-            current_slide_one_background_adjust,
-        )
+        if (slide_text1 or "").strip():
+            _render_slide_one_preview(
+                slide_handle,
+                slide_text1,
+                _safe_browser_image_url(thumbnail_link),
+                current_slide_one_font_adjust,
+                current_slide_one_background_adjust,
+            )
+            _render_workspace_preview_control_bar(
+                f"{row_num}_slide1",
+                slide_one_font_adjust_key,
+                current_slide_one_font_adjust,
+                slide_one_background_adjust_key,
+                current_slide_one_background_adjust,
+            )
         if (slide_text2 or "").strip():
             _render_text_slide_preview(2, slide_text2, current_slide_two_font_adjust)
             _render_workspace_preview_control_bar(
