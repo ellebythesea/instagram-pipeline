@@ -116,6 +116,13 @@ def _row_source_text(row: dict) -> tuple[str, str, str]:
     return transcript, original_caption, caption_context
 
 
+def _completion_limit_arg(model: str, token_limit: int) -> dict:
+    normalized = (model or "").strip().lower()
+    if normalized.startswith("gpt-5") or normalized.startswith("o"):
+        return {"max_completion_tokens": token_limit}
+    return {"max_tokens": token_limit}
+
+
 def generate_row_caption(row: dict) -> str:
     """Generate a final caption string for one sheet row."""
     if not OPENAI_API_KEY:
@@ -150,7 +157,7 @@ def generate_row_caption(row: dict) -> str:
             {"role": "system", "content": SYS_PROMPT},
             {"role": "user", "content": "\n\n".join(user_parts)},
         ],
-        max_tokens=600,
+        **_completion_limit_arg("gpt-4o", 600),
         temperature=0.35,
     )
     caption = response.choices[0].message.content.strip()
@@ -246,7 +253,7 @@ def generate_carousel_copy_with_model(row: dict, model: str = "gpt-4o") -> dict[
             {"role": "system", "content": "You write concise viral political carousel copy and return valid JSON only."},
             {"role": "user", "content": prompt + "\n\n" + "\n\n".join(user_parts)},
         ],
-        max_tokens=500,
+        **_completion_limit_arg(model, 500),
         temperature=0.45,
     )
     raw = response.choices[0].message.content.strip()
@@ -325,7 +332,7 @@ def generate_batch_carousel_copy_with_model(rows: list[dict], model: str = "gpt-
             },
             {"role": "user", "content": prompt + "\n\n" + "\n\n---\n\n".join(blocks)},
         ],
-        max_tokens=max(900, min(4000, 450 * len(blocks))),
+        **_completion_limit_arg(model, max(900, min(4000, 450 * len(blocks)))),
         temperature=0.45,
     )
     raw = response.choices[0].message.content.strip()
