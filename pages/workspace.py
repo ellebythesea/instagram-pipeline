@@ -2573,11 +2573,22 @@ def _process_post_online(row: dict) -> None:
     )
     updated_row.update(current_inputs)
 
-    caption = generate_row_caption(updated_row)
+    existing_caption = _cell_text(updated_row.get("Generated Caption")).strip()
+    caption = existing_caption or generate_row_caption(updated_row)
     next_status = "skipped" if (row.get("Status", "") or "").strip().lower() == "skipped" else "done"
-    update_caption(GOOGLE_SHEET_ID, row_num, caption, next_status)
+    if not existing_caption:
+        update_caption(GOOGLE_SHEET_ID, row_num, caption, next_status)
     updated_row["Generated Caption"] = caption
     updated_row["Status"] = next_status
+
+    existing_carousel = {
+        "name": _cell_text(updated_row.get("name")).strip(),
+        "text1": _cell_text(updated_row.get("text1")).strip(),
+        "text2": _cell_text(updated_row.get("text2")).strip(),
+        "text3": _cell_text(updated_row.get("text3")).strip(),
+    }
+    if _carousel_has_required_text(existing_carousel):
+        return
 
     carousel = _generate_reliable_carousel_copy(updated_row, model="gpt-5.2")
     _write_specific_carousel_fields(row_num, carousel)
