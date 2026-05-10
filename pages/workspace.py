@@ -108,8 +108,18 @@ SLIDE_THREE_FONT_MIN_REM = 1.4
 SLIDE_THREE_FONT_VW = 4.0
 SLIDE_THREE_FONT_MAX_REM = 3.0
 PREVIEW_UPLOAD_SUBFOLDER = "previews"
-client = openai.OpenAI(api_key=OPENAI_API_KEY, timeout=45.0, max_retries=1)
 PINNED_TOP_COMMENT_PREFIX = "[[TOP]] "
+
+_client: openai.OpenAI | None = None
+
+
+def _get_client() -> openai.OpenAI:
+    global _client
+    if _client is None:
+        if not OPENAI_API_KEY:
+            raise RuntimeError("OPENAI_API_KEY is not configured.")
+        _client = openai.OpenAI(api_key=OPENAI_API_KEY, timeout=45.0, max_retries=1)
+    return _client
 
 get_all_rows = sheet_ops.get_all_rows
 get_pending_rows = sheet_ops.get_pending_rows
@@ -643,7 +653,7 @@ def _fetch_link_data(url: str) -> dict:
 def _generate_headlines(source_text: str) -> list[str]:
     if not OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY is not configured.")
-    response = client.chat.completions.create(
+    response = _get_client().chat.completions.create(
         model="gpt-4o",
         messages=[
             {
@@ -2458,7 +2468,7 @@ def _extract_image_text(row: dict) -> str:
 
     if not OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY is not configured.")
-    response = client.chat.completions.create(
+    response = _get_client().chat.completions.create(
         model="gpt-4o",
         messages=[{"role": "user", "content": content}],
         max_tokens=800,
