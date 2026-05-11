@@ -2235,10 +2235,6 @@ def _process_pending_rows_from_sheet() -> int:
                         }
                     )
                     generated_caption = generate_row_caption(ingested_row)
-                    try:
-                        _write_carousel_fields(row_num, ingested_row)
-                    except Exception:
-                        pass
                     if update_caption_and_metadata is not None:
                         update_caption_and_metadata(
                             GOOGLE_SHEET_ID,
@@ -2333,7 +2329,6 @@ def _rerun_with_transcript(row: dict, force_remote: bool = False) -> bool:
     caption = generate_row_caption(updated_row)
     next_status = "skipped" if (row.get("Status", "") or "").strip().lower() == "skipped" else "done"
     update_caption(GOOGLE_SHEET_ID, row_num, caption, next_status)
-    _write_carousel_fields(row_num, updated_row)
     return bool((updated_row.get("Transcript") or "").strip())
 
 
@@ -2495,6 +2490,11 @@ def _redo_caption_from_image_text(row: dict) -> None:
     _write_carousel_fields(row_num, updated_row)
 
 
+def _row_is_photo_post(row: dict) -> bool:
+    url = _cell_text(row.get("Instagram URL")).strip()
+    return _is_instagram_url(url) and not _is_reel_url(url)
+
+
 def _generate_caption_for_row(row: dict) -> None:
     row_num = row["row_number"]
     current_inputs = _current_row_caption_inputs(row)
@@ -2512,7 +2512,8 @@ def _generate_caption_for_row(row: dict) -> None:
     caption = generate_row_caption(updated_row)
     next_status = "skipped" if (row.get("Status", "") or "").strip().lower() == "skipped" else "done"
     update_caption(GOOGLE_SHEET_ID, row_num, caption, next_status)
-    _write_carousel_fields(row_num, updated_row)
+    if _row_is_photo_post(updated_row):
+        _write_carousel_fields(row_num, updated_row)
 
 
 def _write_specific_carousel_fields(row_number: int, carousel: dict[str, str]) -> None:

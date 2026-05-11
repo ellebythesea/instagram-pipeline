@@ -346,66 +346,6 @@ def _generate_caption_from_existing_sources(row: dict) -> dict:
     return _update_caption_from_transcript(row, (row.get("Transcript") or "").strip())
 
 
-def _row_missing_slide_fields(row: dict) -> bool:
-    return not all(
-        (row.get(field) or "").strip()
-        for field in ("name", "text1", "text2", "text3")
-    )
-
-
-def _rows_needing_slide_generation(rows: list[dict]) -> list[dict]:
-    needed: list[dict] = []
-    for row in rows:
-        status = (row.get("Status") or "").strip().lower()
-        if status.startswith("error"):
-            continue
-        if not _row_missing_slide_fields(row):
-            continue
-        if not _row_has_caption_source(row):
-            continue
-        needed.append(row)
-    return needed
-
-
-def _generate_slides_for_rows(rows: list[dict], model: str = "gpt-5.2") -> tuple[int, list[str]]:
-    if not rows:
-        return 0, []
-    if update_carousel_fields is None:
-        return 0, ["Carousel field updates are not supported in this build."]
-
-    ordered_rows: list[dict] = []
-    seen: set[int] = set()
-    for row in rows:
-        row_number = int(row.get("row_number") or 0)
-        if row_number <= 0 or row_number in seen:
-            continue
-        seen.add(row_number)
-        ordered_rows.append(row)
-
-    results = generate_batch_carousel_copy_with_model(ordered_rows, model=model)
-    updated_count = 0
-    issues: list[str] = []
-    for row in ordered_rows:
-        row_number = int(row.get("row_number") or 0)
-        carousel = results.get(row_number)
-        if not carousel:
-            issues.append(f"Row {row_number}: no slide copy returned.")
-            continue
-        update_carousel_fields(
-            GOOGLE_SHEET_ID,
-            row_number,
-            carousel.get("name", ""),
-            carousel.get("text1", ""),
-            carousel.get("text2", ""),
-            carousel.get("text3", ""),
-        )
-        updated_count += 1
-    missing_rows = sorted(set(results.keys()) - {int(row.get("row_number") or 0) for row in ordered_rows})
-    for row_number in missing_rows:
-        issues.append(f"Row {row_number}: slide copy returned for an unexpected row.")
-    return updated_count, issues
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description="Locally transcribe reel rows missing transcripts.")
     parser.add_argument(
@@ -457,8 +397,6 @@ def main() -> int:
 
     service = _get_service()
     transcribe = _get_local_transcriber(args.model)
-    slide_rows: list[dict] = []
-
     print(f"Found {len(targets)} row(s) to process.")
     for row in targets:
         row_num = row["row_number"]
@@ -480,8 +418,7 @@ def main() -> int:
                     transcript = transcribe(str(local_path))
                 except NoTranscribableAudioError:
                     step = "generating caption from existing source text"
-                    updated_row = _generate_caption_from_existing_sources(row)
-                    slide_rows.append(updated_row)
+                    _generate_caption_from_existing_sources(row)
                     print(
                         f"Row {row_num}: no transcribable audio, generated caption from existing source text ({url})"
                     )
@@ -489,44 +426,15 @@ def main() -> int:
                 step = "writing transcript to Google Sheets"
                 update_transcript(GOOGLE_SHEET_ID, row_num, transcript)
                 step = "regenerating caption with OpenAI"
-                updated_row = _update_caption_from_transcript(row, transcript)
-                slide_rows.append(updated_row)
+                _update_caption_from_transcript(row, transcript)
                 print(f"Row {row_num}: transcribed and regenerated caption for {filename} ({url})")
                 continue
 
             step = "generating caption from existing source text"
-            updated_row = _generate_caption_from_existing_sources(row)
-            slide_rows.append(updated_row)
+            _generate_caption_from_existing_sources(row)
             print(f"Row {row_num}: generated caption from existing source text ({url})")
         except Exception as exc:
             print(f"Row {row_num}: failed while {step} - {describe_error(exc)}")
-            if args.debug:
-                traceback.print_exc()
-
-    rows_after_processing = get_all_rows(GOOGLE_SHEET_ID)
-    slide_row_map: dict[int, dict] = {}
-    for row in rows_after_processing:
-        row_number = int(row.get("row_number") or 0)
-        if row_number > 0:
-            slide_row_map[row_number] = row
-    for row in slide_rows:
-        row_number = int(row.get("row_number") or 0)
-        if row_number > 0:
-            slide_row_map[row_number] = row
-
-    slide_targets = _rows_needing_slide_generation(list(slide_row_map.values()))
-    if args.row > 0:
-        slide_targets = [row for row in slide_targets if int(row.get("row_number") or 0) == args.row]
-
-    if slide_targets:
-        print(f"Generating slide copy for {len({int(row.get('row_number') or 0) for row in slide_targets if row.get('row_number')})} row(s) in one gpt-5.2 call...")
-        try:
-            updated_count, issues = _generate_slides_for_rows(slide_targets, model="gpt-5.2")
-            print(f"Slide generation complete: updated {updated_count} row(s).")
-            for issue in issues:
-                print(issue)
-        except Exception as exc:
-            print(f"Slide generation failed: {describe_error(exc)}")
             if args.debug:
                 traceback.print_exc()
 
