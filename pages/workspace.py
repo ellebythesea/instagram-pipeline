@@ -128,6 +128,7 @@ update_caption_and_metadata = getattr(sheet_ops, "update_caption_and_metadata", 
 update_caption_context = sheet_ops.update_caption_context
 update_ingest_result = sheet_ops.update_ingest_result
 update_metadata = sheet_ops.update_metadata
+update_speaker_names_batch = getattr(sheet_ops, "update_speaker_names_batch", None)
 update_scheduled_times = sheet_ops.update_scheduled_times
 update_transcript = sheet_ops.update_transcript
 update_thumbnail_link = getattr(sheet_ops, "update_thumbnail_link", None)
@@ -1466,7 +1467,6 @@ def _current_row_caption_inputs(row: dict) -> dict:
 
 
 def _save_all_workspace_speaker_names(rows: list[dict]) -> int:
-    updated_count = 0
     intended_updates: dict[int, str] = {}
     for row in rows:
         current_inputs = _current_row_caption_inputs(row)
@@ -1474,18 +1474,16 @@ def _save_all_workspace_speaker_names(rows: list[dict]) -> int:
         saved_speaker = _cell_text(row.get("Speaker Name")).strip()
         if current_speaker == saved_speaker:
             continue
-        update_metadata(
-            GOOGLE_SHEET_ID,
-            row["row_number"],
-            current_inputs["Caption Context"],
-            current_speaker,
-            current_inputs["Required Hashtags"],
-            current_inputs["Top Comment"],
-            "",
-        )
-        st.session_state[_workspace_speaker_key(row)] = current_speaker
         intended_updates[row["row_number"]] = current_speaker
-        updated_count += 1
+
+    if intended_updates:
+        if update_speaker_names_batch is None:
+            raise RuntimeError("Batch speaker-name updates are not supported in this build.")
+        update_speaker_names_batch(GOOGLE_SHEET_ID, intended_updates)
+        for row in rows:
+            row_number = row["row_number"]
+            if row_number in intended_updates:
+                st.session_state[_workspace_speaker_key(row)] = intended_updates[row_number]
 
     if intended_updates:
         refreshed_rows = {
@@ -1502,7 +1500,7 @@ def _save_all_workspace_speaker_names(rows: list[dict]) -> int:
             raise RuntimeError(
                 "Speaker name update did not persist for " + ", ".join(mismatched[:5]) + "."
             )
-    return updated_count
+    return len(intended_updates)
 
 
 def _dirty_workspace_speaker_rows(rows: list[dict]) -> list[dict]:

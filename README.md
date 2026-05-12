@@ -153,6 +153,13 @@ That script:
 - writes the transcript back to the Google Sheet
 - regenerates the caption from that transcript
 
+Constraint for local cleanup:
+
+- a local original video is kept only if some current sheet row still resolves to that exact Drive filename
+- a local `*_segments/` folder is kept only if its source video still matches a current sheet row
+- a local screenshot is kept only if its underlying `YYMMDD_postId` key still matches a current sheet row
+- anything else is treated as orphaned local media and moved into `safe_for_deletion/`
+
 ### Local transcription dependency
 
 Install one local Whisper backend first:
@@ -339,10 +346,22 @@ Notes:
 
 ## Useful Commands
 
-Run local reel transcription for all blank-transcript reel rows:
+Run the app locally in Streamlit:
+
+```bash
+streamlit run app.py
+```
+
+Run local reel transcription for all blank-transcript reel rows and archive orphaned local media into `safe_for_deletion/`:
 
 ```bash
 .venv/bin/python scripts/local_transcribe_reels.py
+```
+
+Archive orphaned local media only, without running transcription:
+
+```bash
+.venv/bin/python scripts/archive_orphaned_media.py
 ```
 
 Split all already-downloaded videos in the local `splits` folder into one-minute chunks:

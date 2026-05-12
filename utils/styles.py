@@ -56,8 +56,15 @@ div[data-testid="stVerticalBlock"]:has(> div.sticky-generate-anchor) {
 """
 
 _WORKSPACE_CSS = """
+[data-testid="stAppViewContainer"] [data-testid="stMainBlockContainer"],
+[data-testid="stAppViewContainer"] .block-container {
+    max-width: 1000px;
+    margin-left: auto;
+    margin-right: auto;
+    width: 100%;
+}
 .workspace-shell {
-    max-width: 1120px;
+    max-width: 1000px;
 }
 section[data-testid="stSidebar"] {
     display: none;

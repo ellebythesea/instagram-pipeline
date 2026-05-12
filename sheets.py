@@ -405,6 +405,19 @@ def update_metadata(
     _invalidate_rows_cache(sheet_id)
 
 
+def update_speaker_names_batch(sheet_id: str, updates: dict[int, str]) -> None:
+    """Write multiple speaker names to column L in one batch."""
+    if not updates:
+        return
+    ws = _worksheet(sheet_id)
+    requests = [
+        {"range": f"L{row_number}", "values": [[speaker_name]]}
+        for row_number, speaker_name in sorted(updates.items())
+    ]
+    _with_backoff(ws.batch_update, requests)
+    _invalidate_rows_cache(sheet_id)
+
+
 def delete_row(sheet_id: str, row_number: int) -> None:
     """Delete a single sheet row by absolute row number."""
     ws = _worksheet(sheet_id)
