@@ -15,6 +15,7 @@ Fallback dependency:
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 import os
 import re
 import shutil
@@ -40,6 +41,7 @@ from watch_split_folder import watch_folder  # noqa: E402
 
 
 MEDIA_DIR_SUFFIX = Path("_apps") / "vioo instagram pipeline" / "instagram pipeline media"
+SAFE_DELETE_DIRNAME = "safe_for_deletion"
 
 MEDIA_DIR_CANDIDATES = [
     Path.home()
@@ -137,6 +139,112 @@ def _find_local_media_path(media_root: Path, filename: str) -> Path:
         return matches[0]
 
     raise FileNotFoundError(f"Could not find {filename!r} under {str(media_root)!r}")
+
+
+def _stem_without_suffixes(filename: str) -> str:
+    stem = Path(filename).stem
+    stem = re.sub(r" \(\d+\)$", "", stem)
+    return re.sub(r"_thumb(?:_\d+s)?$", "", stem)
+
+
+def _canonical_media_key(name: str) -> str:
+    cleaned = _stem_without_suffixes(name)
+    match = re.search(r"(\d{6}_[A-Za-z0-9_-]+)$", cleaned)
+    if match:
+        return match.group(1)
+    return cleaned
+
+
+def _iter_media_links(row: dict) -> list[str]:
+    return [link.strip() for link in (row.get("Media Drive Link") or "").split(",") if link.strip()]
+
+
+def _active_drive_filenames(rows: list[dict], service) -> tuple[set[str], list[str]]:
+    filenames: set[str] = set()
+    errors: list[str] = []
+    for row in rows:
+        row_num = row.get("row_number", "?")
+        for link in _iter_media_links(row):
+            try:
+                filename = _drive_filename(service, link)
+                if filename:
+                    filenames.add(filename)
+            except Exception as exc:
+                errors.append(f"Row {row_num}: failed to resolve Drive filename for {link} - {describe_error(exc)}")
+    return filenames, errors
+
+
+def _move_to_archive(path: Path, media_root: Path, archive_root: Path, dry_run: bool) -> Path:
+    relative = path.relative_to(media_root)
+    destination = archive_root / relative
+    if dry_run:
+        return destination
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    final_destination = destination
+    counter = 1
+    while final_destination.exists():
+        suffix = f"_{counter}"
+        if destination.suffix:
+            final_destination = destination.with_name(f"{destination.stem}{suffix}{destination.suffix}")
+        else:
+            final_destination = destination.with_name(f"{destination.name}{suffix}")
+        counter += 1
+    shutil.move(str(path), str(final_destination))
+    return final_destination
+
+
+def _archive_orphaned_media(media_root: Path, rows: list[dict], service, dry_run: bool) -> int:
+    active_filenames, filename_errors = _active_drive_filenames(rows, service)
+    for error in filename_errors:
+        print(error)
+
+    active_stems = {_stem_without_suffixes(filename) for filename in active_filenames}
+    active_keys = {_canonical_media_key(filename) for filename in active_filenames}
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    archive_root = media_root / SAFE_DELETE_DIRNAME / timestamp
+    screenshots_dir = media_root / "screenshots"
+
+    orphan_paths: list[tuple[str, Path]] = []
+    for path in sorted(media_root.iterdir()):
+        if path.name == SAFE_DELETE_DIRNAME:
+            continue
+        if path == screenshots_dir:
+            continue
+        if path.is_file() and path.suffix.lower() in {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm"}:
+            if path.name not in active_filenames:
+                orphan_paths.append(("original", path))
+            continue
+        if path.is_dir() and path.name.endswith("_segments"):
+            stem = path.name[: -len("_segments")]
+            if stem not in active_stems and _canonical_media_key(stem) not in active_keys:
+                orphan_paths.append(("segments", path))
+
+    if screenshots_dir.exists():
+        for path in sorted(screenshots_dir.rglob("*")):
+            if not path.is_file():
+                continue
+            if path.name.startswith("."):
+                continue
+            stem = _stem_without_suffixes(path.name)
+            if stem not in active_stems and _canonical_media_key(stem) not in active_keys:
+                orphan_paths.append(("screenshot", path))
+
+    if not orphan_paths:
+        print("Archive pass found no orphaned local originals, segment folders, or screenshots.")
+        return 0
+
+    action = "Would move" if dry_run else "Moved"
+    print(
+        f"Archive pass found {len(orphan_paths)} orphaned item(s). "
+        f"{'Dry run only.' if dry_run else f'Archiving into {archive_root}.'}"
+    )
+    moved = 0
+    for kind, path in orphan_paths:
+        destination = _move_to_archive(path, media_root, archive_root, dry_run)
+        print(f"{action} {kind}: {path} -> {destination}")
+        moved += 1
+    return moved
 
 
 def _get_ffmpeg_path() -> str:
@@ -375,6 +483,21 @@ def main() -> int:
         action="store_true",
         help="Print full tracebacks for failed rows.",
     )
+    parser.add_argument(
+        "--archive-orphans",
+        action="store_true",
+        help="Deprecated: orphan archiving now runs by default unless --no-archive-orphans is set.",
+    )
+    parser.add_argument(
+        "--no-archive-orphans",
+        action="store_true",
+        help="Skip moving local originals, segment folders, and screenshots with no matching current sheet row into a safe archive folder.",
+    )
+    parser.add_argument(
+        "--archive-dry-run",
+        action="store_true",
+        help="Show which orphaned local items would be archived without moving them.",
+    )
     args = parser.parse_args()
 
     media_root = Path(args.media_dir).expanduser() if args.media_dir else _default_media_dir()
@@ -385,58 +508,66 @@ def main() -> int:
     watch_folder(media_root, stop_when_idle=True)
 
     rows = get_all_rows(GOOGLE_SHEET_ID)
+    archive_orphans = not args.no_archive_orphans
+    service = None
+
     targets = _eligible_rows(rows)
     if args.row > 0:
         targets = [row for row in targets if row.get("row_number") == args.row]
     if args.limit > 0:
         targets = targets[: args.limit]
 
-    if not targets:
-        print("No rows need transcription or fallback caption generation.")
-        return 0
-
-    service = _get_service()
-    transcribe = _get_local_transcriber(args.model)
-    print(f"Found {len(targets)} row(s) to process.")
-    for row in targets:
-        row_num = row["row_number"]
-        url = (row.get("Instagram URL") or "").strip()
-        media_type = (row.get("Media Type") or "").strip().lower()
-        transcript = (row.get("Transcript") or "").strip()
-        media_links = [link.strip() for link in (row.get("Media Drive Link") or "").split(",") if link.strip()]
-        step = "starting"
-        try:
-            if media_type == "reel" and not transcript and media_links:
-                step = "looking up Drive filename"
-                filename = _drive_filename(service, media_links[0])
-                if not filename:
-                    raise ValueError(f"Drive file did not return a filename for {media_links[0]!r}")
-                step = "finding local media file"
-                local_path = _find_local_media_path(media_root, filename)
-                try:
-                    step = f"transcribing {local_path.name}"
-                    transcript = transcribe(str(local_path))
-                except NoTranscribableAudioError:
-                    step = "generating caption from existing source text"
-                    _generate_caption_from_existing_sources(row)
-                    print(
-                        f"Row {row_num}: no transcribable audio, generated caption from existing source text ({url})"
-                    )
+    if targets:
+        if service is None:
+            service = _get_service()
+        transcribe = _get_local_transcriber(args.model)
+        print(f"Found {len(targets)} row(s) to process.")
+        for row in targets:
+            row_num = row["row_number"]
+            url = (row.get("Instagram URL") or "").strip()
+            media_type = (row.get("Media Type") or "").strip().lower()
+            transcript = (row.get("Transcript") or "").strip()
+            media_links = [link.strip() for link in (row.get("Media Drive Link") or "").split(",") if link.strip()]
+            step = "starting"
+            try:
+                if media_type == "reel" and not transcript and media_links:
+                    step = "looking up Drive filename"
+                    filename = _drive_filename(service, media_links[0])
+                    if not filename:
+                        raise ValueError(f"Drive file did not return a filename for {media_links[0]!r}")
+                    step = "finding local media file"
+                    local_path = _find_local_media_path(media_root, filename)
+                    try:
+                        step = f"transcribing {local_path.name}"
+                        transcript = transcribe(str(local_path))
+                    except NoTranscribableAudioError:
+                        step = "generating caption from existing source text"
+                        _generate_caption_from_existing_sources(row)
+                        print(
+                            f"Row {row_num}: no transcribable audio, generated caption from existing source text ({url})"
+                        )
+                        continue
+                    step = "writing transcript to Google Sheets"
+                    update_transcript(GOOGLE_SHEET_ID, row_num, transcript)
+                    step = "regenerating caption with OpenAI"
+                    _update_caption_from_transcript(row, transcript)
+                    print(f"Row {row_num}: transcribed and regenerated caption for {filename} ({url})")
                     continue
-                step = "writing transcript to Google Sheets"
-                update_transcript(GOOGLE_SHEET_ID, row_num, transcript)
-                step = "regenerating caption with OpenAI"
-                _update_caption_from_transcript(row, transcript)
-                print(f"Row {row_num}: transcribed and regenerated caption for {filename} ({url})")
-                continue
 
-            step = "generating caption from existing source text"
-            _generate_caption_from_existing_sources(row)
-            print(f"Row {row_num}: generated caption from existing source text ({url})")
-        except Exception as exc:
-            print(f"Row {row_num}: failed while {step} - {describe_error(exc)}")
-            if args.debug:
-                traceback.print_exc()
+                step = "generating caption from existing source text"
+                _generate_caption_from_existing_sources(row)
+                print(f"Row {row_num}: generated caption from existing source text ({url})")
+            except Exception as exc:
+                print(f"Row {row_num}: failed while {step} - {describe_error(exc)}")
+                if args.debug:
+                    traceback.print_exc()
+    else:
+        print("No rows need transcription or fallback caption generation.")
+
+    if archive_orphans:
+        if service is None:
+            service = _get_service()
+        _archive_orphaned_media(media_root, rows, service, dry_run=args.archive_dry_run)
 
     print("Done.")
     return 0
