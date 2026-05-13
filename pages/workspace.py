@@ -2477,7 +2477,7 @@ def _copy_tabs(
         current_slide_one_fit_mode = bool(st.session_state.get(slide_one_fit_toggle_key, False))
         current_slide_two_font_adjust = int(st.session_state.get(slide_two_font_adjust_key, 0) or 0)
         current_slide_three_font_adjust = int(st.session_state.get(slide_three_font_adjust_key, 0) or 0)
-        default_slide_three_cta = (slide_cta_options or {}).get(str(row_num), "more").strip().lower() or "more"
+        default_slide_three_cta = (slide_cta_options or {}).get(str(row_num), "hidden").strip().lower() or "hidden"
         current_slide_three_cta = _cell_text(
             st.session_state.get(slide_three_cta_key, default_slide_three_cta)
         ).strip().lower() or default_slide_three_cta
