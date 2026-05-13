@@ -66,11 +66,9 @@ generate_batch_carousel_copy_with_model = getattr(
 )
 
 MODE_OPTIONS = [
-    "Add to sheet",
     "Process this",
     "Generate headline",
     "Caption this",
-    "Download media",
 ]
 
 ORG_HASHTAG_OPTIONS = [
@@ -270,6 +268,84 @@ def _reset_home_links_on_next_render() -> None:
     st.session_state["workspace_home_links"] = [""]
 
 
+def _open_workspace_home_action_dialog(mode: str) -> None:
+    st.session_state["workspace_home_action_dialog"] = mode
+
+
+def _close_workspace_home_action_dialog(clear_inputs: bool = False) -> None:
+    st.session_state.pop("workspace_home_action_dialog", None)
+    if clear_inputs:
+        st.session_state.pop("workspace_home_dialog_link", None)
+        st.session_state.pop("workspace_home_dialog_org_hashtag", None)
+
+
+def _workspace_home_link_label(mode: str) -> str:
+    return "Link"
+
+
+def _workspace_home_link_placeholder(mode: str) -> str:
+    return "https://www.instagram.com/... or https://example.com/article"
+
+
+def _open_workspace_slide_action_dialog(row_number: int, action: str) -> None:
+    st.session_state["workspace_slide_action_dialog"] = {
+        "row_number": row_number,
+        "action": action,
+    }
+
+
+def _close_workspace_slide_action_dialog(clear_inputs: bool = False) -> None:
+    st.session_state.pop("workspace_slide_action_dialog", None)
+    if clear_inputs:
+        st.session_state.pop("workspace_slide_dialog_context", None)
+        st.session_state.pop("workspace_slide_dialog_value", None)
+
+
+def _run_workspace_home_action(mode: str, link_value: str, org_hashtag: str = "") -> None:
+    cleaned_link = (link_value or "").strip()
+    if not cleaned_link:
+        st.warning(f"Enter at least one {_workspace_home_link_label(mode).lower()}.")
+        return
+
+    links_to_process = [cleaned_link]
+    st.session_state["workspace_home_links"] = _normalize_home_links(links_to_process)
+    st.session_state["workspace_org_hashtag"] = org_hashtag
+    selected_hashtag = ORG_HASHTAG_MAP.get(org_hashtag, "")
+
+    if mode == "Process this":
+        with st.spinner("Processing link end-to-end..."):
+            try:
+                row_number = _process_single_url_to_editor(links_to_process[0], selected_hashtag)
+            except Exception as e:
+                st.error(f"Process this failed: {describe_error(e)}")
+                return
+        st.session_state["workspace_home_notice"] = (
+            f"Processed row {row_number}: ingest, caption, and slide text complete."
+        )
+        st.session_state["workspace_selected_row_num"] = row_number
+        st.query_params["workspace_row"] = str(row_number)
+        _close_workspace_home_action_dialog(clear_inputs=True)
+        _reset_home_links_on_next_render()
+        _rerun_workspace("Home")
+
+    with st.spinner(f"{mode} in progress..."):
+        try:
+            tag_value, results = _run_home_mode(mode, links_to_process, org_hashtag)
+        except Exception as e:
+            st.error(f"{mode} failed: {describe_error(e)}")
+            return
+
+    st.session_state["workspace_home_results"] = {
+        "mode": mode,
+        "required_hashtag": tag_value,
+        "items": results,
+    }
+    st.session_state["workspace_home_notice"] = f"{mode} finished for {len(results)} link(s)."
+    _close_workspace_home_action_dialog(clear_inputs=True)
+    _reset_home_links_on_next_render()
+    _rerun_workspace("Home")
+
+
 def _mark_transcribe_checkbox_for_reset(row: dict) -> None:
     transcribe_key = _workspace_key(row, "transcribe")
     pending = st.session_state.setdefault("workspace_transcribe_reset_rows", [])
@@ -379,16 +455,14 @@ def _remove_home_link(index: int) -> None:
 
 def _action_label(mode: str) -> str:
     return {
-        "Add to sheet": "Add",
         "Process this": "Process",
         "Generate headline": "Generate",
         "Caption this": "Caption",
-        "Download media": "Download",
     }.get(mode, "Add")
 
 
 def _mode_uses_org_hashtag(mode: str) -> bool:
-    return mode in {"Add to sheet", "Process this", "Caption this"}
+    return mode in {"Caption this"}
 
 
 def _clean_home_links() -> list[str]:
@@ -1608,6 +1682,135 @@ def _fundraising_preset_map() -> dict[str, str]:
     return mapping
 
 
+@st.dialog("Workspace action")
+def _render_workspace_home_action_dialog() -> None:
+    mode = st.session_state.get("workspace_home_action_dialog", "").strip()
+    if not mode:
+        return
+
+    mode_help = {
+        "Process this": "Add the link as a new sheet row, download media, ingest metadata, generate the transcript/caption, and build slide text in one shot.",
+        "Generate headline": "Pull source text from an Instagram post or article link, then return three headline options plus a footered caption.",
+        "Caption this": "Generate a caption directly from an Instagram post or article link using the selected hashtag preset.",
+    }
+
+    default_link = _clean_home_links()[0] if _clean_home_links() else ""
+    if "workspace_home_dialog_link" not in st.session_state:
+        st.session_state["workspace_home_dialog_link"] = default_link
+    if "workspace_home_dialog_org_hashtag" not in st.session_state:
+        st.session_state["workspace_home_dialog_org_hashtag"] = st.session_state.get("workspace_org_hashtag", "")
+
+    st.caption(mode)
+    if mode in mode_help:
+        st.caption(mode_help[mode])
+
+    st.text_input(
+        _workspace_home_link_label(mode),
+        key="workspace_home_dialog_link",
+        placeholder=_workspace_home_link_placeholder(mode),
+    )
+
+    selected_org_hashtag = ""
+    if _mode_uses_org_hashtag(mode):
+        selected_org_hashtag = st.selectbox(
+            "Apply organization hashtag",
+            ORG_HASHTAG_OPTIONS,
+            index=(
+                ORG_HASHTAG_OPTIONS.index(st.session_state["workspace_home_dialog_org_hashtag"])
+                if st.session_state["workspace_home_dialog_org_hashtag"] in ORG_HASHTAG_OPTIONS
+                else 0
+            ),
+            key="workspace_home_dialog_org_hashtag",
+        )
+
+    if st.button(_action_label(mode), key=f"workspace_home_dialog_submit_{mode}", type="primary", width="stretch"):
+        _run_workspace_home_action(
+            mode,
+            st.session_state.get("workspace_home_dialog_link", ""),
+            selected_org_hashtag,
+        )
+
+    if st.button("Cancel", key=f"workspace_home_dialog_cancel_{mode}", width="stretch"):
+        _close_workspace_home_action_dialog(clear_inputs=True)
+        _rerun_workspace("Home")
+
+
+@st.dialog("Slide action")
+def _render_workspace_slide_action_dialog(row: dict) -> None:
+    dialog_state = st.session_state.get("workspace_slide_action_dialog") or {}
+    action = (dialog_state.get("action") or "").strip()
+    row_num = row["row_number"]
+    if not action:
+        return
+
+    prompt_key = f"workspace_row_slides_prompt_{row_num}"
+    raw_top_comment = st.session_state.get(_workspace_key(row, "top"), row.get("Top Comment", "")).strip()
+    clean_top_comment, pinned_top_comment = _decode_top_comment(raw_top_comment)
+    current_values = {
+        "prompt": st.session_state.get(prompt_key, "") or _build_single_row_chatgpt_prompt(row),
+        "text1": _cell_text(row.get("text1")).strip(),
+        "text2": _cell_text(row.get("text2")).strip(),
+        "text3": _cell_text(row.get("text3")).strip(),
+        "custom_link": clean_top_comment,
+    }
+    dialog_labels = {
+        "prompt": "Generate prompt",
+        "text1": "Edit text 1",
+        "text2": "Edit text 2",
+        "text3": "Edit text 3",
+        "custom_link": "Edit custom link",
+    }
+    if action not in current_values:
+        st.session_state["workspace_error"] = f"Row {row_num}: unknown slide action {action}."
+        _close_workspace_slide_action_dialog(clear_inputs=True)
+        _rerun_workspace("Edit")
+        return
+
+    context_key = f"{row_num}:{action}"
+    if st.session_state.get("workspace_slide_dialog_context") != context_key:
+        st.session_state["workspace_slide_dialog_context"] = context_key
+        st.session_state["workspace_slide_dialog_value"] = current_values[action]
+
+    st.caption(dialog_labels[action])
+    st.text_area(
+        dialog_labels[action],
+        key="workspace_slide_dialog_value",
+        height=240,
+        label_visibility="collapsed",
+    )
+
+    if st.button("Save", key=f"workspace_slide_dialog_save_{context_key}", type="primary", width="stretch"):
+        edited_value = st.session_state.get("workspace_slide_dialog_value", "").strip()
+        try:
+            if action == "prompt":
+                st.session_state[prompt_key] = edited_value
+                st.session_state["workspace_success"] = f"Row {row_num}: slide prompt saved."
+            elif action in {"text1", "text2", "text3"}:
+                if update_carousel_fields is None:
+                    raise RuntimeError("Carousel field updates are not supported in this build.")
+                name = _cell_text(row.get("name")).strip()
+                text1 = edited_value if action == "text1" else _cell_text(row.get("text1")).strip()
+                text2 = edited_value if action == "text2" else _cell_text(row.get("text2")).strip()
+                text3 = edited_value if action == "text3" else _cell_text(row.get("text3")).strip()
+                update_carousel_fields(GOOGLE_SHEET_ID, row_num, name, text1, text2, text3)
+                st.session_state["workspace_success"] = f"Row {row_num}: {dialog_labels[action].lower()} saved."
+            elif action == "custom_link":
+                top_comment = _encode_top_comment(edited_value, pinned=pinned_top_comment)
+                current_speaker_name = _cell_text(
+                    st.session_state.get(_workspace_speaker_key(row), row.get("Speaker Name", ""))
+                ).strip()
+                _apply_top_comment_to_caption(row, row_num, current_speaker_name, top_comment)
+                st.session_state["workspace_success"] = f"Row {row_num}: custom link saved."
+        except Exception as e:
+            st.session_state["workspace_error"] = f"Row {row_num}: could not save {dialog_labels[action].lower()} - {describe_error(e)}"
+        _close_workspace_slide_action_dialog(clear_inputs=True)
+        _rerun_workspace("Edit")
+
+    if st.button("Cancel", key=f"workspace_slide_dialog_cancel_{context_key}", width="stretch"):
+        _close_workspace_slide_action_dialog(clear_inputs=True)
+        _rerun_workspace("Edit")
+
+
 @st.dialog("Add link")
 def _render_workspace_link_dialog(row: dict) -> None:
     row_num = row["row_number"]
@@ -2105,9 +2308,6 @@ def _copy_tabs(
 ) -> None:
     tab_labels = ["Caption", "Original"]
     tab_labels.append("Slides")
-    media_links = [link.strip() for link in (media_link or "").split(",") if link.strip()]
-    if media_links:
-        tab_labels.append("Media")
     content_tab_key = f"workspace_row_content_tab_{row_num}"
     current_content_tab = st.session_state.get(content_tab_key, "Caption")
     if current_content_tab not in tab_labels:
@@ -2163,8 +2363,7 @@ def _copy_tabs(
         current_slide_one_fit_mode = bool(st.session_state.get(slide_one_fit_toggle_key, False))
         current_slide_two_font_adjust = int(st.session_state.get(slide_two_font_adjust_key, 0) or 0)
         current_slide_three_font_adjust = int(st.session_state.get(slide_three_font_adjust_key, 0) or 0)
-        clean_top, _ = _decode_top_comment(top_comment)
-        default_slide_three_cta = "custom link" if clean_top else ("article" if not is_instagram else "more")
+        default_slide_three_cta = "more"
         current_slide_three_cta = _cell_text(
             st.session_state.get(slide_three_cta_key, default_slide_three_cta)
         ).strip().lower() or default_slide_three_cta
@@ -2217,19 +2416,34 @@ def _copy_tabs(
                 slide_three_font_adjust_key,
                 current_slide_three_font_adjust,
             )
-            st.selectbox(
-                "Slide 3 CTA",
-                ["more", "article", "video", "custom link"],
-                index=["more", "article", "video", "custom link"].index(current_slide_three_cta),
-                key=slide_three_cta_key,
-                label_visibility="collapsed",
-            )
-        st.code(slide_text1 or "(none)", language=None)
-        st.code(slide_text2 or "(none)", language=None)
-        st.code(slide_text3 or "(none)", language=None)
-        if st.button("Generate prompt", key=f"workspace_row_slides_build_{row_num}", width="stretch"):
-            st.session_state[prompt_key] = _build_single_row_chatgpt_prompt(prompt_row or {})
-            _rerun_workspace("Edit")
+        with st.popover("Actions", use_container_width=True):
+            if st.button("Generate prompt", key=f"workspace_row_slides_build_{row_num}", width="stretch"):
+                if not st.session_state.get(prompt_key):
+                    st.session_state[prompt_key] = _build_single_row_chatgpt_prompt(prompt_row or {})
+                _open_workspace_slide_action_dialog(row_num, "prompt")
+                _rerun_workspace("Edit")
+            if st.button("Edit text 1", key=f"workspace_row_slides_edit_text1_{row_num}", width="stretch"):
+                _open_workspace_slide_action_dialog(row_num, "text1")
+                _rerun_workspace("Edit")
+            if st.button("Edit text 2", key=f"workspace_row_slides_edit_text2_{row_num}", width="stretch"):
+                _open_workspace_slide_action_dialog(row_num, "text2")
+                _rerun_workspace("Edit")
+            if st.button("Edit text 3", key=f"workspace_row_slides_edit_text3_{row_num}", width="stretch"):
+                _open_workspace_slide_action_dialog(row_num, "text3")
+                _rerun_workspace("Edit")
+            if st.button("Link: More", key=f"workspace_row_slides_cta_more_{row_num}", width="stretch"):
+                st.session_state[slide_three_cta_key] = "more"
+                _rerun_workspace("Edit")
+            if st.button("Link: Video", key=f"workspace_row_slides_cta_video_{row_num}", width="stretch"):
+                st.session_state[slide_three_cta_key] = "video"
+                _rerun_workspace("Edit")
+            if st.button("Link: Article", key=f"workspace_row_slides_cta_article_{row_num}", width="stretch"):
+                st.session_state[slide_three_cta_key] = "article"
+                _rerun_workspace("Edit")
+            if st.button("Link: Custom Link", key=f"workspace_row_slides_cta_custom_{row_num}", width="stretch"):
+                st.session_state[slide_three_cta_key] = "custom link"
+                _open_workspace_slide_action_dialog(row_num, "custom_link")
+                _rerun_workspace("Edit")
         if (slide_text3 or "").strip():
             st.code(
                 _caption_tab_value(
@@ -2242,25 +2456,8 @@ def _copy_tabs(
                 ) or "(none)",
                 language=None,
             )
-        row_prompt = st.session_state.get(prompt_key, "")
-        if row_prompt:
-            _one_line_copy_preview("slide prompt", row_prompt, f"workspace_row_slides_prompt_preview_{row_num}")
-    elif selected_content_tab == "Media" and media_links:
-            _one_line_copy_preview("media", "\n".join(media_links), f"workspace_media_links_{row_num}")
-            st.markdown(
-                f'<div class="workspace-plain-copy-text">Drive media link{"" if len(media_links) == 1 else "s"}.</div>',
-                unsafe_allow_html=True,
-            )
-            st.markdown(
-                f'<div class="workspace-plain-copy-text">{html.escape(chr(10).join(media_links))}</div>',
-                unsafe_allow_html=True,
-            )
-            if (media_type or "").strip().lower() == "reel" and media_links:
-                st.link_button("Open reel in Drive", media_links[0], width="stretch")
-            else:
-                for index, link in enumerate(media_links, start=1):
-                    label = "Open media in Drive" if len(media_links) == 1 else f"Open media {index} in Drive"
-                    st.link_button(label, link, width="stretch")
+            st.caption("Custom link text")
+            st.code(top_comment or "(none)", language=None)
 
 
 def _icon_copy_button(label: str, value: str) -> None:
@@ -3455,24 +3652,6 @@ def _run_home_mode(mode: str, urls: list[str], org_hashtag: str) -> tuple[str, l
                     "source_caption": row["Original Caption"],
                 }
             )
-        elif mode == "Download media":
-            tmp_dir = None
-            try:
-                post = _fetch_post_data(url)
-                uploaded = upload_media_bundle(post)
-                tmp_dir = uploaded["tmp_dir"]
-                results.append(
-                    {
-                        "url": url,
-                        "username": post.get("username", ""),
-                        "media_type": post.get("media_type", ""),
-                        "media_link": uploaded.get("media_link", ""),
-                        "thumbnail_link": uploaded.get("thumbnail_link", ""),
-                    }
-                )
-            finally:
-                if tmp_dir:
-                    shutil.rmtree(tmp_dir, ignore_errors=True)
         else:
             raise ValueError(f"Unsupported mode: {mode}")
 
@@ -3497,15 +3676,15 @@ if error_message:
 
 pending_tab = st.session_state.pop("_workspace_pending_tab", None)
 if pending_tab:
-    if pending_tab in {"Edit", "Grid"}:
+    if pending_tab in {"Edit", "Grid", "Actions"}:
         pending_tab = "Home"
     st.session_state["workspace_active_tab"] = pending_tab
 elif "workspace_active_tab" not in st.session_state:
     st.session_state["workspace_active_tab"] = "Home"
-elif st.session_state["workspace_active_tab"] in {"Edit", "Grid"}:
+elif st.session_state["workspace_active_tab"] in {"Edit", "Grid", "Actions"}:
     st.session_state["workspace_active_tab"] = "Home"
 
-section_tabs = st.tabs(["Home", "Actions", "Slides", "Data"])
+section_tabs = st.tabs(["Home", "Slides", "Data"])
 
 workspace_rows_error = ""
 workspace_rows: list[dict] = []
@@ -3516,160 +3695,9 @@ try:
     )
 except Exception as e:
     workspace_rows_error = describe_error(e)
+home_notice = st.session_state.pop("workspace_home_notice", "")
 
 with section_tabs[1]:
-    st.markdown('<div class="workspace-action-anchor"></div>', unsafe_allow_html=True)
-    home_notice = st.session_state.pop("workspace_home_notice", "")
-
-    mode_help = {
-        "Add to sheet": "Add an Instagram post or article link to the sheet so it can be processed into the editor.",
-        "Process this": "Add the link as a new sheet row, download media, ingest metadata, generate the transcript/caption, and build slide text in one shot.",
-        "Generate headline": "Pull source text from an Instagram post or article link, then return three headline options plus a footered caption.",
-        "Caption this": "Generate a caption directly from an Instagram post or article link using the selected hashtag preset.",
-        "Download media": "Download the media and upload it to Drive without adding a row first.",
-    }
-    link_area = st.container()
-    settings_area = st.container()
-    button_area = st.container()
-    results_area = st.container()
-
-    mode = st.session_state.get("workspace_home_mode", "Generate headline")
-    org_hashtag = st.session_state.get("workspace_org_hashtag", "")
-    with settings_area:
-        mode = st.selectbox(
-            "Action",
-            MODE_OPTIONS,
-            index=MODE_OPTIONS.index(mode) if mode in MODE_OPTIONS else 0,
-            key="workspace_home_mode",
-        )
-        if mode in mode_help:
-            st.caption(mode_help.get(mode, ""))
-
-        if _mode_uses_org_hashtag(mode):
-            org_hashtag = st.selectbox(
-                "Apply organization hashtag",
-                ORG_HASHTAG_OPTIONS,
-                index=ORG_HASHTAG_OPTIONS.index(org_hashtag) if org_hashtag in ORG_HASHTAG_OPTIONS else 0,
-                key="workspace_org_hashtag",
-            )
-            selected_hashtag = ORG_HASHTAG_MAP.get(org_hashtag, "")
-        else:
-            selected_hashtag = ""
-
-    with link_area:
-        links = _normalize_home_links(_ensure_home_links())
-        link_label = "Instagram Link" if mode == "Download media" else "Link"
-        link_placeholder = (
-            "https://www.instagram.com/p/... or /reel/..."
-            if mode == "Download media"
-            else "https://www.instagram.com/... or https://example.com/article"
-        )
-        links[0] = st.text_input(
-            link_label,
-            value=links[0],
-            placeholder=link_placeholder,
-            key="workspace_home_link_0",
-        )
-        normalized_links = _normalize_home_links(links)
-        st.session_state["workspace_home_links"] = normalized_links
-        if normalized_links != links:
-            _rerun_workspace("Actions")
-
-    with button_area:
-        submitted = st.button(_action_label(mode), type="primary", width="stretch")
-        if st.button("Clear", width="stretch", key="workspace_home_clear"):
-            st.session_state.pop("workspace_home_results", None)
-            st.session_state.pop("workspace_home_notice", None)
-            _reset_home_links_on_next_render()
-            _rerun_workspace("Actions")
-        if submitted:
-            links_to_process = _clean_home_links()
-            if not links_to_process:
-                st.warning(f"Enter at least one {link_label.lower()}.")
-            elif mode == "Add to sheet":
-                try:
-                    append_link_rows(
-                        GOOGLE_SHEET_ID,
-                        links_to_process,
-                        selected_hashtag,
-                    )
-                except Exception as e:
-                    st.error(f"Could not add links to sheet: {describe_error(e)}")
-                else:
-                    st.session_state["workspace_home_notice"] = f"Added {len(links_to_process)} link(s) to the sheet."
-                    _reset_home_links_on_next_render()
-                    _rerun_workspace("Actions")
-            elif mode == "Process this":
-                if len(links_to_process) != 1:
-                    st.warning("Process this handles one link at a time.")
-                else:
-                    with st.spinner("Processing link end-to-end..."):
-                        try:
-                            row_number = _process_single_url_to_editor(links_to_process[0], selected_hashtag)
-                        except Exception as e:
-                            st.error(f"Process this failed: {describe_error(e)}")
-                        else:
-                            st.session_state["workspace_home_notice"] = (
-                                f"Processed row {row_number}: ingest, caption, and slide text complete."
-                            )
-                            st.session_state["workspace_selected_row_num"] = row_number
-                            st.query_params["workspace_row"] = str(row_number)
-                            _reset_home_links_on_next_render()
-                            _rerun_workspace("Home")
-            else:
-                with st.spinner(f"{mode} in progress..."):
-                    try:
-                        tag_value, results = _run_home_mode(mode, links_to_process, org_hashtag)
-                    except Exception as e:
-                        st.error(f"{mode} failed: {describe_error(e)}")
-                    else:
-                        st.session_state["workspace_home_results"] = {
-                            "mode": mode,
-                            "required_hashtag": tag_value,
-                            "items": results,
-                        }
-                        st.session_state["workspace_home_notice"] = f"{mode} finished for {len(results)} link(s)."
-                        _reset_home_links_on_next_render()
-                        _rerun_workspace("Actions")
-
-    with results_area:
-        home_results = st.session_state.get("workspace_home_results")
-        if home_results and home_results.get("mode") == "Generate headline":
-            for idx, item in enumerate(home_results.get("items", []), start=1):
-                st.caption(f"Result {idx}")
-                display_name = item.get("username") or item.get("display_name") or "unknown"
-                st.write(f"@{display_name}" if item.get("is_instagram", True) else display_name)
-                open_label = "Open Instagram link ↗" if item.get("is_instagram", True) else "Open source link ↗"
-                st.markdown(f"[{open_label}]({item['url']})")
-                headline_tabs = st.tabs(["Headline 1", "Headline 2", "Headline 3", "Caption"])
-                for tab_idx, headline in enumerate(item.get("headlines", [])[:3]):
-                    with headline_tabs[tab_idx]:
-                        _tab_copy_preview(headline or "(none)")
-                with headline_tabs[3]:
-                    _tab_copy_preview(item.get("caption", "") or "(none)")
-
-        if home_results and home_results.get("mode") == "Caption this":
-            for idx, item in enumerate(home_results.get("items", []), start=1):
-                st.caption(f"Caption {idx}")
-                display_name = item.get("username") or item.get("display_name") or "unknown"
-                st.write(f"@{display_name}" if item.get("is_instagram", True) else display_name)
-                open_label = "Open Instagram link ↗" if item.get("is_instagram", True) else "Open source link ↗"
-                st.markdown(f"[{open_label}]({item['url']})")
-                _copy_block("caption", item.get("caption", ""), f"workspace_home_caption_only_{idx}")
-
-        if home_results and home_results.get("mode") == "Download media":
-            for idx, item in enumerate(home_results.get("items", []), start=1):
-                st.caption(f"Download {idx}")
-                st.write(f"@{item.get('username') or 'unknown'} · {item.get('media_type') or 'unknown'}")
-                st.markdown(f"[Open Instagram link ↗]({item['url']})")
-                if item.get("media_link"):
-                    st.write(f"Media link(s): {item['media_link']}")
-                if item.get("thumbnail_link"):
-                    st.write(f"Thumbnail: {item['thumbnail_link']}")
-        if home_notice:
-            st.caption(home_notice)
-
-with section_tabs[2]:
     st.markdown('<div class="workspace-slides-anchor"></div>', unsafe_allow_html=True)
     slides_notice = st.session_state.pop("workspace_slides_notice", "")
     slides_prompt = st.session_state.get("workspace_slides_prompt", "")
@@ -3726,6 +3754,61 @@ with section_tabs[2]:
         _tab_copy_preview(slides_prompt, show_plain_text=False, key="workspace_slides_prompt_copy")
 
 with section_tabs[0]:
+    st.markdown('<div class="workspace-action-anchor"></div>', unsafe_allow_html=True)
+    if st.session_state.get("workspace_home_action_dialog"):
+        _render_workspace_home_action_dialog()
+
+    with st.popover("Actions", use_container_width=True):
+        if st.button(
+            "Refresh results",
+            key="workspace_refresh_editor_rows",
+            width="stretch",
+            help="Reload the current editor rows from the sheet and look for new results.",
+        ):
+            _rerun_workspace("Home")
+
+        for action_mode in [
+            "Process this",
+            "Generate headline",
+            "Caption this",
+        ]:
+            if st.button(action_mode, key=f"workspace_home_action_{action_mode}", width="stretch"):
+                _open_workspace_home_action_dialog(action_mode)
+                _rerun_workspace("Home")
+
+    if home_notice:
+        st.caption(home_notice)
+
+    home_results = st.session_state.get("workspace_home_results")
+    if home_results and home_results.get("mode") == "Generate headline":
+        for idx, item in enumerate(home_results.get("items", []), start=1):
+            st.caption(f"Result {idx}")
+            display_name = item.get("username") or item.get("display_name") or "unknown"
+            st.write(f"@{display_name}" if item.get("is_instagram", True) else display_name)
+            open_label = "Open Instagram link ↗" if item.get("is_instagram", True) else "Open source link ↗"
+            st.markdown(f"[{open_label}]({item['url']})")
+            headline_tabs = st.tabs(["Headline 1", "Headline 2", "Headline 3", "Caption"])
+            for tab_idx, headline in enumerate(item.get("headlines", [])[:3]):
+                with headline_tabs[tab_idx]:
+                    _tab_copy_preview(headline or "(none)")
+            with headline_tabs[3]:
+                _tab_copy_preview(item.get("caption", "") or "(none)")
+
+    if home_results and home_results.get("mode") == "Caption this":
+        for idx, item in enumerate(home_results.get("items", []), start=1):
+            st.caption(f"Caption {idx}")
+            display_name = item.get("username") or item.get("display_name") or "unknown"
+            st.write(f"@{display_name}" if item.get("is_instagram", True) else display_name)
+            open_label = "Open Instagram link ↗" if item.get("is_instagram", True) else "Open source link ↗"
+            st.markdown(f"[{open_label}]({item['url']})")
+            _copy_block("caption", item.get("caption", ""), f"workspace_home_caption_only_{idx}")
+
+    if home_results and st.button("Clear results", width="stretch", key="workspace_home_clear"):
+        st.session_state.pop("workspace_home_results", None)
+        st.session_state.pop("workspace_home_notice", None)
+        _reset_home_links_on_next_render()
+        _rerun_workspace("Home")
+
     if workspace_rows_error:
         st.error(f"Could not load rows: {workspace_rows_error}")
         pending_edit_rows = []
@@ -3768,8 +3851,17 @@ with section_tabs[0]:
         else:
             _render_workspace_thumbnail_dialog(thumbnail_dialog_row)
 
+    slide_dialog_state = st.session_state.get("workspace_slide_action_dialog") or {}
+    slide_dialog_row_number = slide_dialog_state.get("row_number")
+    if slide_dialog_row_number is not None:
+        slide_dialog_row = next((row for row in editor_rows if row.get("row_number") == slide_dialog_row_number), None)
+        if slide_dialog_row is None:
+            _close_workspace_slide_action_dialog(clear_inputs=True)
+        else:
+            _render_workspace_slide_action_dialog(slide_dialog_row)
+
     if not editor_rows:
-        st.info("No rows yet. Add a link on Actions or process new rows on Data.")
+        st.info("No rows yet. Use the Home actions menu or process new rows on Data.")
     else:
         query_row = str(st.query_params.get("workspace_row", "") or "")
         if query_row and st.session_state.get("workspace_target_row") != query_row:
@@ -3784,13 +3876,6 @@ with section_tabs[0]:
         if current_selected not in row_numbers:
             current_selected = row_numbers[0]
         st.session_state["workspace_selected_row_num"] = current_selected
-        if st.button(
-            "Refresh results",
-            key="workspace_refresh_editor_rows",
-            width="stretch",
-            help="Reload the current editor rows from the sheet and look for new results.",
-        ):
-            _rerun_workspace("Edit")
         _render_editor_grid(editor_rows, current_selected)
         current_index = row_numbers.index(current_selected)
         selected_row = editor_rows[current_index]
@@ -3861,6 +3946,11 @@ with section_tabs[0]:
                         label_visibility="collapsed",
                     )
                     if url:
+                        media_links = [
+                            link.strip()
+                            for link in _cell_text(row.get("Media Drive Link")).split(",")
+                            if link.strip()
+                        ]
                         menu_nonce = st.session_state.get(menu_nonce_key, 0)
                         menu_label_with_nonce = f"Actions{chr(0x200B) * menu_nonce}"
                         with st.popover(menu_label_with_nonce, use_container_width=True):
@@ -3869,6 +3959,12 @@ with section_tabs[0]:
                                 url,
                                 width="stretch",
                             )
+                            if media_links:
+                                st.link_button(
+                                    "Open reel in Drive",
+                                    media_links[0],
+                                    width="stretch",
+                                )
                             primary_action = "process_post" if is_instagram else "image_text"
                             primary_help = (
                                 "Transcribe, generate the caption, and generate slide copy."
@@ -4010,7 +4106,7 @@ with section_tabs[0]:
         ):
             _handle_update_all_workspace_speaker_names(editor_rows)
 
-with section_tabs[3]:
+with section_tabs[2]:
     st.caption("Data view for the Google Sheet plus batch ingest.")
 
     if workspace_rows_error:
