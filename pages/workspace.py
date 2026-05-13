@@ -1367,6 +1367,9 @@ def _slide_three_cta_text(option: str, top_comment: str) -> str:
         custom = re.sub(r"\s+([,.;:!?])", r"\1", custom)
         if not custom:
             return "Comment LINK for more"
+        custom = custom.rstrip(":;,")
+        if not custom:
+            return "Comment LINK for more"
         if custom[-1] not in ".!?":
             custom = f"{custom}."
         return custom
