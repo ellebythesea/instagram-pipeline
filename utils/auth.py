@@ -77,7 +77,7 @@ def require_auth() -> bool:
         if password == APP_PASSWORD:
             _set_authenticated()
             _set_auth_cookie()
-            st.rerun()
+            return True
         else:
             st.session_state[LOGIN_ERROR_KEY] = "Incorrect password."
 

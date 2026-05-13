@@ -55,6 +55,7 @@ _EXPECTED_HEADERS = [
 _headers_checked: set[tuple[str, str]] = set()
 _METADATA_SHEET_TITLE = "__workspace_meta__"
 _LAST_SCHEDULED_TIMES_KEY = "last_scheduled_times"
+_SLIDE_CTA_OPTIONS_KEY = "slide_cta_options"
 _FUNDRAISING_SHEET_TITLE = "fundraising"
 
 
@@ -351,6 +352,46 @@ def update_last_scheduled_times(sheet_id: str, scheduled_times: list[str]) -> No
             _with_backoff(ws.update, f"A{index}:B{index}", [[_LAST_SCHEDULED_TIMES_KEY, payload]])
             return
     _with_backoff(ws.append_row, [_LAST_SCHEDULED_TIMES_KEY, payload], value_input_option="USER_ENTERED")
+
+
+def get_slide_cta_options(sheet_id: str) -> dict[str, str]:
+    """Return saved slide 3 CTA choices keyed by sheet row number."""
+    ws = _metadata_worksheet(sheet_id)
+    records = _with_backoff(ws.get_all_records, default_blank="")
+    for record in records:
+        key = (record.get("key", "") or "").strip()
+        if key != _SLIDE_CTA_OPTIONS_KEY:
+            continue
+        raw_value = (record.get("value", "") or "").strip()
+        if not raw_value:
+            return {}
+        try:
+            values = json.loads(raw_value)
+        except json.JSONDecodeError:
+            return {}
+        if not isinstance(values, dict):
+            return {}
+        return {
+            str(row_number).strip(): str(option).strip()
+            for row_number, option in values.items()
+            if str(row_number).strip() and str(option).strip()
+        }
+    return {}
+
+
+def update_slide_cta_option(sheet_id: str, row_number: int, option: str) -> None:
+    """Persist a row's selected slide 3 CTA option in metadata."""
+    ws = _metadata_worksheet(sheet_id)
+    records = _with_backoff(ws.get_all_records, default_blank="")
+    values = get_slide_cta_options(sheet_id)
+    values[str(row_number)] = (option or "").strip()
+    payload = json.dumps(values, sort_keys=True)
+    for index, record in enumerate(records, start=2):
+        key = (record.get("key", "") or "").strip()
+        if key == _SLIDE_CTA_OPTIONS_KEY:
+            _with_backoff(ws.update, f"A{index}:B{index}", [[_SLIDE_CTA_OPTIONS_KEY, payload]])
+            return
+    _with_backoff(ws.append_row, [_SLIDE_CTA_OPTIONS_KEY, payload], value_input_option="USER_ENTERED")
 
 
 def get_fundraising_links(sheet_id: str) -> list[dict[str, str]]:

@@ -133,6 +133,8 @@ update_thumbnail_link = getattr(sheet_ops, "update_thumbnail_link", None)
 update_carousel_fields = getattr(sheet_ops, "update_carousel_fields", None)
 delete_sheet_row = sheet_ops.delete_row
 get_fundraising_links = getattr(sheet_ops, "get_fundraising_links", lambda _sheet_id: [])
+get_slide_cta_options = getattr(sheet_ops, "get_slide_cta_options", lambda _sheet_id: {})
+update_slide_cta_option = getattr(sheet_ops, "update_slide_cta_option", lambda _sheet_id, _row_number, _option: None)
 if hasattr(sheet_ops, "get_last_scheduled_times"):
     get_last_scheduled_times = sheet_ops.get_last_scheduled_times
 else:
@@ -279,6 +281,18 @@ def _close_workspace_home_action_dialog(clear_inputs: bool = False) -> None:
         st.session_state.pop("workspace_home_dialog_org_hashtag", None)
 
 
+def _dismiss_workspace_home_action_dialog() -> None:
+    _close_workspace_home_action_dialog(clear_inputs=True)
+
+
+def _open_workspace_slides_dialog() -> None:
+    st.session_state["workspace_slides_dialog"] = True
+
+
+def _close_workspace_slides_dialog() -> None:
+    st.session_state.pop("workspace_slides_dialog", None)
+
+
 def _workspace_home_link_label(mode: str) -> str:
     return "Link"
 
@@ -299,6 +313,10 @@ def _close_workspace_slide_action_dialog(clear_inputs: bool = False) -> None:
     if clear_inputs:
         st.session_state.pop("workspace_slide_dialog_context", None)
         st.session_state.pop("workspace_slide_dialog_value", None)
+
+
+def _dismiss_workspace_slide_action_dialog() -> None:
+    _close_workspace_slide_action_dialog(clear_inputs=True)
 
 
 def _run_workspace_home_action(mode: str, link_value: str, org_hashtag: str = "") -> None:
@@ -525,6 +543,14 @@ def _sort_editor_rows(rows: list[dict]) -> list[dict]:
     return sorted(rows, key=sort_key)
 
 
+def _row_has_slide_text(row: dict) -> bool:
+    return bool(
+        _cell_text(row.get("text1")).strip()
+        and _cell_text(row.get("text2")).strip()
+        and _cell_text(row.get("text3")).strip()
+    )
+
+
 def _grid_badges(row: dict) -> list[tuple[str, str]]:
     badges = []
     media_type = _cell_text(row.get("Media Type")).strip().lower()
@@ -533,8 +559,10 @@ def _grid_badges(row: dict) -> list[tuple[str, str]]:
         badges.append(("C", "Has caption"))
     if _cell_text(row.get("Transcript")).strip():
         badges.append(("T", "Transcribed"))
+    if _row_has_slide_text(row):
+        badges.append(("S", "Slide text complete"))
     if status == "skipped":
-        badges.append(("S", "Skipped"))
+        badges.append(("Skip", "Skipped"))
     try:
         photo_count = int(row.get("Photo Count") or 0)
     except Exception:
@@ -1440,16 +1468,26 @@ def _slide_three_cta_text(option: str, top_comment: str) -> str:
         custom = re.sub(r"\s+", " ", custom)
         custom = re.sub(r"\s+([,.;:!?])", r"\1", custom)
         if not custom:
-            return "Comment LINK for more"
-        custom = custom.rstrip(":;,")
+            return "Say LINK for more"
+        custom = custom.rstrip(":;,.!?")
         if not custom:
-            return "Comment LINK for more"
-        if custom[-1] not in ".!?":
-            custom = f"{custom}."
+            return "Say LINK for more"
         return custom
-    if normalized not in {"more", "article", "video"}:
+    cta_text_by_option = {
+        "article": "Say LINK for the article",
+        "petition": "Say LINK for the petition",
+        "video": "Say LINK for the video",
+    }
+    if normalized in cta_text_by_option:
+        return cta_text_by_option[normalized]
+    if normalized not in {"more", "article", "petition", "video"}:
         normalized = "more"
-    return f"Comment LINK for {normalized}"
+    return "Say LINK for more"
+
+
+def _save_slide_three_cta_choice(row_number: int, state_key: str, option: str) -> None:
+    st.session_state[state_key] = option
+    update_slide_cta_option(GOOGLE_SHEET_ID, row_number, option)
 
 
 def _append_top_comment(existing: str, addition: str) -> str:
@@ -1493,6 +1531,14 @@ def _close_workspace_link_dialog(row: dict) -> None:
 def _close_workspace_thumbnail_dialog(row: dict) -> None:
     st.session_state.pop("workspace_thumbnail_dialog_row", None)
     st.session_state.pop(_workspace_key(row, "thumbnail_upload"), None)
+
+
+def _dismiss_workspace_link_dialog() -> None:
+    st.session_state.pop("workspace_link_dialog_row", None)
+
+
+def _dismiss_workspace_thumbnail_dialog() -> None:
+    st.session_state.pop("workspace_thumbnail_dialog_row", None)
 
 
 def _apply_top_comment_to_caption(
@@ -1682,7 +1728,7 @@ def _fundraising_preset_map() -> dict[str, str]:
     return mapping
 
 
-@st.dialog("Workspace action")
+@st.dialog("Workspace action", on_dismiss=_dismiss_workspace_home_action_dialog)
 def _render_workspace_home_action_dialog() -> None:
     mode = st.session_state.get("workspace_home_action_dialog", "").strip()
     if not mode:
@@ -1735,7 +1781,68 @@ def _render_workspace_home_action_dialog() -> None:
         _rerun_workspace("Home")
 
 
-@st.dialog("Slide action")
+@st.dialog("Slides", width="large", on_dismiss=_close_workspace_slides_dialog)
+def _render_workspace_slides_dialog(workspace_rows: list[dict], workspace_rows_error: str) -> None:
+    slides_notice = st.session_state.pop("workspace_slides_notice", "")
+    slides_prompt = st.session_state.get("workspace_slides_prompt", "")
+
+    if workspace_rows_error:
+        st.error(f"Could not load slide-ready rows: {workspace_rows_error}")
+        ready_rows = []
+    else:
+        ready_rows = _ready_rows_from_loaded_rows(workspace_rows)
+
+    ready_count = len(ready_rows)
+    row_word = "row" if ready_count == 1 else "rows"
+    if ready_count:
+        st.caption(f"{ready_count} {row_word} ready for slides.")
+    else:
+        st.info("No rows are ready for slides yet.")
+
+    if slides_notice:
+        st.caption(slides_notice)
+
+    pasted_results = st.text_area(
+        "Paste slide results",
+        key="workspace_slides_results",
+        height=100,
+        placeholder='[{"row_number":2,"name":"...","text1":"...","text2":"...","text3":"..."}]',
+    )
+    if st.button("Apply slide results", key="workspace_slides_apply", type="primary", width="stretch"):
+        try:
+            updated_count, issues = _apply_chatgpt_handoff_results(GOOGLE_SHEET_ID, pasted_results)
+        except Exception as e:
+            st.error(f"Could not apply slide results: {describe_error(e)}")
+        else:
+            if updated_count:
+                message = f"Applied slide results to {updated_count} row(s)."
+                if issues:
+                    message += f" Skipped {len(issues)} item(s): " + " | ".join(issues[:3])
+                st.session_state["workspace_success"] = message
+            else:
+                st.session_state["workspace_error"] = (
+                    "No valid slide results were found to apply."
+                    + (f" {' | '.join(issues[:3])}" if issues else "")
+                )
+            _rerun_workspace("Home")
+
+    if st.button("Generate slides prompt", key="workspace_slides_build_prompt", type="primary", width="stretch"):
+        if not ready_rows:
+            st.warning("No rows are ready for slides yet.")
+        else:
+            st.session_state["workspace_slides_prompt"] = _build_chatgpt_handoff_prompt(ready_rows)
+            st.session_state["workspace_slides_notice"] = f"Built slides prompt for {ready_count} {row_word}."
+            _rerun_workspace("Home")
+
+    if slides_prompt:
+        _tab_copy_preview(slides_prompt, show_plain_text=False, key="workspace_slides_prompt_copy")
+
+    if st.button("Close", key="workspace_slides_close", width="stretch"):
+        _close_workspace_slides_dialog()
+        _rerun_workspace("Home")
+
+
+@st.dialog("Slide action", on_dismiss=_dismiss_workspace_slide_action_dialog)
 def _render_workspace_slide_action_dialog(row: dict) -> None:
     dialog_state = st.session_state.get("workspace_slide_action_dialog") or {}
     action = (dialog_state.get("action") or "").strip()
@@ -1751,6 +1858,7 @@ def _render_workspace_slide_action_dialog(row: dict) -> None:
         "text1": _cell_text(row.get("text1")).strip(),
         "text2": _cell_text(row.get("text2")).strip(),
         "text3": _cell_text(row.get("text3")).strip(),
+        "caption": _cell_text(row.get("Generated Caption")).strip(),
         "custom_link": clean_top_comment,
     }
     dialog_labels = {
@@ -1758,6 +1866,7 @@ def _render_workspace_slide_action_dialog(row: dict) -> None:
         "text1": "Edit text 1",
         "text2": "Edit text 2",
         "text3": "Edit text 3",
+        "caption": "Edit caption",
         "custom_link": "Edit custom link",
     }
     if action not in current_values:
@@ -1794,6 +1903,10 @@ def _render_workspace_slide_action_dialog(row: dict) -> None:
                 text3 = edited_value if action == "text3" else _cell_text(row.get("text3")).strip()
                 update_carousel_fields(GOOGLE_SHEET_ID, row_num, name, text1, text2, text3)
                 st.session_state["workspace_success"] = f"Row {row_num}: {dialog_labels[action].lower()} saved."
+            elif action == "caption":
+                current_status = _cell_text(row.get("Status")).strip() or _default_editor_status(row)
+                update_caption(GOOGLE_SHEET_ID, row_num, edited_value, current_status)
+                st.session_state["workspace_success"] = f"Row {row_num}: caption saved."
             elif action == "custom_link":
                 top_comment = _encode_top_comment(edited_value, pinned=pinned_top_comment)
                 current_speaker_name = _cell_text(
@@ -1811,7 +1924,7 @@ def _render_workspace_slide_action_dialog(row: dict) -> None:
         _rerun_workspace("Edit")
 
 
-@st.dialog("Add link")
+@st.dialog("Add link", on_dismiss=_dismiss_workspace_link_dialog)
 def _render_workspace_link_dialog(row: dict) -> None:
     row_num = row["row_number"]
     speaker_name = (row.get("Speaker Name") or "").strip()
@@ -1875,7 +1988,7 @@ def _render_workspace_link_dialog(row: dict) -> None:
         _rerun_workspace("Edit")
 
 
-@st.dialog("Update screenshot")
+@st.dialog("Update screenshot", on_dismiss=_dismiss_workspace_thumbnail_dialog)
 def _render_workspace_thumbnail_dialog(row: dict) -> None:
     row_num = row["row_number"]
     url = _cell_text(row.get("Instagram URL")).strip()
@@ -2305,6 +2418,7 @@ def _copy_tabs(
     slide_text3: str = "",
     prompt_row: dict | None = None,
     thumbnail_link: str = "",
+    slide_cta_options: dict[str, str] | None = None,
 ) -> None:
     tab_labels = ["Caption", "Original"]
     tab_labels.append("Slides")
@@ -2363,11 +2477,11 @@ def _copy_tabs(
         current_slide_one_fit_mode = bool(st.session_state.get(slide_one_fit_toggle_key, False))
         current_slide_two_font_adjust = int(st.session_state.get(slide_two_font_adjust_key, 0) or 0)
         current_slide_three_font_adjust = int(st.session_state.get(slide_three_font_adjust_key, 0) or 0)
-        default_slide_three_cta = "more"
+        default_slide_three_cta = (slide_cta_options or {}).get(str(row_num), "more").strip().lower() or "more"
         current_slide_three_cta = _cell_text(
             st.session_state.get(slide_three_cta_key, default_slide_three_cta)
         ).strip().lower() or default_slide_three_cta
-        if current_slide_three_cta not in {"more", "article", "video", "custom link"}:
+        if current_slide_three_cta not in {"more", "article", "petition", "video", "custom link", "hidden"}:
             current_slide_three_cta = default_slide_three_cta
             st.session_state[slide_three_cta_key] = current_slide_three_cta
         current_speaker_name = _cell_text(
@@ -2407,7 +2521,7 @@ def _copy_tabs(
                 3,
                 slide_text3,
                 current_slide_three_font_adjust,
-                include_link_cta=True,
+                include_link_cta=current_slide_three_cta != "hidden",
                 link_cta_target=current_slide_three_cta,
                 link_cta_text=_slide_three_cta_text(current_slide_three_cta, top_comment),
             )
@@ -2431,18 +2545,27 @@ def _copy_tabs(
             if st.button("Edit text 3", key=f"workspace_row_slides_edit_text3_{row_num}", width="stretch"):
                 _open_workspace_slide_action_dialog(row_num, "text3")
                 _rerun_workspace("Edit")
+            if st.button("Edit caption", key=f"workspace_row_slides_edit_caption_{row_num}", width="stretch"):
+                _open_workspace_slide_action_dialog(row_num, "caption")
+                _rerun_workspace("Edit")
             if st.button("Link: More", key=f"workspace_row_slides_cta_more_{row_num}", width="stretch"):
-                st.session_state[slide_three_cta_key] = "more"
+                _save_slide_three_cta_choice(row_num, slide_three_cta_key, "more")
                 _rerun_workspace("Edit")
             if st.button("Link: Video", key=f"workspace_row_slides_cta_video_{row_num}", width="stretch"):
-                st.session_state[slide_three_cta_key] = "video"
+                _save_slide_three_cta_choice(row_num, slide_three_cta_key, "video")
                 _rerun_workspace("Edit")
             if st.button("Link: Article", key=f"workspace_row_slides_cta_article_{row_num}", width="stretch"):
-                st.session_state[slide_three_cta_key] = "article"
+                _save_slide_three_cta_choice(row_num, slide_three_cta_key, "article")
+                _rerun_workspace("Edit")
+            if st.button("Link: Petition", key=f"workspace_row_slides_cta_petition_{row_num}", width="stretch"):
+                _save_slide_three_cta_choice(row_num, slide_three_cta_key, "petition")
                 _rerun_workspace("Edit")
             if st.button("Link: Custom Link", key=f"workspace_row_slides_cta_custom_{row_num}", width="stretch"):
-                st.session_state[slide_three_cta_key] = "custom link"
+                _save_slide_three_cta_choice(row_num, slide_three_cta_key, "custom link")
                 _open_workspace_slide_action_dialog(row_num, "custom_link")
+                _rerun_workspace("Edit")
+            if st.button("Hide link", key=f"workspace_row_slides_cta_hidden_{row_num}", width="stretch"):
+                _save_slide_three_cta_choice(row_num, slide_three_cta_key, "hidden")
                 _rerun_workspace("Edit")
         if (slide_text3 or "").strip():
             st.code(
@@ -3676,15 +3799,22 @@ if error_message:
 
 pending_tab = st.session_state.pop("_workspace_pending_tab", None)
 if pending_tab:
-    if pending_tab in {"Edit", "Grid", "Actions"}:
+    if pending_tab in {"Edit", "Grid", "Actions", "Slides"}:
         pending_tab = "Home"
     st.session_state["workspace_active_tab"] = pending_tab
 elif "workspace_active_tab" not in st.session_state:
     st.session_state["workspace_active_tab"] = "Home"
-elif st.session_state["workspace_active_tab"] in {"Edit", "Grid", "Actions"}:
+elif st.session_state["workspace_active_tab"] in {"Edit", "Grid", "Actions", "Slides"}:
     st.session_state["workspace_active_tab"] = "Home"
 
-section_tabs = st.tabs(["Home", "Slides", "Data"])
+active_section_tab = st.segmented_control(
+    "Workspace section",
+    ["Home", "Data"],
+    default=st.session_state.get("workspace_active_tab", "Home"),
+    key="workspace_active_tab",
+    label_visibility="collapsed",
+    width="stretch",
+) or "Home"
 
 workspace_rows_error = ""
 workspace_rows: list[dict] = []
@@ -3696,67 +3826,17 @@ try:
 except Exception as e:
     workspace_rows_error = describe_error(e)
 home_notice = st.session_state.pop("workspace_home_notice", "")
+try:
+    slide_cta_options = get_slide_cta_options(GOOGLE_SHEET_ID)
+except Exception:
+    slide_cta_options = {}
 
-with section_tabs[1]:
-    st.markdown('<div class="workspace-slides-anchor"></div>', unsafe_allow_html=True)
-    slides_notice = st.session_state.pop("workspace_slides_notice", "")
-    slides_prompt = st.session_state.get("workspace_slides_prompt", "")
-
-    if workspace_rows_error:
-        st.error(f"Could not load slide-ready rows: {workspace_rows_error}")
-        ready_rows = []
-    else:
-        ready_rows = _ready_rows_from_loaded_rows(workspace_rows)
-
-    ready_count = len(ready_rows)
-    row_word = "row" if ready_count == 1 else "rows"
-    if ready_count:
-        st.caption(f"{ready_count} {row_word} ready for slides.")
-    else:
-        st.info("No rows are ready for slides yet.")
-
-    if slides_notice:
-        st.caption(slides_notice)
-
-    pasted_results = st.text_area(
-        "Paste slide results",
-        key="workspace_slides_results",
-        height=100,
-        placeholder='[{"row_number":2,"name":"...","text1":"...","text2":"...","text3":"..."}]',
-    )
-    if st.button("Apply slide results", key="workspace_slides_apply", type="primary", width="stretch"):
-        try:
-            updated_count, issues = _apply_chatgpt_handoff_results(GOOGLE_SHEET_ID, pasted_results)
-        except Exception as e:
-            st.error(f"Could not apply slide results: {describe_error(e)}")
-        else:
-            if updated_count:
-                message = f"Applied slide results to {updated_count} row(s)."
-                if issues:
-                    message += f" Skipped {len(issues)} item(s): " + " | ".join(issues[:3])
-                st.session_state["workspace_success"] = message
-            else:
-                st.session_state["workspace_error"] = (
-                    "No valid slide results were found to apply."
-                    + (f" {' | '.join(issues[:3])}" if issues else "")
-                )
-            _rerun_workspace("Slides")
-
-    if st.button("Generate slides prompt", key="workspace_slides_build_prompt", type="primary", width="stretch"):
-        if not ready_rows:
-            st.warning("No rows are ready for slides yet.")
-        else:
-            st.session_state["workspace_slides_prompt"] = _build_chatgpt_handoff_prompt(ready_rows)
-            st.session_state["workspace_slides_notice"] = f"Built slides prompt for {ready_count} {row_word}."
-            _rerun_workspace("Slides")
-
-    if slides_prompt:
-        _tab_copy_preview(slides_prompt, show_plain_text=False, key="workspace_slides_prompt_copy")
-
-with section_tabs[0]:
+if active_section_tab == "Home":
     st.markdown('<div class="workspace-action-anchor"></div>', unsafe_allow_html=True)
     if st.session_state.get("workspace_home_action_dialog"):
         _render_workspace_home_action_dialog()
+    if st.session_state.get("workspace_slides_dialog"):
+        _render_workspace_slides_dialog(workspace_rows, workspace_rows_error)
 
     with st.popover("Actions", use_container_width=True):
         if st.button(
@@ -3765,6 +3845,10 @@ with section_tabs[0]:
             width="stretch",
             help="Reload the current editor rows from the sheet and look for new results.",
         ):
+            _rerun_workspace("Home")
+
+        if st.button("Slides", key="workspace_open_slides_dialog", width="stretch"):
+            _open_workspace_slides_dialog()
             _rerun_workspace("Home")
 
         for action_mode in [
@@ -3924,7 +4008,9 @@ with section_tabs[0]:
                         st.info("Thumbnail will appear here after ingest.")
 
                 with top_right:
-                    menu_label = "Photo run" if not _is_reel_url(url) else "Process post"
+                    is_reel = _is_reel_url(url)
+                    is_photo_post = is_instagram and not is_reel
+                    menu_label = "Process this post" if is_photo_post else "Process post"
                     schedule_suffix = (row.get("Scheduled Time", "") or "").strip()
                     status_line = f"Row {row_num} · {media_type or 'pending'} · {status or 'blank'}"
                     if schedule_suffix:
@@ -3961,7 +4047,7 @@ with section_tabs[0]:
                             )
                             if media_links:
                                 st.link_button(
-                                    "Open reel in Drive",
+                                    "Open reel in Drive" if is_reel else "Open media in Drive",
                                     media_links[0],
                                     width="stretch",
                                 )
@@ -3993,10 +4079,15 @@ with section_tabs[0]:
                                 _queue_workspace_action(row_num, primary_action)
                                 _rerun_workspace("Edit")
                             if st.button(
-                                "Generate caption",
+                                "Generate caption only" if is_photo_post else "Generate caption",
                                 key=f"workspace_menu_generate_{row_num}",
                                 width="stretch",
-                                help="Generate a caption for this row from its existing source text, transcript, and context.",
+                                help=(
+                                    "Generate only the caption from existing source text and saved image text. "
+                                    "Use Process this post to read the images and create slide copy."
+                                    if is_photo_post
+                                    else "Generate a caption for this row from its existing source text, transcript, and context."
+                                ),
                             ):
                                 _close_workspace_menu(row)
                                 _queue_workspace_action(row_num, "generate_caption")
@@ -4082,6 +4173,7 @@ with section_tabs[0]:
                         _cell_text(row.get("text3")).strip(),
                         row,
                         _cell_text(row.get("Thumbnail Drive Link")).strip(),
+                        slide_cta_options,
                     )
 
             st.divider()
@@ -4106,7 +4198,7 @@ with section_tabs[0]:
         ):
             _handle_update_all_workspace_speaker_names(editor_rows)
 
-with section_tabs[2]:
+if active_section_tab == "Data":
     st.caption("Data view for the Google Sheet plus batch ingest.")
 
     if workspace_rows_error:
