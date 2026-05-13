@@ -315,6 +315,16 @@ div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-t
     flex: 0 0 42%;
     width: 42%;
 }
+div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:first-child [data-testid="stImageContainer"] {
+    max-height: 300px;
+    overflow: hidden;
+}
+div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:first-child [data-testid="stImageContainer"] img {
+    max-height: 300px;
+    width: 100%;
+    object-fit: contain;
+    display: block;
+}
 div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:last-child {
     flex: 0 0 58%;
     width: 58%;
