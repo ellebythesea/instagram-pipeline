@@ -2123,7 +2123,7 @@ def _copy_tabs(
             _render_slide_one_preview(
                 slide_handle,
                 slide_text1,
-                _safe_browser_image_url(thumbnail_link),
+                _drive_image_url(thumbnail_link) or thumbnail_link,
                 current_slide_one_font_adjust,
                 current_slide_one_background_adjust,
             )
