@@ -3706,10 +3706,7 @@ with section_tabs[0]:
         _render_editor_grid(editor_rows)
         current_index = row_numbers.index(current_selected)
         selected_row = editor_rows[current_index]
-        st.caption(
-            f"Showing row {current_index + 1} of {len(editor_rows)}. "
-            "Rows stay here until you delete them from the sheet."
-        )
+        st.caption(f"Showing row {current_index + 1} of {len(editor_rows)}.")
         for row in [selected_row]:
             _sync_workspace_row_state(row)
             row_num = row["row_number"]
@@ -3742,7 +3739,7 @@ with section_tabs[0]:
                 with top_left:
                     thumb_link = _cell_text(row.get("Thumbnail Drive Link")).strip()
                     if thumb_link:
-                        image_url = _safe_image_url(thumb_link)
+                        image_url = _grid_preview_url(row)
                         if image_url:
                             st.image(image_url, width="stretch")
                         else:
