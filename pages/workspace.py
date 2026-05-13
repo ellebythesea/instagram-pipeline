@@ -2179,36 +2179,17 @@ def _copy_tabs(
                 current_slide_two_font_adjust,
             )
         if (slide_text3 or "").strip():
-            selected_slide_three_cta = st.selectbox(
-                "Slide 3 CTA",
-                ["more", "article", "video"],
-                index=["more", "article", "video"].index(current_slide_three_cta),
-                key=slide_three_cta_key,
-            )
             _render_text_slide_preview(
                 3,
                 slide_text3,
                 current_slide_three_font_adjust,
                 include_link_cta=True,
-                link_cta_target=selected_slide_three_cta,
+                link_cta_target=current_slide_three_cta,
             )
             _render_workspace_preview_control_bar(
                 f"{row_num}_slide3",
                 slide_three_font_adjust_key,
                 current_slide_three_font_adjust,
-            )
-            st.caption("Generated caption")
-            _tab_copy_preview(
-                _caption_tab_value(
-                    generated,
-                    original_caption,
-                    username,
-                    top_comment,
-                    required_hashtags,
-                    is_instagram,
-                ),
-                show_plain_text=False,
-                key=f"workspace_row_slides_caption_copy_{row_num}",
             )
         st.code(slide_text1 or "(none)", language=None)
         st.code(slide_text2 or "(none)", language=None)
@@ -2216,6 +2197,24 @@ def _copy_tabs(
         if st.button("Generate prompt", key=f"workspace_row_slides_build_{row_num}", width="stretch"):
             st.session_state[prompt_key] = _build_single_row_chatgpt_prompt(prompt_row or {})
             _rerun_workspace("Edit")
+        if (slide_text3 or "").strip():
+            st.selectbox(
+                "Slide 3 CTA",
+                ["more", "article", "video"],
+                index=["more", "article", "video"].index(current_slide_three_cta),
+                key=slide_three_cta_key,
+            )
+            st.code(
+                _caption_tab_value(
+                    generated,
+                    original_caption,
+                    username,
+                    top_comment,
+                    required_hashtags,
+                    is_instagram,
+                ) or "(none)",
+                language=None,
+            )
         row_prompt = st.session_state.get(prompt_key, "")
         if row_prompt:
             _one_line_copy_preview("slide prompt", row_prompt, f"workspace_row_slides_prompt_preview_{row_num}")
