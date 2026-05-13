@@ -1810,6 +1810,7 @@ def _render_slide_one_preview(
     background_url: str = "",
     headline_font_adjust_px: int = 0,
     background_y_adjust_px: int = 0,
+    fit_to_top: bool = False,
 ) -> None:
     headline_text = (headline or "").strip()
     if not headline_text:
@@ -1824,8 +1825,13 @@ def _render_slide_one_preview(
         f"calc(2.8rem + {headline_font_adjust_px}px))"
     )
     background_position = f"center {background_y_adjust_px}px"
+    background_size = "contain" if fit_to_top else "cover"
+    background_repeat = "no-repeat" if fit_to_top else "repeat"
+    if fit_to_top:
+        background_position = f"center top"
     background_css = (
-        f"background-image: url('{safe_background}'); background-size: cover; background-position: {background_position};"
+        f"background-image: url('{safe_background}'); background-size: {background_size}; "
+        f"background-repeat: {background_repeat}; background-position: {background_position};"
         if safe_background
         else "background: #121722;"
     )
@@ -2020,12 +2026,16 @@ def _render_workspace_preview_control_bar(
     current_font_adjust: int,
     background_adjust_key: str | None = None,
     current_background_adjust: int = 0,
+    fit_toggle_key: str | None = None,
+    fit_toggle_current: bool = False,
 ) -> None:
     with st.container():
         st.markdown('<div class="workspace-preview-controls-anchor"></div>', unsafe_allow_html=True)
         controls = [("A-", "font_down"), ("A+", "font_up")]
         if background_adjust_key is not None:
             controls.extend([("Up", "bg_up"), ("Down", "bg_down")])
+        if fit_toggle_key is not None:
+            controls.append(("Fill" if fit_toggle_current else "Fit", "fit_toggle"))
         columns = st.columns(len(controls), gap="small")
         for column, (label, action) in zip(columns, controls):
             with column:
@@ -2038,6 +2048,8 @@ def _render_workspace_preview_control_bar(
                         st.session_state[background_adjust_key] = max(-200, current_background_adjust - 48)
                     elif action == "bg_down" and background_adjust_key is not None:
                         st.session_state[background_adjust_key] = min(200, current_background_adjust + 48)
+                    elif action == "fit_toggle" and fit_toggle_key is not None:
+                        st.session_state[fit_toggle_key] = not fit_toggle_current
                     _rerun_workspace("Edit")
 
 
@@ -2105,11 +2117,13 @@ def _copy_tabs(
         prompt_key = f"workspace_row_slides_prompt_{row_num}"
         slide_one_font_adjust_key = f"workspace_slide_preview_font_adjust_{row_num}"
         slide_one_background_adjust_key = f"workspace_slide_preview_background_adjust_{row_num}"
+        slide_one_fit_toggle_key = f"workspace_slide_preview_fit_mode_{row_num}"
         slide_two_font_adjust_key = f"workspace_slide_two_preview_font_adjust_{row_num}"
         slide_three_font_adjust_key = f"workspace_slide_three_preview_font_adjust_{row_num}"
         preview_links_key = f"workspace_preview_upload_links_{row_num}"
         current_slide_one_font_adjust = int(st.session_state.get(slide_one_font_adjust_key, 0) or 0)
         current_slide_one_background_adjust = int(st.session_state.get(slide_one_background_adjust_key, 0) or 0)
+        current_slide_one_fit_mode = bool(st.session_state.get(slide_one_fit_toggle_key, False))
         current_slide_two_font_adjust = int(st.session_state.get(slide_two_font_adjust_key, 0) or 0)
         current_slide_three_font_adjust = int(st.session_state.get(slide_three_font_adjust_key, 0) or 0)
         current_speaker_name = _cell_text(
@@ -2126,6 +2140,7 @@ def _copy_tabs(
                 _drive_image_url(thumbnail_link) or thumbnail_link,
                 current_slide_one_font_adjust,
                 current_slide_one_background_adjust,
+                current_slide_one_fit_mode,
             )
             _render_workspace_preview_control_bar(
                 f"{row_num}_slide1",
@@ -2133,6 +2148,8 @@ def _copy_tabs(
                 current_slide_one_font_adjust,
                 slide_one_background_adjust_key,
                 current_slide_one_background_adjust,
+                slide_one_fit_toggle_key,
+                current_slide_one_fit_mode,
             )
         if (slide_text2 or "").strip():
             _render_text_slide_preview(2, slide_text2, current_slide_two_font_adjust)
