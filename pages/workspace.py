@@ -1067,6 +1067,7 @@ def _render_text_slide_png(
     font_adjust_px: int = 0,
     include_link_cta: bool = False,
     link_cta_target: str = "more",
+    link_cta_text: str = "",
 ) -> None:
     ffmpeg_path = _preview_ffmpeg_path()
     body_file = _write_preview_text_file(tmp_dir, os.path.basename(output_path) + ".txt", body_text, 26)
@@ -1082,10 +1083,8 @@ def _render_text_slide_png(
         f"line_spacing={body_line_spacing}:x=62:y={body_y}"
     ]
     if include_link_cta:
-        cta_target = (link_cta_target or "more").strip().lower()
-        if cta_target not in {"more", "article", "video"}:
-            cta_target = "more"
-        cta_file = _write_preview_text_file(tmp_dir, "slide3_cta.txt", f"Comment LINK for {cta_target}", 28)
+        cta_value = (link_cta_text or "").strip() or _slide_three_cta_text(link_cta_target, "")
+        cta_file = _write_preview_text_file(tmp_dir, "slide3_cta.txt", cta_value, 28)
         cta_box_y = round(1380 * PREVIEW_EXPORT_SCALE)
         cta_box_h = round(88 * PREVIEW_EXPORT_SCALE)
         cta_text_y = round(1405 * PREVIEW_EXPORT_SCALE)
@@ -1135,6 +1134,7 @@ def _upload_preview_pngs(
     slide_two_font_adjust: int = 0,
     slide_three_font_adjust: int = 0,
     slide_three_cta_target: str = "more",
+    slide_three_cta_text: str = "",
 ) -> list[dict[str, str]]:
     if not GOOGLE_DRIVE_FOLDER_ID:
         raise RuntimeError("GOOGLE_DRIVE_FOLDER_ID is not configured.")
@@ -1190,6 +1190,7 @@ def _upload_preview_pngs(
                         "font_adjust_px": slide_three_font_adjust,
                         "include_link_cta": True,
                         "link_cta_target": slide_three_cta_target,
+                        "link_cta_text": slide_three_cta_text,
                     },
                 )
             )
@@ -1356,6 +1357,22 @@ def _build_watch_cta(username: str, link: str) -> str:
     cleaned_link = _clean_public_url(link)
     destination = f"@{cleaned_username} {cleaned_link}" if cleaned_username else cleaned_link
     return f"Comment LINK (on instagram) and we will DM you the link to {destination}"
+
+
+def _slide_three_cta_text(option: str, top_comment: str) -> str:
+    normalized = (option or "more").strip().lower()
+    if normalized == "custom link":
+        custom = re.sub(r"https?://\S+", "", top_comment or "").strip()
+        custom = re.sub(r"\s+", " ", custom)
+        custom = re.sub(r"\s+([,.;:!?])", r"\1", custom)
+        if not custom:
+            return "Comment LINK for more"
+        if custom[-1] not in ".!?":
+            custom = f"{custom}."
+        return custom
+    if normalized not in {"more", "article", "video"}:
+        normalized = "more"
+    return f"Comment LINK for {normalized}"
 
 
 def _append_top_comment(existing: str, addition: str) -> str:
@@ -1933,6 +1950,7 @@ def _render_text_slide_preview(
     body_font_adjust_px: int = 0,
     include_link_cta: bool = False,
     link_cta_target: str = "more",
+    link_cta_text: str = "",
 ) -> None:
     content_text = (body_text or "").strip()
     if not content_text:
@@ -1953,9 +1971,7 @@ def _render_text_slide_preview(
         )
     cta_html = ""
     if include_link_cta:
-        cta_target = (link_cta_target or "more").strip().lower()
-        if cta_target not in {"more", "article", "video"}:
-            cta_target = "more"
+        cta_value = (link_cta_text or "").strip() or _slide_three_cta_text(link_cta_target, "")
         cta_html = """
             <div style="
               display: inline-flex;
@@ -1969,7 +1985,7 @@ def _render_text_slide_preview(
               font-size: clamp(0.95rem, 2vw, 1.15rem);
               font-weight: 600;
               line-height: 1.1;
-            ">Comment LINK for """ + html.escape(cta_target) + """</div>
+            ">""" + html.escape(cta_value) + """</div>
         """
 
     preview_html = f"""
@@ -2120,6 +2136,11 @@ def _copy_tabs(
                 is_instagram,
             )
         )
+        st.caption("Comment CTA")
+        st.code(top_comment or "(none)", language=None)
+        if st.button("Add custom link", key=f"workspace_caption_link_open_{row_num}", width="stretch"):
+            st.session_state["workspace_link_dialog_row"] = row_num
+            _rerun_workspace("Edit")
     elif selected_content_tab == "Original":
         _tab_copy_preview(original_preview)
         if is_instagram:
@@ -2143,7 +2164,7 @@ def _copy_tabs(
         current_slide_three_cta = _cell_text(
             st.session_state.get(slide_three_cta_key, default_slide_three_cta)
         ).strip().lower() or default_slide_three_cta
-        if current_slide_three_cta not in {"more", "article", "video"}:
+        if current_slide_three_cta not in {"more", "article", "video", "custom link"}:
             current_slide_three_cta = default_slide_three_cta
             st.session_state[slide_three_cta_key] = current_slide_three_cta
         current_speaker_name = _cell_text(
@@ -2185,6 +2206,7 @@ def _copy_tabs(
                 current_slide_three_font_adjust,
                 include_link_cta=True,
                 link_cta_target=current_slide_three_cta,
+                link_cta_text=_slide_three_cta_text(current_slide_three_cta, top_comment),
             )
             _render_workspace_preview_control_bar(
                 f"{row_num}_slide3",
@@ -2200,8 +2222,8 @@ def _copy_tabs(
         if (slide_text3 or "").strip():
             st.selectbox(
                 "Slide 3 CTA",
-                ["more", "article", "video"],
-                index=["more", "article", "video"].index(current_slide_three_cta),
+                ["more", "article", "video", "custom link"],
+                index=["more", "article", "video", "custom link"].index(current_slide_three_cta),
                 key=slide_three_cta_key,
             )
             st.code(
