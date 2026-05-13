@@ -336,6 +336,8 @@ def _carousel_slide_prompt_instructions(include_row_numbers: bool) -> str:
         "* No em dashes\n"
         "* No speculation\n"
         "* Avoid repetitive phrasing across fields\n"
+        "* Never include required hashtags in slide text\n"
+        "* Do not write hashtags unless they are part of a direct quote or source text that must be quoted\n"
         "Style priority:\n"
         "* Write like a viral political news account creating Instagram carousel slides\n"
         "* Sound natural, conversational, and punchy\n"

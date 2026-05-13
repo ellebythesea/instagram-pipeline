@@ -3039,7 +3039,6 @@ def _build_chatgpt_handoff_prompt(rows: list[dict]) -> str:
         row_num = row["row_number"]
         username = _cell_text(row.get("Source Username")).strip() or "unknown"
         media_type = _cell_text(row.get("Media Type")).strip().lower() or "post"
-        required_hashtags = _cell_text(row.get("Required Hashtags")).strip()
         transcript = _cell_text(row.get("Transcript")).strip()
         original_caption = _cell_text(row.get("Original Caption")).strip()
         caption_context = _cell_text(row.get("Caption Context")).strip()
@@ -3049,7 +3048,6 @@ def _build_chatgpt_handoff_prompt(rows: list[dict]) -> str:
                     f"ROW {row_num}",
                     f"username: {username}",
                     f"media_type: {media_type}",
-                    f"required_hashtags: {required_hashtags or '(none)'}",
                     f"transcript:\n{transcript or '(none)'}",
                     f"original_caption:\n{original_caption or '(none)'}",
                     f"caption_context:\n{caption_context or '(none)'}",
@@ -3076,6 +3074,8 @@ def _build_chatgpt_handoff_prompt(rows: list[dict]) -> str:
         "* No em dashes\n"
         "* No speculation\n"
         "* Avoid repetitive phrasing across fields\n"
+        "* Never include required hashtags in slide text\n"
+        "* Do not write hashtags unless they are part of a direct quote or source text that must be quoted\n"
         "Style priority:\n"
         "* Write like a viral political news account creating Instagram carousel slides\n"
         "* Sound natural, conversational, and punchy\n"
