@@ -1657,7 +1657,7 @@ def _render_workspace_link_dialog(row: dict) -> None:
             if selected_source == "Custom"
             else st.session_state.get(link_comment_key, selected_top_comment).strip()
         )
-        top_comment = _encode_top_comment(addition, pinned=(selected_source != "Custom"))
+        top_comment = _encode_top_comment(addition, pinned=False)
         try:
             _apply_top_comment_to_caption(row, row_num, speaker_name, top_comment)
         except Exception as e:
@@ -2163,7 +2163,8 @@ def _copy_tabs(
         current_slide_one_fit_mode = bool(st.session_state.get(slide_one_fit_toggle_key, False))
         current_slide_two_font_adjust = int(st.session_state.get(slide_two_font_adjust_key, 0) or 0)
         current_slide_three_font_adjust = int(st.session_state.get(slide_three_font_adjust_key, 0) or 0)
-        default_slide_three_cta = "article" if not is_instagram else "more"
+        clean_top, _ = _decode_top_comment(top_comment)
+        default_slide_three_cta = "custom link" if clean_top else ("article" if not is_instagram else "more")
         current_slide_three_cta = _cell_text(
             st.session_state.get(slide_three_cta_key, default_slide_three_cta)
         ).strip().lower() or default_slide_three_cta
@@ -2216,6 +2217,13 @@ def _copy_tabs(
                 slide_three_font_adjust_key,
                 current_slide_three_font_adjust,
             )
+            st.selectbox(
+                "Slide 3 CTA",
+                ["more", "article", "video", "custom link"],
+                index=["more", "article", "video", "custom link"].index(current_slide_three_cta),
+                key=slide_three_cta_key,
+                label_visibility="collapsed",
+            )
         st.code(slide_text1 or "(none)", language=None)
         st.code(slide_text2 or "(none)", language=None)
         st.code(slide_text3 or "(none)", language=None)
@@ -2223,12 +2231,6 @@ def _copy_tabs(
             st.session_state[prompt_key] = _build_single_row_chatgpt_prompt(prompt_row or {})
             _rerun_workspace("Edit")
         if (slide_text3 or "").strip():
-            st.selectbox(
-                "Slide 3 CTA",
-                ["more", "article", "video", "custom link"],
-                index=["more", "article", "video", "custom link"].index(current_slide_three_cta),
-                key=slide_three_cta_key,
-            )
             st.code(
                 _caption_tab_value(
                     generated,
