@@ -69,7 +69,6 @@ generate_batch_carousel_copy_with_model = getattr(
 )
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MISSING_THUMBNAIL_ASSET = REPO_ROOT / "assets" / "workspace-missing-thumbnail.jpg"
-MISSING_REEL_THUMBNAIL_ASSET = REPO_ROOT / "assets" / "workspace-missing-reel-thumbnail.jpg"
 
 MODE_OPTIONS = [
     "Add to sheet",
@@ -478,9 +477,7 @@ def _grid_badges(row: dict) -> list[tuple[str, str]]:
 def _grid_preview_url(row: dict) -> str:
     thumb_link = _cell_text(row.get("Thumbnail Drive Link")).strip()
     if thumb_link:
-        candidate = _safe_browser_image_url(thumb_link)
-        if _remote_image_usable(candidate):
-            return candidate
+        return _safe_browser_image_url(thumb_link)
     return ""
 
 
@@ -497,13 +494,11 @@ def _visible_rows_with_target(rows: list[dict], limit: int, target_row_number: s
 def _render_editor_grid(editor_rows: list[dict]) -> None:
     cards = []
     missing_image_url = _missing_thumbnail_data_url()
-    missing_reel_image_url = _missing_reel_thumbnail_data_url()
     for row in editor_rows:
         row_num = row.get("row_number")
         username = _cell_text(row.get("Source Username")).strip().lstrip("@")
         media_type = _cell_text(row.get("Media Type")).strip().lower() or "post"
         image_url = _grid_preview_url(row)
-        fallback_image_url = missing_reel_image_url if media_type == "reel" and missing_reel_image_url else missing_image_url
         badge_html = "".join(
             f'<span class="workspace-grid-badge" title="{html.escape(title)}">{html.escape(label)}</span>'
             for label, title in _grid_badges(row)
@@ -511,17 +506,9 @@ def _render_editor_grid(editor_rows: list[dict]) -> None:
         label = f"@{username}" if username else f"Row {row_num}"
         href = f"?workspace_row={row_num}#workspace-row-{row_num}"
         if image_url:
-            onerror_attr = (
-                f' onerror="this.onerror=null;this.src=\'{html.escape(fallback_image_url)}\';"'
-                if fallback_image_url
-                else ""
-            )
-            media_html = (
-                f'<img src="{html.escape(image_url)}" alt="{html.escape(label)}" '
-                f'loading="lazy" decoding="async"{onerror_attr}>'
-            )
-        elif fallback_image_url:
-            media_html = f'<img src="{html.escape(fallback_image_url)}" alt="{html.escape(label)}" loading="lazy" decoding="async">'
+            media_html = f'<img src="{html.escape(image_url)}" alt="{html.escape(label)}" loading="lazy" decoding="async">'
+        elif missing_image_url:
+            media_html = f'<img src="{html.escape(missing_image_url)}" alt="{html.escape(label)}" loading="lazy" decoding="async">'
         else:
             media_html = (
                 '<div class="workspace-grid-placeholder">'
@@ -811,43 +798,12 @@ def _safe_browser_image_url(raw_value: str) -> str:
     return candidate if _is_https_url(candidate) else ""
 
 
-@st.cache_data(show_spinner=False, ttl=900)
-def _remote_image_usable(url: str) -> bool:
-    candidate = (url or "").strip()
-    if not candidate:
-        return False
-    if candidate.startswith("data:image/"):
-        return True
-    try:
-        response = requests.get(candidate, timeout=8, stream=True, allow_redirects=True)
-        content_type = (response.headers.get("content-type") or "").lower()
-        return response.ok and content_type.startswith("image/")
-    except Exception:
-        return False
-
-
 @st.cache_data(show_spinner=False)
 def _missing_thumbnail_data_url() -> str:
     if not MISSING_THUMBNAIL_ASSET.exists():
         return ""
     encoded = base64.b64encode(MISSING_THUMBNAIL_ASSET.read_bytes()).decode("ascii")
     return f"data:image/jpeg;base64,{encoded}"
-
-
-@st.cache_data(show_spinner=False)
-def _missing_reel_thumbnail_data_url() -> str:
-    if not MISSING_REEL_THUMBNAIL_ASSET.exists():
-        return ""
-    encoded = base64.b64encode(MISSING_REEL_THUMBNAIL_ASSET.read_bytes()).decode("ascii")
-    return f"data:image/jpeg;base64,{encoded}"
-
-
-def _row_fallback_image_path(media_type: str) -> str:
-    if media_type == "reel" and MISSING_REEL_THUMBNAIL_ASSET.exists():
-        return str(MISSING_REEL_THUMBNAIL_ASSET)
-    if MISSING_THUMBNAIL_ASSET.exists():
-        return str(MISSING_THUMBNAIL_ASSET)
-    return ""
 
 
 def _render_dark_media_placeholder(label: str = "") -> None:
@@ -3823,15 +3779,12 @@ with section_tabs[0]:
                 top_left, top_right = st.columns([0.9, 1.1], vertical_alignment="top")
                 with top_left:
                     thumb_link = _cell_text(row.get("Thumbnail Drive Link")).strip()
-                    fallback_image_path = _row_fallback_image_path(media_type)
                     if thumb_link:
                         image_url = _safe_image_url(thumb_link)
-                        if image_url and _remote_image_usable(image_url):
+                        if image_url:
                             st.image(image_url, width="stretch")
                         else:
                             _render_dark_media_placeholder("Preview unavailable")
-                    elif fallback_image_path:
-                        _render_dark_media_placeholder("Preview unavailable")
                     elif is_article:
                         st.info("Article link")
                         if original_caption:
