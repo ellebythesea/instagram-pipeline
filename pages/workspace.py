@@ -312,6 +312,7 @@ def _workspace_row_state_keys_for_token(token: str) -> list[str]:
         f"workspace_link_comment_{token}",
         f"workspace_menu_nonce_{token}",
         f"workspace_thumbnail_upload_{token}",
+        f"workspace_slide_three_cta_{token}",
     ]
 
 
@@ -486,13 +487,14 @@ def _visible_rows_with_target(rows: list[dict], limit: int, target_row_number: s
     return visible_rows
 
 
-def _render_editor_grid(editor_rows: list[dict]) -> None:
+def _render_editor_grid(editor_rows: list[dict], selected_row_num: int | None = None) -> None:
     cards = []
     for row in editor_rows:
         row_num = row.get("row_number")
         username = _cell_text(row.get("Source Username")).strip().lstrip("@")
         media_type = _cell_text(row.get("Media Type")).strip().lower() or "post"
         image_url = _grid_preview_url(row)
+        selected_class = " workspace-grid-card-selected" if row_num == selected_row_num else ""
         badge_html = "".join(
             f'<span class="workspace-grid-badge" title="{html.escape(title)}">{html.escape(label)}</span>'
             for label, title in _grid_badges(row)
@@ -509,7 +511,7 @@ def _render_editor_grid(editor_rows: list[dict]) -> None:
             )
         cards.append(
             f"""
-            <a class="workspace-grid-card" href="{html.escape(href)}">
+            <a class="workspace-grid-card{selected_class}" href="{html.escape(href)}">
               {media_html}
               <div class="workspace-grid-badges">{badge_html}</div>
               <div class="workspace-grid-meta">{html.escape(label)} · {html.escape(media_type)}</div>
@@ -1064,6 +1066,7 @@ def _render_text_slide_png(
     body_text: str,
     font_adjust_px: int = 0,
     include_link_cta: bool = False,
+    link_cta_target: str = "more",
 ) -> None:
     ffmpeg_path = _preview_ffmpeg_path()
     body_file = _write_preview_text_file(tmp_dir, os.path.basename(output_path) + ".txt", body_text, 26)
@@ -1079,7 +1082,10 @@ def _render_text_slide_png(
         f"line_spacing={body_line_spacing}:x=62:y={body_y}"
     ]
     if include_link_cta:
-        cta_file = _write_preview_text_file(tmp_dir, "slide3_cta.txt", "Comment LINK for more", 28)
+        cta_target = (link_cta_target or "more").strip().lower()
+        if cta_target not in {"more", "article", "video"}:
+            cta_target = "more"
+        cta_file = _write_preview_text_file(tmp_dir, "slide3_cta.txt", f"Comment LINK for {cta_target}", 28)
         cta_box_y = round(1380 * PREVIEW_EXPORT_SCALE)
         cta_box_h = round(88 * PREVIEW_EXPORT_SCALE)
         cta_text_y = round(1405 * PREVIEW_EXPORT_SCALE)
@@ -1128,6 +1134,7 @@ def _upload_preview_pngs(
     slide_one_background_adjust: int = 0,
     slide_two_font_adjust: int = 0,
     slide_three_font_adjust: int = 0,
+    slide_three_cta_target: str = "more",
 ) -> list[dict[str, str]]:
     if not GOOGLE_DRIVE_FOLDER_ID:
         raise RuntimeError("GOOGLE_DRIVE_FOLDER_ID is not configured.")
@@ -1182,6 +1189,7 @@ def _upload_preview_pngs(
                         "body_text": slide_text3,
                         "font_adjust_px": slide_three_font_adjust,
                         "include_link_cta": True,
+                        "link_cta_target": slide_three_cta_target,
                     },
                 )
             )
@@ -1924,6 +1932,7 @@ def _render_text_slide_preview(
     body_text: str,
     body_font_adjust_px: int = 0,
     include_link_cta: bool = False,
+    link_cta_target: str = "more",
 ) -> None:
     content_text = (body_text or "").strip()
     if not content_text:
@@ -1944,6 +1953,9 @@ def _render_text_slide_preview(
         )
     cta_html = ""
     if include_link_cta:
+        cta_target = (link_cta_target or "more").strip().lower()
+        if cta_target not in {"more", "article", "video"}:
+            cta_target = "more"
         cta_html = """
             <div style="
               display: inline-flex;
@@ -1957,7 +1969,7 @@ def _render_text_slide_preview(
               font-size: clamp(0.95rem, 2vw, 1.15rem);
               font-weight: 600;
               line-height: 1.1;
-            ">Comment LINK for more</div>
+            ">Comment LINK for """ + html.escape(cta_target) + """</div>
         """
 
     preview_html = f"""
@@ -2120,12 +2132,20 @@ def _copy_tabs(
         slide_one_fit_toggle_key = f"workspace_slide_preview_fit_mode_{row_num}"
         slide_two_font_adjust_key = f"workspace_slide_two_preview_font_adjust_{row_num}"
         slide_three_font_adjust_key = f"workspace_slide_three_preview_font_adjust_{row_num}"
+        slide_three_cta_key = f"workspace_slide_three_cta_row_{row_num}"
         preview_links_key = f"workspace_preview_upload_links_{row_num}"
         current_slide_one_font_adjust = int(st.session_state.get(slide_one_font_adjust_key, 0) or 0)
         current_slide_one_background_adjust = int(st.session_state.get(slide_one_background_adjust_key, 0) or 0)
         current_slide_one_fit_mode = bool(st.session_state.get(slide_one_fit_toggle_key, False))
         current_slide_two_font_adjust = int(st.session_state.get(slide_two_font_adjust_key, 0) or 0)
         current_slide_three_font_adjust = int(st.session_state.get(slide_three_font_adjust_key, 0) or 0)
+        default_slide_three_cta = "article" if not is_instagram else "more"
+        current_slide_three_cta = _cell_text(
+            st.session_state.get(slide_three_cta_key, default_slide_three_cta)
+        ).strip().lower() or default_slide_three_cta
+        if current_slide_three_cta not in {"more", "article", "video"}:
+            current_slide_three_cta = default_slide_three_cta
+            st.session_state[slide_three_cta_key] = current_slide_three_cta
         current_speaker_name = _cell_text(
             st.session_state.get(f"workspace_speaker_row_{row_num}", speaker_name)
         ).strip()
@@ -2159,11 +2179,36 @@ def _copy_tabs(
                 current_slide_two_font_adjust,
             )
         if (slide_text3 or "").strip():
-            _render_text_slide_preview(3, slide_text3, current_slide_three_font_adjust, include_link_cta=True)
+            selected_slide_three_cta = st.selectbox(
+                "Slide 3 CTA",
+                ["more", "article", "video"],
+                index=["more", "article", "video"].index(current_slide_three_cta),
+                key=slide_three_cta_key,
+            )
+            _render_text_slide_preview(
+                3,
+                slide_text3,
+                current_slide_three_font_adjust,
+                include_link_cta=True,
+                link_cta_target=selected_slide_three_cta,
+            )
             _render_workspace_preview_control_bar(
                 f"{row_num}_slide3",
                 slide_three_font_adjust_key,
                 current_slide_three_font_adjust,
+            )
+            st.caption("Generated caption")
+            _tab_copy_preview(
+                _caption_tab_value(
+                    generated,
+                    original_caption,
+                    username,
+                    top_comment,
+                    required_hashtags,
+                    is_instagram,
+                ),
+                show_plain_text=False,
+                key=f"workspace_row_slides_caption_copy_{row_num}",
             )
         st.code(slide_text1 or "(none)", language=None)
         st.code(slide_text2 or "(none)", language=None)
@@ -3720,10 +3765,9 @@ with section_tabs[0]:
             help="Reload the current editor rows from the sheet and look for new results.",
         ):
             _rerun_workspace("Edit")
-        _render_editor_grid(editor_rows)
+        _render_editor_grid(editor_rows, current_selected)
         current_index = row_numbers.index(current_selected)
         selected_row = editor_rows[current_index]
-        st.caption(f"Showing row {current_index + 1} of {len(editor_rows)}.")
         for row in [selected_row]:
             _sync_workspace_row_state(row)
             row_num = row["row_number"]
@@ -3880,14 +3924,6 @@ with section_tabs[0]:
                                     st.session_state["workspace_success"] = f"Row {row_num}: deleted from the sheet."
                                 _close_workspace_menu(row)
                                 _rerun_workspace("Edit")
-                            if st.button(
-                                "Close",
-                                key=f"workspace_menu_close_{row_num}",
-                                width="stretch",
-                            ):
-                                _close_workspace_menu(row)
-                                _rerun_workspace("Edit")
-
                     transcript_warning = st.session_state.get(warning_key)
                     if transcript_warning:
                         size_label = _format_bytes(transcript_warning["size_bytes"])

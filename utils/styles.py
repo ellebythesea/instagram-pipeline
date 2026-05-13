@@ -209,6 +209,9 @@ div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) {
     text-decoration: none;
     box-shadow: none;
 }
+.workspace-grid-card-selected {
+    box-shadow: inset 0 0 0 4px #efcb2c;
+}
 .workspace-grid-card img {
     width: 100%;
     height: 100%;
