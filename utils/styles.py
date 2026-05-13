@@ -205,7 +205,7 @@ div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) {
     overflow: hidden;
     border: 0;
     border-radius: 0;
-    background: #f8fafc;
+    background: #121722;
     text-decoration: none;
     box-shadow: none;
 }
@@ -222,8 +222,8 @@ div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) {
     align-items: center;
     justify-content: center;
     padding: 1rem;
-    color: #475569;
-    background: #f1f5f9;
+    color: #e2e8f0;
+    background: #121722;
     text-align: center;
     font-size: 0.9rem;
     line-height: 1.25;
@@ -311,6 +311,13 @@ div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-test
 div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:first-child {
     flex: 0 0 42%;
     width: 42%;
+    background: #121722;
+}
+div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:first-child > div {
+    background: #121722;
+}
+div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:first-child [data-testid="stImageContainer"] {
+    background: #121722;
 }
 div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"]:last-child {
     flex: 0 0 58%;

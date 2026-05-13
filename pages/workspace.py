@@ -1,5 +1,6 @@
 """Unified workspace shell for the next UI redesign."""
 
+import base64
 from datetime import datetime, time as dt_time, timedelta
 import ast
 import hashlib
@@ -13,6 +14,7 @@ import sys
 import tempfile
 import textwrap
 import time
+from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 import requests
 from zoneinfo import ZoneInfo
@@ -65,9 +67,13 @@ generate_batch_carousel_copy_with_model = getattr(
     "generate_batch_carousel_copy_with_model",
     lambda rows, model="gpt-5.2": {},
 )
+REPO_ROOT = Path(__file__).resolve().parents[1]
+MISSING_THUMBNAIL_ASSET = REPO_ROOT / "assets" / "workspace-missing-thumbnail.jpg"
+MISSING_REEL_THUMBNAIL_ASSET = REPO_ROOT / "assets" / "workspace-missing-reel-thumbnail.jpg"
 
 MODE_OPTIONS = [
     "Add to sheet",
+    "Process this",
     "Generate headline",
     "Caption this",
     "Download media",
@@ -311,6 +317,7 @@ def _workspace_row_state_keys_for_token(token: str) -> list[str]:
         f"workspace_link_display_{token}",
         f"workspace_link_comment_{token}",
         f"workspace_menu_nonce_{token}",
+        f"workspace_thumbnail_upload_{token}",
     ]
 
 
@@ -378,6 +385,7 @@ def _remove_home_link(index: int) -> None:
 def _action_label(mode: str) -> str:
     return {
         "Add to sheet": "Add",
+        "Process this": "Process",
         "Generate headline": "Generate",
         "Caption this": "Caption",
         "Download media": "Download",
@@ -385,7 +393,7 @@ def _action_label(mode: str) -> str:
 
 
 def _mode_uses_org_hashtag(mode: str) -> bool:
-    return mode in {"Add to sheet", "Caption this"}
+    return mode in {"Add to sheet", "Process this", "Caption this"}
 
 
 def _clean_home_links() -> list[str]:
@@ -470,7 +478,9 @@ def _grid_badges(row: dict) -> list[tuple[str, str]]:
 def _grid_preview_url(row: dict) -> str:
     thumb_link = _cell_text(row.get("Thumbnail Drive Link")).strip()
     if thumb_link:
-        return _drive_image_url(thumb_link) or thumb_link
+        candidate = _safe_browser_image_url(thumb_link)
+        if _remote_image_usable(candidate):
+            return candidate
     return ""
 
 
@@ -486,11 +496,14 @@ def _visible_rows_with_target(rows: list[dict], limit: int, target_row_number: s
 
 def _render_editor_grid(editor_rows: list[dict]) -> None:
     cards = []
+    missing_image_url = _missing_thumbnail_data_url()
+    missing_reel_image_url = _missing_reel_thumbnail_data_url()
     for row in editor_rows:
         row_num = row.get("row_number")
         username = _cell_text(row.get("Source Username")).strip().lstrip("@")
         media_type = _cell_text(row.get("Media Type")).strip().lower() or "post"
         image_url = _grid_preview_url(row)
+        fallback_image_url = missing_reel_image_url if media_type == "reel" and missing_reel_image_url else missing_image_url
         badge_html = "".join(
             f'<span class="workspace-grid-badge" title="{html.escape(title)}">{html.escape(label)}</span>'
             for label, title in _grid_badges(row)
@@ -498,7 +511,17 @@ def _render_editor_grid(editor_rows: list[dict]) -> None:
         label = f"@{username}" if username else f"Row {row_num}"
         href = f"?workspace_row={row_num}#workspace-row-{row_num}"
         if image_url:
-            media_html = f'<img src="{html.escape(image_url)}" alt="{html.escape(label)}" loading="lazy" decoding="async">'
+            onerror_attr = (
+                f' onerror="this.onerror=null;this.src=\'{html.escape(fallback_image_url)}\';"'
+                if fallback_image_url
+                else ""
+            )
+            media_html = (
+                f'<img src="{html.escape(image_url)}" alt="{html.escape(label)}" '
+                f'loading="lazy" decoding="async"{onerror_attr}>'
+            )
+        elif fallback_image_url:
+            media_html = f'<img src="{html.escape(fallback_image_url)}" alt="{html.escape(label)}" loading="lazy" decoding="async">'
         else:
             media_html = (
                 '<div class="workspace-grid-placeholder">'
@@ -768,7 +791,7 @@ def _drive_image_url(drive_link: str) -> str:
 
 
 def _safe_image_url(raw_value: str) -> str:
-    candidate = _drive_image_url(raw_value) or _cell_text(raw_value).strip()
+    candidate = _drive_view_url(raw_value) or _drive_image_url(raw_value) or _cell_text(raw_value).strip()
     return candidate if _is_https_url(candidate) else ""
 
 
@@ -784,8 +807,69 @@ def _drive_view_url(drive_link: str) -> str:
 
 
 def _safe_browser_image_url(raw_value: str) -> str:
-    candidate = _drive_image_url(raw_value) or _drive_view_url(raw_value) or _cell_text(raw_value).strip()
+    candidate = _drive_view_url(raw_value) or _drive_image_url(raw_value) or _cell_text(raw_value).strip()
     return candidate if _is_https_url(candidate) else ""
+
+
+@st.cache_data(show_spinner=False, ttl=900)
+def _remote_image_usable(url: str) -> bool:
+    candidate = (url or "").strip()
+    if not candidate:
+        return False
+    if candidate.startswith("data:image/"):
+        return True
+    try:
+        response = requests.get(candidate, timeout=8, stream=True, allow_redirects=True)
+        content_type = (response.headers.get("content-type") or "").lower()
+        return response.ok and content_type.startswith("image/")
+    except Exception:
+        return False
+
+
+@st.cache_data(show_spinner=False)
+def _missing_thumbnail_data_url() -> str:
+    if not MISSING_THUMBNAIL_ASSET.exists():
+        return ""
+    encoded = base64.b64encode(MISSING_THUMBNAIL_ASSET.read_bytes()).decode("ascii")
+    return f"data:image/jpeg;base64,{encoded}"
+
+
+@st.cache_data(show_spinner=False)
+def _missing_reel_thumbnail_data_url() -> str:
+    if not MISSING_REEL_THUMBNAIL_ASSET.exists():
+        return ""
+    encoded = base64.b64encode(MISSING_REEL_THUMBNAIL_ASSET.read_bytes()).decode("ascii")
+    return f"data:image/jpeg;base64,{encoded}"
+
+
+def _row_fallback_image_path(media_type: str) -> str:
+    if media_type == "reel" and MISSING_REEL_THUMBNAIL_ASSET.exists():
+        return str(MISSING_REEL_THUMBNAIL_ASSET)
+    if MISSING_THUMBNAIL_ASSET.exists():
+        return str(MISSING_THUMBNAIL_ASSET)
+    return ""
+
+
+def _render_dark_media_placeholder(label: str = "") -> None:
+    safe_label = html.escape((label or "").strip())
+    placeholder_html = f"""
+    <div style="
+      width: 100%;
+      min-height: 360px;
+      background: #121722;
+      border-radius: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #e2e8f0;
+      font-size: 0.95rem;
+      font-weight: 600;
+      text-align: center;
+      padding: 1rem;
+      box-sizing: border-box;
+    ">{safe_label}</div>
+    """
+    st.markdown(placeholder_html, unsafe_allow_html=True)
 
 
 def _ffmpeg_filter_value(value: str) -> str:
@@ -948,6 +1032,43 @@ def _refresh_row_thumbnail_from_video(row: dict, offset_seconds: float = 5.0) ->
             screenshot_path,
         ]
         subprocess.run(command, check=True)
+        thumbnail_link = upload_to_drive(screenshot_path, screenshot_name, screenshots_folder_id)
+        update_thumbnail_link(GOOGLE_SHEET_ID, row_num, thumbnail_link)
+        return thumbnail_link
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def _replace_row_thumbnail_from_upload(row: dict, uploaded_file) -> str:
+    if update_thumbnail_link is None:
+        raise RuntimeError("Thumbnail link updates are not supported in this build.")
+
+    row_num = row["row_number"]
+    screenshots_folder_id = get_or_create_subfolder(
+        GOOGLE_DRIVE_FOLDER_ID,
+        GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER,
+    )
+
+    media_links = [link.strip() for link in (_cell_text(row.get("Media Drive Link")) or "").split(",") if link.strip()]
+    screenshot_stem = f"row_{row_num}_thumb"
+    if media_links:
+        try:
+            metadata = get_drive_file_metadata(media_links[0])
+            filename = (metadata.get("name") or "").strip()
+            if filename:
+                screenshot_stem = f"{os.path.splitext(filename)[0]}_thumb"
+        except Exception:
+            pass
+
+    source_name = getattr(uploaded_file, "name", "") or ""
+    ext = os.path.splitext(source_name)[1].lower() or ".jpg"
+    screenshot_name = f"{screenshot_stem}{ext}"
+
+    tmp_dir = tempfile.mkdtemp(prefix="workspace_thumb_upload_")
+    try:
+        screenshot_path = os.path.join(tmp_dir, screenshot_name)
+        with open(screenshot_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
         thumbnail_link = upload_to_drive(screenshot_path, screenshot_name, screenshots_folder_id)
         update_thumbnail_link(GOOGLE_SHEET_ID, row_num, thumbnail_link)
         return thumbnail_link
@@ -1349,6 +1470,11 @@ def _close_workspace_link_dialog(row: dict) -> None:
     st.session_state.pop(_workspace_key(row, "link_comment"), None)
 
 
+def _close_workspace_thumbnail_dialog(row: dict) -> None:
+    st.session_state.pop("workspace_thumbnail_dialog_row", None)
+    st.session_state.pop(_workspace_key(row, "thumbnail_upload"), None)
+
+
 def _apply_top_comment_to_caption(
     row: dict,
     row_num: int,
@@ -1600,6 +1726,49 @@ def _render_workspace_link_dialog(row: dict) -> None:
         _rerun_workspace("Edit")
 
 
+@st.dialog("Update screenshot")
+def _render_workspace_thumbnail_dialog(row: dict) -> None:
+    row_num = row["row_number"]
+    url = _cell_text(row.get("Instagram URL")).strip()
+    has_media = bool(_cell_text(row.get("Media Drive Link")).strip())
+
+    uploaded_thumbnail = st.file_uploader(
+        "Replace screenshot",
+        type=["png", "jpg", "jpeg", "webp", "heic", "heif"],
+        accept_multiple_files=False,
+        key=_workspace_key(row, "thumbnail_upload"),
+        help="On iPhone this opens your photo library/files chooser. On desktop it opens the file picker.",
+    )
+    if uploaded_thumbnail is not None and st.button(
+        "Use uploaded screenshot",
+        key=f"workspace_thumbnail_upload_apply_{row_num}",
+        type="primary",
+        width="stretch",
+    ):
+        try:
+            _replace_row_thumbnail_from_upload(row, uploaded_thumbnail)
+        except Exception as e:
+            st.session_state["workspace_error"] = f"Row {row_num}: could not replace screenshot - {describe_error(e)}"
+        else:
+            st.session_state["workspace_success"] = f"Row {row_num}: screenshot replaced from uploaded image."
+        _close_workspace_thumbnail_dialog(row)
+        _rerun_workspace("Edit")
+
+    if _is_reel_url(url) and has_media and st.button(
+        "Update screenshot (+5s)",
+        key=f"workspace_thumbnail_refresh_5s_{row_num}",
+        width="stretch",
+        help="Replace the current screenshot with a frame taken about 5 seconds into the video.",
+    ):
+        _close_workspace_thumbnail_dialog(row)
+        _queue_workspace_action(row_num, "refresh_thumbnail_5s")
+        _rerun_workspace("Edit")
+
+    if st.button("Cancel", key=f"workspace_thumbnail_cancel_{row_num}", width="stretch"):
+        _close_workspace_thumbnail_dialog(row)
+        _rerun_workspace("Edit")
+
+
 def _copy_block(label: str, value: str, key: str, empty_text: str = "(none)") -> None:
     st.code(value or empty_text, language=None)
     st.markdown(
@@ -1740,7 +1909,7 @@ def _render_slide_one_preview(
     background_css = (
         f"background-image: url('{safe_background}'); background-size: cover; background-position: {background_position};"
         if safe_background
-        else "background: linear-gradient(180deg, #54606f 0%, #1f2937 48%, #121722 100%);"
+        else "background: #121722;"
     )
     preview_html = f"""
     <div style="margin-top: 1rem;">
@@ -2264,6 +2433,94 @@ def _process_pending_rows_from_sheet() -> int:
         progress.progress((i + 1) / len(pending))
 
     return len(pending)
+
+
+def _append_url_and_get_new_row(url: str, required_hashtags: str = "") -> dict:
+    cleaned_url = (url or "").strip()
+    if not cleaned_url:
+        raise ValueError("URL is required.")
+
+    before_rows = get_all_rows(GOOGLE_SHEET_ID)
+    before_row_numbers = {int(row.get("row_number") or 0) for row in before_rows if row.get("row_number")}
+    append_link_rows(GOOGLE_SHEET_ID, [cleaned_url], required_hashtags)
+    after_rows = get_all_rows(GOOGLE_SHEET_ID)
+
+    new_rows = [
+        row for row in after_rows
+        if int(row.get("row_number") or 0) not in before_row_numbers
+        and _cell_text(row.get("Instagram URL")).strip() == cleaned_url
+    ]
+    if not new_rows:
+        matching_rows = [
+            row for row in after_rows
+            if _cell_text(row.get("Instagram URL")).strip() == cleaned_url
+        ]
+        if matching_rows:
+            return max(matching_rows, key=lambda row: int(row.get("row_number") or 0))
+        raise ValueError("Could not find the newly appended sheet row.")
+
+    return max(new_rows, key=lambda row: int(row.get("row_number") or 0))
+
+
+def _process_single_url_to_editor(url: str, required_hashtags: str = "") -> int:
+    row = _append_url_and_get_new_row(url, required_hashtags)
+    row_num = int(row["row_number"])
+
+    result = _ingest_row(row)
+    if result["status"] != "ingested":
+        raise ValueError(result["status"])
+
+    default_top_comment = ""
+    row_url = _cell_text(row.get("Instagram URL")).strip()
+    if result["media_type"] == "article":
+        default_top_comment = _build_read_cta(row_url)
+    elif _is_instagram_url(row_url):
+        default_top_comment = _build_watch_cta(result["username"], row_url)
+
+    update_ingest_result(
+        GOOGLE_SHEET_ID,
+        row_num,
+        result["username"],
+        result["media_type"],
+        result["photo_count"],
+        result["media_link"],
+        result["thumbnail_link"],
+        result["original_caption"],
+        result["transcript"],
+        result["status"],
+    )
+    update_metadata(
+        GOOGLE_SHEET_ID,
+        row_num,
+        "",
+        "",
+        required_hashtags,
+        default_top_comment,
+        "",
+    )
+
+    working_row = _reload_row_from_sheet(row_num)
+    media_type = _cell_text(working_row.get("Media Type")).strip().lower()
+    if _is_reel_url(row_url):
+        _process_post_online(working_row)
+    elif media_type == "photo":
+        _process_photo_post_online(working_row)
+    else:
+        generated_caption = generate_row_caption(working_row)
+        update_caption(GOOGLE_SHEET_ID, row_num, generated_caption, "done")
+        working_row = _reload_row_from_sheet(row_num)
+        if not _carousel_has_required_text(
+            {
+                "name": _cell_text(working_row.get("name")).strip(),
+                "text1": _cell_text(working_row.get("text1")).strip(),
+                "text2": _cell_text(working_row.get("text2")).strip(),
+                "text3": _cell_text(working_row.get("text3")).strip(),
+            }
+        ):
+            carousel = _generate_reliable_carousel_copy(working_row, model="gpt-5.2")
+            _write_specific_carousel_fields(row_num, carousel)
+
+    return row_num
 
 
 def _ingest_row(row: dict) -> dict:
@@ -2792,6 +3049,10 @@ def _chatgpt_ready_rows(sheet_id: str) -> list[dict]:
     return [row for row in get_all_rows(sheet_id) if _row_ready_for_chatgpt(row)]
 
 
+def _ready_rows_from_loaded_rows(rows: list[dict]) -> list[dict]:
+    return [row for row in rows if _row_ready_for_chatgpt(row)]
+
+
 def _build_chatgpt_handoff_prompt(rows: list[dict]) -> str:
     blocks: list[str] = []
     for row in rows:
@@ -3238,20 +3499,25 @@ elif "workspace_active_tab" not in st.session_state:
 elif st.session_state["workspace_active_tab"] in {"Edit", "Grid"}:
     st.session_state["workspace_active_tab"] = "Home"
 
-active_tab = st.radio(
-    "Workspace section",
-    ["Home", "Actions", "Slides", "Data"],
-    horizontal=True,
-    key="workspace_active_tab",
-    label_visibility="collapsed",
-)
+section_tabs = st.tabs(["Home", "Actions", "Slides", "Data"])
 
-if active_tab == "Actions":
+workspace_rows_error = ""
+workspace_rows: list[dict] = []
+try:
+    workspace_rows = _run_with_sheet_quota_countdown(
+        lambda: get_all_rows(GOOGLE_SHEET_ID),
+        "Loading workspace paused:",
+    )
+except Exception as e:
+    workspace_rows_error = describe_error(e)
+
+with section_tabs[1]:
     st.markdown('<div class="workspace-action-anchor"></div>', unsafe_allow_html=True)
     home_notice = st.session_state.pop("workspace_home_notice", "")
 
     mode_help = {
         "Add to sheet": "Add an Instagram post or article link to the sheet so it can be processed into the editor.",
+        "Process this": "Add the link as a new sheet row, download media, ingest metadata, generate the transcript/caption, and build slide text in one shot.",
         "Generate headline": "Pull source text from an Instagram post or article link, then return three headline options plus a footered caption.",
         "Caption this": "Generate a caption directly from an Instagram post or article link using the selected hashtag preset.",
         "Download media": "Download the media and upload it to Drive without adding a row first.",
@@ -3327,6 +3593,23 @@ if active_tab == "Actions":
                     st.session_state["workspace_home_notice"] = f"Added {len(links_to_process)} link(s) to the sheet."
                     _reset_home_links_on_next_render()
                     _rerun_workspace("Actions")
+            elif mode == "Process this":
+                if len(links_to_process) != 1:
+                    st.warning("Process this handles one link at a time.")
+                else:
+                    with st.spinner("Processing link end-to-end..."):
+                        try:
+                            row_number = _process_single_url_to_editor(links_to_process[0], selected_hashtag)
+                        except Exception as e:
+                            st.error(f"Process this failed: {describe_error(e)}")
+                        else:
+                            st.session_state["workspace_home_notice"] = (
+                                f"Processed row {row_number}: ingest, caption, and slide text complete."
+                            )
+                            st.session_state["workspace_selected_row_num"] = row_number
+                            st.query_params["workspace_row"] = str(row_number)
+                            _reset_home_links_on_next_render()
+                            _rerun_workspace("Home")
             else:
                 with st.spinner(f"{mode} in progress..."):
                     try:
@@ -3380,16 +3663,16 @@ if active_tab == "Actions":
         if home_notice:
             st.caption(home_notice)
 
-if active_tab == "Slides":
+with section_tabs[2]:
     st.markdown('<div class="workspace-slides-anchor"></div>', unsafe_allow_html=True)
     slides_notice = st.session_state.pop("workspace_slides_notice", "")
     slides_prompt = st.session_state.get("workspace_slides_prompt", "")
 
-    try:
-        ready_rows = _chatgpt_ready_rows(GOOGLE_SHEET_ID)
-    except Exception as e:
-        st.error(f"Could not load slide-ready rows: {describe_error(e)}")
+    if workspace_rows_error:
+        st.error(f"Could not load slide-ready rows: {workspace_rows_error}")
         ready_rows = []
+    else:
+        ready_rows = _ready_rows_from_loaded_rows(workspace_rows)
 
     ready_count = len(ready_rows)
     row_word = "row" if ready_count == 1 else "rows"
@@ -3436,21 +3719,17 @@ if active_tab == "Slides":
     if slides_prompt:
         _tab_copy_preview(slides_prompt, show_plain_text=False, key="workspace_slides_prompt_copy")
 
-if active_tab == "Home":
-    try:
-        _all_rows = _run_with_sheet_quota_countdown(
-            lambda: get_all_rows(GOOGLE_SHEET_ID),
-            "Checking for new rows paused:",
-        )
-        pending_edit_rows = [
-            r for r in _all_rows
-            if not r.get("Status", "").strip() and r.get("Instagram URL", "").strip()
-        ]
-        editor_rows = _sort_editor_rows([r for r in _all_rows if _is_editable_row(r)])
-    except Exception as e:
-        st.error(f"Could not load rows: {describe_error(e)}")
+with section_tabs[0]:
+    if workspace_rows_error:
+        st.error(f"Could not load rows: {workspace_rows_error}")
         pending_edit_rows = []
         editor_rows = []
+    else:
+        pending_edit_rows = [
+            r for r in workspace_rows
+            if not r.get("Status", "").strip() and r.get("Instagram URL", "").strip()
+        ]
+        editor_rows = _sort_editor_rows([r for r in workspace_rows if _is_editable_row(r)])
 
     if pending_edit_rows:
         row_word = "row" if len(pending_edit_rows) == 1 else "rows"
@@ -3475,30 +3754,45 @@ if active_tab == "Home":
         else:
             _render_workspace_link_dialog(dialog_row)
 
+    thumbnail_dialog_row_number = st.session_state.get("workspace_thumbnail_dialog_row")
+    if thumbnail_dialog_row_number is not None:
+        thumbnail_dialog_row = next((row for row in editor_rows if row.get("row_number") == thumbnail_dialog_row_number), None)
+        if thumbnail_dialog_row is None:
+            st.session_state.pop("workspace_thumbnail_dialog_row", None)
+        else:
+            _render_workspace_thumbnail_dialog(thumbnail_dialog_row)
+
     if not editor_rows:
         st.info("No rows yet. Add a link on Actions or process new rows on Data.")
     else:
         query_row = str(st.query_params.get("workspace_row", "") or "")
         if query_row and st.session_state.get("workspace_target_row") != query_row:
             st.session_state["workspace_target_row"] = query_row
-        show_full_list = st.checkbox(
-            "Show full list",
-            key="workspace_show_full_list",
-        )
+        row_numbers = [row["row_number"] for row in editor_rows]
+        current_selected = st.session_state.get("workspace_selected_row_num", row_numbers[0])
+        if query_row:
+            try:
+                current_selected = int(query_row)
+            except Exception:
+                current_selected = row_numbers[0]
+        if current_selected not in row_numbers:
+            current_selected = row_numbers[0]
+        st.session_state["workspace_selected_row_num"] = current_selected
+        if st.button(
+            "Refresh results",
+            key="workspace_refresh_editor_rows",
+            width="stretch",
+            help="Reload the current editor rows from the sheet and look for new results.",
+        ):
+            _rerun_workspace("Edit")
         _render_editor_grid(editor_rows)
-        visible_editor_rows = editor_rows if show_full_list else _visible_rows_with_target(
-            editor_rows,
-            EDITOR_INITIAL_RENDER_LIMIT,
-            query_row,
+        current_index = row_numbers.index(current_selected)
+        selected_row = editor_rows[current_index]
+        st.caption(
+            f"Showing row {current_index + 1} of {len(editor_rows)}. "
+            "Rows stay here until you delete them from the sheet."
         )
-        if len(visible_editor_rows) < len(editor_rows):
-            st.caption(
-                f"Showing {len(visible_editor_rows)} of {len(editor_rows)} rows. "
-                "Rows stay here until you delete them from the sheet."
-            )
-        else:
-            st.caption("Rows stay here until you delete them from the sheet.")
-        for row in visible_editor_rows:
+        for row in [selected_row]:
             _sync_workspace_row_state(row)
             row_num = row["row_number"]
             speaker_key = _workspace_speaker_key(row)
@@ -3529,18 +3823,21 @@ if active_tab == "Home":
                 top_left, top_right = st.columns([0.9, 1.1], vertical_alignment="top")
                 with top_left:
                     thumb_link = _cell_text(row.get("Thumbnail Drive Link")).strip()
+                    fallback_image_path = _row_fallback_image_path(media_type)
                     if thumb_link:
                         image_url = _safe_image_url(thumb_link)
-                        if image_url:
+                        if image_url and _remote_image_usable(image_url):
                             st.image(image_url, width="stretch")
                         else:
-                            st.info("Thumbnail link is unavailable.")
+                            _render_dark_media_placeholder("Preview unavailable")
+                    elif fallback_image_path:
+                        _render_dark_media_placeholder("Preview unavailable")
                     elif is_article:
                         st.info("Article link")
                         if original_caption:
                             st.caption(original_caption[:260] + ("..." if len(original_caption) > 260 else ""))
                     else:
-                        st.info("Thumbnail will appear here after ingest.")
+                        _render_dark_media_placeholder("Thumbnail pending")
 
                 with top_right:
                     menu_label = "Photo run" if not _is_reel_url(url) else "Process post"
@@ -3609,14 +3906,13 @@ if active_tab == "Home":
                                 _close_workspace_menu(row)
                                 _queue_workspace_action(row_num, "generate_caption")
                                 _rerun_workspace("Edit")
-                            if _is_reel_url(url) and _cell_text(row.get("Media Drive Link")).strip() and st.button(
-                                "Update screenshot (+5s)",
-                                key=f"workspace_menu_thumbnail_5s_{row_num}",
+                            if st.button(
+                                "Update screenshot",
+                                key=f"workspace_menu_thumbnail_open_{row_num}",
                                 width="stretch",
-                                help="Replace the current screenshot with a frame taken about 5 seconds into the video.",
                             ):
                                 _close_workspace_menu(row)
-                                _queue_workspace_action(row_num, "refresh_thumbnail_5s")
+                                st.session_state["workspace_thumbnail_dialog_row"] = row_num
                                 _rerun_workspace("Edit")
                             skip_label = "Unskip" if status.strip().lower() == "skipped" else "Skip"
                             if st.button(
@@ -3653,6 +3949,13 @@ if active_tab == "Home":
                                     st.session_state["workspace_error"] = f"Row {row_num}: could not delete row - {describe_error(e)}"
                                 else:
                                     st.session_state["workspace_success"] = f"Row {row_num}: deleted from the sheet."
+                                _close_workspace_menu(row)
+                                _rerun_workspace("Edit")
+                            if st.button(
+                                "Close",
+                                key=f"workspace_menu_close_{row_num}",
+                                width="stretch",
+                            ):
                                 _close_workspace_menu(row)
                                 _rerun_workspace("Edit")
 
@@ -3696,7 +3999,7 @@ if active_tab == "Home":
 
             st.divider()
 
-        _scroll_to_editor_row(query_row)
+        _scroll_to_editor_row(str(selected_row["row_number"]))
 
         queue = st.session_state.get("workspace_action_queue", [])
         if queue:
@@ -3716,17 +4019,14 @@ if active_tab == "Home":
         ):
             _handle_update_all_workspace_speaker_names(editor_rows)
 
-if active_tab == "Data":
+with section_tabs[3]:
     st.caption("Data view for the Google Sheet plus batch ingest.")
 
-    try:
-        all_rows = _run_with_sheet_quota_countdown(
-            lambda: get_all_rows(GOOGLE_SHEET_ID),
-            "Loading rows paused:",
-        )
-    except Exception as e:
-        st.error(f"Could not load sheet: {describe_error(e)}")
+    if workspace_rows_error:
+        st.error(f"Could not load sheet: {workspace_rows_error}")
         all_rows = []
+    else:
+        all_rows = workspace_rows
 
     if all_rows:
         df = pd.DataFrame(
