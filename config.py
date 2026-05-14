@@ -129,6 +129,8 @@ SECRET_MANAGER_SECRET_NAMES: dict[str, str | tuple[str, ...]] = {
     "GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER": str(_runtime_secret("SECRET_MANAGER_GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER_NAME", "google-screenshots-subfolder") or "google-screenshots-subfolder"),
     "APIFY_REEL_ACTOR_ID": str(_runtime_secret("SECRET_MANAGER_APIFY_REEL_ACTOR_ID_NAME", "apify-reel-actor-id") or "apify-reel-actor-id"),
     "APIFY_POST_ACTOR_ID": str(_runtime_secret("SECRET_MANAGER_APIFY_POST_ACTOR_ID_NAME", "apify-post-actor-id") or "apify-post-actor-id"),
+    "INSTAGRAM_ACCESS_TOKEN": str(_runtime_secret("SECRET_MANAGER_INSTAGRAM_ACCESS_TOKEN_NAME", "instagram-access-token") or "instagram-access-token"),
+    "VIEWS_TRACKER_SHEET_ID": str(_runtime_secret("SECRET_MANAGER_VIEWS_TRACKER_SHEET_ID_NAME", "views-tracker-sheet-id") or "views-tracker-sheet-id"),
 }
 
 
@@ -216,6 +218,8 @@ APIFY_REEL_ACTOR_ID = _get_secret("APIFY_REEL_ACTOR_ID", "xMc5Ga1oCONPmWJIa")
 APIFY_POST_ACTOR_ID = _get_secret("APIFY_POST_ACTOR_ID", "apify/instagram-scraper")
 GOOGLE_SHEET_ID = _get_secret("GOOGLE_SHEET_ID")
 GOOGLE_WORKSHEET_NAME = _get_secret("GOOGLE_WORKSHEET_NAME")
+INSTAGRAM_ACCESS_TOKEN = _get_secret("INSTAGRAM_ACCESS_TOKEN")
+VIEWS_TRACKER_SHEET_ID = _get_secret("VIEWS_TRACKER_SHEET_ID")
 GOOGLE_DRIVE_FOLDER_ID = _get_secret("GOOGLE_DRIVE_FOLDER_ID")
 GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER = _get_secret("GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER", "screenshots")
 GOOGLE_OAUTH_CLIENT_JSON = _get_secret("GOOGLE_OAUTH_CLIENT_JSON")
