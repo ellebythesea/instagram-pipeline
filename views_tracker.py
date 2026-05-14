@@ -44,8 +44,6 @@ HEADERS = [
     "Comments",
     "Shares",
     "Saves",
-    "Follows",
-    "Total Interactions",
     "Engagement Rate",
     "Date Pulled",
 ]
@@ -116,32 +114,55 @@ def _find_media_id(user_id: str, target_url: str) -> str | None:
     return None
 
 
-def _insight_metrics(media_type: str, product_type: str) -> list[str]:
-    if product_type == "REELS":
-        return ["plays", "reach", "saved", "shares", "follows", "total_interactions", "impressions"]
-    if media_type == "VIDEO":
-        return ["impressions", "reach", "saved", "video_views", "shares", "total_interactions"]
-    if media_type == "CAROUSEL_ALBUM":
-        return ["impressions", "reach", "saved", "shares",
-                "carousel_album_impressions", "carousel_album_reach",
-                "carousel_album_saved", "carousel_album_video_views"]
-    return ["impressions", "reach", "saved", "shares"]
-
-
 def _parse_insight_value(item: dict) -> int:
     if "values" in item and item["values"]:
         return int(item["values"][0].get("value", 0) or 0)
     return int(item.get("value", 0) or 0)
 
 
-def _fetch_insights(media_id: str, media_type: str, product_type: str) -> dict[str, int]:
-    metrics = _insight_metrics(media_type, product_type)
+def _ig_get_with_detail(path: str, params: dict) -> dict:
+    """Like _ig_get but raises with the API error message on failure."""
+    params = {**params, "access_token": INSTAGRAM_ACCESS_TOKEN}
+    resp = requests.get(f"{_GRAPH_BASE}/{path.lstrip('/')}", params=params, timeout=20)
+    if not resp.ok:
+        try:
+            api_error = resp.json().get("error", {})
+            msg = api_error.get("message") or api_error.get("error_user_msg") or resp.text
+        except Exception:
+            msg = resp.text
+        raise requests.HTTPError(f"{resp.status_code}: {msg}", response=resp)
+    return resp.json()
+
+
+def _call_insights(media_id: str, metrics: list[str]) -> dict[str, int]:
+    """Fetch a single group of insight metrics, returning {} on any error."""
     try:
-        data = _ig_get(f"{media_id}/insights", {"metric": ",".join(metrics)})
+        data = _ig_get_with_detail(f"{media_id}/insights", {"metric": ",".join(metrics)})
         return {item["name"]: _parse_insight_value(item) for item in data.get("data", [])}
     except Exception as exc:
-        print(f"    insights error: {exc}")
+        print(f"    insights {metrics}: {exc}")
         return {}
+
+
+def _fetch_insights(media_id: str, media_type: str, product_type: str) -> dict[str, int]:
+    is_reel = product_type == "REELS"
+    is_video = media_type == "VIDEO"
+
+    # Call 1: view/reach counts
+    if is_reel:
+        view_metrics = ["plays", "reach", "impressions"]
+    elif is_video:
+        view_metrics = ["video_views", "reach", "impressions"]
+    else:
+        view_metrics = ["impressions", "reach"]
+
+    # Call 2: engagement counts
+    engagement_metrics = ["saved", "shares", "comments", "likes"]
+
+    results = {}
+    results.update(_call_insights(media_id, view_metrics))
+    results.update(_call_insights(media_id, engagement_metrics))
+    return results
 
 
 def _fetch_post_metrics(user_id: str, link: str) -> dict | None:
@@ -162,13 +183,8 @@ def _fetch_post_metrics(user_id: str, link: str) -> dict | None:
     shares = insights.get("shares", 0)
     saves = insights.get("saved", 0)
     reach = insights.get("reach", 0)
-    impressions = (
-        insights.get("impressions")
-        or insights.get("carousel_album_impressions", 0)
-    )
-    views = insights.get("plays") or insights.get("video_views") or insights.get("carousel_album_video_views", 0)
-    follows = insights.get("follows", 0)
-    total_interactions = insights.get("total_interactions") or (likes + comments + shares + saves)
+    impressions = insights.get("impressions", 0)
+    views = insights.get("plays") or insights.get("video_views", 0)
     engagement = round((likes + comments + shares + saves) / reach * 100, 2) if reach else 0
 
     ts = fields_data.get("timestamp", "")
@@ -186,8 +202,6 @@ def _fetch_post_metrics(user_id: str, link: str) -> dict | None:
         "Comments": comments,
         "Shares": shares,
         "Saves": saves,
-        "Follows": follows,
-        "Total Interactions": total_interactions,
         "Engagement Rate": f"{engagement}%",
         "Date Pulled": date.today().isoformat(),
     }
