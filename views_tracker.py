@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Fetch Instagram post metrics and write them to the views tracker Google Sheet.
 
-Reads rows where Link is non-empty and Views is blank, fetches metrics from the
-Instagram Graph API, and fills in: Date Posted, Username, Content Type, Views,
-Reach, Impressions, Likes, Comments, Shares, Saves, Follows, Engagement Rate,
-Date Pulled.
+Usage:
+  python views_tracker.py          # fetch metrics for all rows with a Link but no Views
+  python views_tracker.py --setup  # write the header row (run once on a blank sheet)
 
 Secrets come from Google Secret Manager (via config.py):
   - instagram-access-token   → INSTAGRAM_ACCESS_TOKEN
@@ -15,7 +14,7 @@ Secrets come from Google Secret Manager (via config.py):
 from __future__ import annotations
 
 import json
-import re
+import sys
 import time
 from datetime import date
 
@@ -31,6 +30,26 @@ _SCOPES = [
     "https://www.googleapis.com/auth/drive",
 ]
 
+# Column order for the sheet. Link is the only column you fill in manually.
+HEADERS = [
+    "Date Posted",
+    "Link",
+    "Username",
+    "Content Type",
+    "Caption",
+    "Views",          # plays (Reels) or video_views (Video)
+    "Reach",
+    "Impressions",
+    "Likes",
+    "Comments",
+    "Shares",
+    "Saves",
+    "Follows",
+    "Total Interactions",
+    "Engagement Rate",
+    "Date Pulled",
+]
+
 
 # ---------------------------------------------------------------------------
 # Sheets helpers
@@ -41,6 +60,15 @@ def _sheets_client() -> gspread.Client:
         json.loads(GOOGLE_SERVICE_ACCOUNT_JSON), scopes=_SCOPES
     )
     return gspread.authorize(creds)
+
+
+def _check_secrets() -> None:
+    if not INSTAGRAM_ACCESS_TOKEN:
+        raise RuntimeError("INSTAGRAM_ACCESS_TOKEN is not configured — add 'instagram-access-token' to Secret Manager.")
+    if not VIEWS_TRACKER_SHEET_ID:
+        raise RuntimeError("VIEWS_TRACKER_SHEET_ID is not configured — add 'views-tracker-sheet-id' to Secret Manager.")
+    if not GOOGLE_SERVICE_ACCOUNT_JSON:
+        raise RuntimeError("GOOGLE_SERVICE_ACCOUNT_JSON is not configured.")
 
 
 # ---------------------------------------------------------------------------
@@ -81,9 +109,13 @@ def _find_media_id(user_id: str, target_url: str) -> str | None:
 
 def _insight_metrics(media_type: str, product_type: str) -> list[str]:
     if product_type == "REELS":
-        return ["plays", "reach", "saved", "shares", "follows"]
+        return ["plays", "reach", "saved", "shares", "follows", "total_interactions", "impressions"]
     if media_type == "VIDEO":
-        return ["impressions", "reach", "saved", "video_views", "shares"]
+        return ["impressions", "reach", "saved", "video_views", "shares", "total_interactions"]
+    if media_type == "CAROUSEL_ALBUM":
+        return ["impressions", "reach", "saved", "shares",
+                "carousel_album_impressions", "carousel_album_reach",
+                "carousel_album_saved", "carousel_album_video_views"]
     return ["impressions", "reach", "saved", "shares"]
 
 
@@ -110,7 +142,7 @@ def _fetch_post_metrics(user_id: str, link: str) -> dict | None:
         return None
 
     fields_data = _ig_get(media_id, {
-        "fields": "timestamp,media_type,media_product_type,like_count,comments_count,username",
+        "fields": "timestamp,media_type,media_product_type,like_count,comments_count,username,caption",
     })
     media_type = fields_data.get("media_type", "")
     product_type = fields_data.get("media_product_type", "")
@@ -121,19 +153,23 @@ def _fetch_post_metrics(user_id: str, link: str) -> dict | None:
     shares = insights.get("shares", 0)
     saves = insights.get("saved", 0)
     reach = insights.get("reach", 0)
-    impressions = insights.get("impressions", 0)
-    views = insights.get("plays") or insights.get("video_views", 0)
+    impressions = (
+        insights.get("impressions")
+        or insights.get("carousel_album_impressions", 0)
+    )
+    views = insights.get("plays") or insights.get("video_views") or insights.get("carousel_album_video_views", 0)
     follows = insights.get("follows", 0)
-
+    total_interactions = insights.get("total_interactions") or (likes + comments + shares + saves)
     engagement = round((likes + comments + shares + saves) / reach * 100, 2) if reach else 0
 
     ts = fields_data.get("timestamp", "")
-    date_posted = ts[:10] if ts else ""
+    caption = (fields_data.get("caption") or "").strip()
 
     return {
-        "Date Posted": date_posted,
+        "Date Posted": ts[:10] if ts else "",
         "Username": fields_data.get("username", ""),
         "Content Type": product_type or media_type,
+        "Caption": caption,
         "Views": views,
         "Reach": reach,
         "Impressions": impressions,
@@ -142,29 +178,44 @@ def _fetch_post_metrics(user_id: str, link: str) -> dict | None:
         "Shares": shares,
         "Saves": saves,
         "Follows": follows,
+        "Total Interactions": total_interactions,
         "Engagement Rate": f"{engagement}%",
         "Date Pulled": date.today().isoformat(),
     }
 
 
 # ---------------------------------------------------------------------------
-# Main
+# Setup
+# ---------------------------------------------------------------------------
+
+def setup_sheet() -> None:
+    _check_secrets()
+    print("Connecting to Google Sheets…")
+    ws = _sheets_client().open_by_key(VIEWS_TRACKER_SHEET_ID).sheet1
+    existing = ws.row_values(1)
+    if existing:
+        print(f"Sheet already has headers: {existing}")
+        print("No changes made. Delete row 1 and re-run --setup if you want to reset.")
+        return
+    ws.append_row(HEADERS, value_input_option="RAW")
+    # Freeze the header row
+    ws.freeze(rows=1)
+    print(f"Headers written: {HEADERS}")
+
+
+# ---------------------------------------------------------------------------
+# Run
 # ---------------------------------------------------------------------------
 
 def run() -> None:
-    if not INSTAGRAM_ACCESS_TOKEN:
-        raise RuntimeError("INSTAGRAM_ACCESS_TOKEN is not configured — add it to Secret Manager as 'instagram-access-token'.")
-    if not VIEWS_TRACKER_SHEET_ID:
-        raise RuntimeError("VIEWS_TRACKER_SHEET_ID is not configured — add it to Secret Manager as 'views-tracker-sheet-id'.")
-    if not GOOGLE_SERVICE_ACCOUNT_JSON:
-        raise RuntimeError("GOOGLE_SERVICE_ACCOUNT_JSON is not configured.")
+    _check_secrets()
 
     print("Connecting to Google Sheets…")
     ws = _sheets_client().open_by_key(VIEWS_TRACKER_SHEET_ID).sheet1
 
     headers = ws.row_values(1)
     if not headers:
-        raise RuntimeError("Sheet has no header row.")
+        raise RuntimeError("Sheet has no header row. Run: python views_tracker.py --setup")
 
     def col(name: str) -> int:
         return headers.index(name) + 1
@@ -206,4 +257,7 @@ def run() -> None:
 
 
 if __name__ == "__main__":
-    run()
+    if "--setup" in sys.argv:
+        setup_sheet()
+    else:
+        run()
