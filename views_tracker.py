@@ -83,7 +83,16 @@ def _ig_get(path: str, params: dict) -> dict:
 
 
 def _ig_user_id() -> str:
-    return _ig_get("me", {"fields": "id"})["id"]
+    # /me returns the Facebook user ID; we need the linked Instagram Business Account ID.
+    data = _ig_get("me/accounts", {"fields": "id,instagram_business_account"})
+    for page in data.get("data", []):
+        ig_id = (page.get("instagram_business_account") or {}).get("id")
+        if ig_id:
+            return ig_id
+    raise RuntimeError(
+        "No Instagram Business Account found. Make sure the access token is for a "
+        "Facebook Page that has a linked Instagram Business or Creator account."
+    )
 
 
 def _normalize_url(url: str) -> str:
