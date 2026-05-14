@@ -73,39 +73,6 @@ The local transcription script auto-detects the synced media folder from common 
 /Users/lisamollica/Library/CloudStorage/GoogleDrive-voteinorout@gmail.com/My Drive/_apps/vioo instagram pipeline/instagram pipeline media/
 ```
 
-## Views Tracker
-
-`views_tracker.py` reads Instagram post links from a separate Google Sheet and fills in metrics for each one using the Instagram Graph API.
-
-### Setup (run once)
-
-Make sure these two secrets exist in Google Secret Manager:
-
-- `instagram-access-token` — your Instagram Graph API access token
-- `views-tracker-sheet-id` — the ID of the views tracker Google Sheet
-
-Then write the header row:
-
-```bash
-.venv/bin/python views_tracker.py --setup
-```
-
-### Pulling metrics
-
-Paste Instagram post URLs into the **Link** column of the views tracker sheet, then run:
-
-```bash
-.venv/bin/python views_tracker.py
-```
-
-It finds every row where **Link** has a value but **Views** is empty, fetches the metrics for each post, and fills in all other columns automatically:
-
-- Date Posted, Username, Content Type, Caption
-- Views, Reach, Impressions, Likes, Comments, Shares, Saves, Follows, Total Interactions
-- Engagement Rate, Date Pulled
-
-Re-running the script is safe — it skips any row that already has a Views value.
-
 ## Local Helper Scripts
 
 These are the local scripts in `scripts/` and what they do.
@@ -315,8 +282,6 @@ Optional secret names:
 - `google-screenshots-subfolder`
 - `apify-reel-actor-id`
 - `apify-post-actor-id`
-- `instagram-access-token` (views tracker)
-- `views-tracker-sheet-id` (views tracker)
 
 ### Bootstrap credential
 
@@ -411,8 +376,3 @@ Watch the local `splits` folder and auto-split new videos as you drag them in:
 .venv/bin/python scripts/watch_split_folder.py
 ```
 
-Fetch Instagram metrics for all rows in the views tracker sheet that have a link but no views data:
-
-```bash
-.venv/bin/python views_tracker.py
-```
