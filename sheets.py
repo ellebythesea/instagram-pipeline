@@ -11,6 +11,7 @@ Sheet layout:
   L  Speaker Name       M  Footer             N  Status
   O  Caption Context    P  Scheduled Time     Q  #name
   R  #text1             S  #text2             T  #text3
+  U  Slide CTA
 """
 
 import json
@@ -50,6 +51,7 @@ _EXPECTED_HEADERS = [
     "text1",
     "text2",
     "text3",
+    "Slide CTA",
 ]
 
 _headers_checked: set[tuple[str, str]] = set()
@@ -146,7 +148,7 @@ def _ensure_headers(sheet_id: str, ws: gspread.Worksheet) -> None:
     current = _with_backoff(ws.row_values, 1)
     normalized = current[:len(_EXPECTED_HEADERS)]
     if normalized != _EXPECTED_HEADERS:
-        _with_backoff(ws.update, "A1:T1", [_EXPECTED_HEADERS])
+        _with_backoff(ws.update, "A1:U1", [_EXPECTED_HEADERS])
     _headers_checked.add(cache_key)
 
 
@@ -380,18 +382,9 @@ def get_slide_cta_options(sheet_id: str) -> dict[str, str]:
 
 
 def update_slide_cta_option(sheet_id: str, row_number: int, option: str) -> None:
-    """Persist a row's selected slide 3 CTA option in metadata."""
-    ws = _metadata_worksheet(sheet_id)
-    records = _with_backoff(ws.get_all_records, default_blank="")
-    values = get_slide_cta_options(sheet_id)
-    values[str(row_number)] = (option or "").strip()
-    payload = json.dumps(values, sort_keys=True)
-    for index, record in enumerate(records, start=2):
-        key = (record.get("key", "") or "").strip()
-        if key == _SLIDE_CTA_OPTIONS_KEY:
-            _with_backoff(ws.update, f"A{index}:B{index}", [[_SLIDE_CTA_OPTIONS_KEY, payload]])
-            return
-    _with_backoff(ws.append_row, [_SLIDE_CTA_OPTIONS_KEY, payload], value_input_option="USER_ENTERED")
+    """Persist a row's selected slide CTA in column U of the main sheet."""
+    ws = _worksheet(sheet_id)
+    _with_backoff(ws.update, f"U{row_number}", [[(option or "").strip()]])
 
 
 def get_fundraising_links(sheet_id: str) -> list[dict[str, str]]:
