@@ -2479,7 +2479,6 @@ def _copy_tabs(
         current_slide_three_font_adjust = int(st.session_state.get(slide_three_font_adjust_key, 0) or 0)
         default_slide_three_cta = (
             _cell_text((prompt_row or {}).get("Slide CTA")).strip().lower()
-            or (slide_cta_options or {}).get(str(row_num), "")
             or "hidden"
         )
         current_slide_three_cta = _cell_text(
@@ -3833,10 +3832,7 @@ try:
 except Exception as e:
     workspace_rows_error = describe_error(e)
 home_notice = st.session_state.pop("workspace_home_notice", "")
-try:
-    slide_cta_options = get_slide_cta_options(GOOGLE_SHEET_ID)
-except Exception:
-    slide_cta_options = {}
+slide_cta_options: dict[str, str] = {}
 
 if active_section_tab == "Home":
     st.markdown('<div class="workspace-action-anchor"></div>', unsafe_allow_html=True)
