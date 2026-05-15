@@ -3388,12 +3388,14 @@ def _build_chatgpt_handoff_prompt(rows: list[dict]) -> str:
         transcript = _cell_text(row.get("Transcript")).strip()
         original_caption = _cell_text(row.get("Original Caption")).strip()
         caption_context = _cell_text(row.get("Caption Context")).strip()
+        speaker_name = _cell_text(row.get("Speaker Name")).strip()
         blocks.append(
             "\n".join(
                 [
                     f"ROW {row_num}",
                     f"username: {username}",
                     f"media_type: {media_type}",
+                    f"speaker_name: {speaker_name or '(none)'}",
                     f"transcript:\n{transcript or '(none)'}",
                     f"original_caption:\n{original_caption or '(none)'}",
                     f"caption_context:\n{caption_context or '(none)'}",
