@@ -345,8 +345,9 @@ def _carousel_slide_prompt_instructions(include_row_numbers: bool) -> str:
         "* Use direct quotes naturally when they strengthen the writing\n"
         "* Avoid robotic transition phrases\n"
         "* Avoid emojis\n"
-        '* Never say "the speaker," "the clip," "the transcript," "the video," "the comments," "the argument," "the warning," or "the line said"\n'
+        "* Never use phrases like 'the speaker,' 'the clip,' 'the transcript,' 'the video,' or 'the creator said' unless absolutely unavoidable\n"
         "* Do not over explain the source material\n"
+        "* Expand beyond the transcript and caption when reliable contextual reporting or public data materially improves the carousel\n"
         "* Make #text1, #text2, and #text3 feel like three carousel slides\n"
         "* Put the most important accusation, statistic, conflict, or consequence into #text1\n"
         "* #text1 should feel like the strongest opening carousel slide, not just a short hook\n"
