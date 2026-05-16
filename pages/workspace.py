@@ -1801,10 +1801,6 @@ def _render_workspace_slides_dialog(workspace_rows: list[dict], workspace_rows_e
     if slides_notice:
         st.caption(slides_notice)
 
-    if ready_rows:
-        st.caption("Slide prompt")
-        st.code(_build_chatgpt_handoff_prompt(ready_rows), language=None)
-
     pasted_results = st.text_area(
         "Paste slide results",
         key="workspace_slides_results",
@@ -1828,6 +1824,10 @@ def _render_workspace_slides_dialog(workspace_rows: list[dict], workspace_rows_e
                     + (f" {' | '.join(issues[:3])}" if issues else "")
                 )
             _rerun_workspace("Home")
+
+    if ready_rows:
+        st.caption("Slide prompt")
+        st.code(_build_chatgpt_handoff_prompt(ready_rows), language=None)
 
     if st.button("Close", key="workspace_slides_close", width="stretch"):
         _close_workspace_slides_dialog()
