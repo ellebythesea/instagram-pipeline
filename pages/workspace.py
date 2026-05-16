@@ -1853,6 +1853,9 @@ def _render_workspace_slide_action_dialog(row: dict) -> None:
     prompt_key = f"workspace_row_slides_prompt_{row_num}"
     raw_top_comment = st.session_state.get(_workspace_key(row, "top"), row.get("Top Comment", "")).strip()
     clean_top_comment, pinned_top_comment = _decode_top_comment(raw_top_comment)
+    current_speaker_for_dialog = _cell_text(
+        st.session_state.get(_workspace_speaker_key(row), row.get("Speaker Name", ""))
+    ).strip()
     current_values = {
         "prompt": st.session_state.get(prompt_key, "") or _build_single_row_chatgpt_prompt(row),
         "text1": _cell_text(row.get("text1")).strip(),
@@ -1860,6 +1863,7 @@ def _render_workspace_slide_action_dialog(row: dict) -> None:
         "text3": _cell_text(row.get("text3")).strip(),
         "caption": _cell_text(row.get("Generated Caption")).strip(),
         "custom_link": clean_top_comment,
+        "speaker": current_speaker_for_dialog,
     }
     dialog_labels = {
         "prompt": "Generate prompt",
@@ -1868,6 +1872,7 @@ def _render_workspace_slide_action_dialog(row: dict) -> None:
         "text3": "Edit text 3",
         "caption": "Edit caption",
         "custom_link": "Edit custom link",
+        "speaker": "Update name",
     }
     if action not in current_values:
         st.session_state["workspace_error"] = f"Row {row_num}: unknown slide action {action}."
@@ -1881,12 +1886,20 @@ def _render_workspace_slide_action_dialog(row: dict) -> None:
         st.session_state["workspace_slide_dialog_value"] = current_values[action]
 
     st.caption(dialog_labels[action])
-    st.text_area(
-        dialog_labels[action],
-        key="workspace_slide_dialog_value",
-        height=240,
-        label_visibility="collapsed",
-    )
+    if action == "speaker":
+        st.text_input(
+            dialog_labels[action],
+            key="workspace_slide_dialog_value",
+            placeholder="Add context (e.g. speaker name)",
+            label_visibility="collapsed",
+        )
+    else:
+        st.text_area(
+            dialog_labels[action],
+            key="workspace_slide_dialog_value",
+            height=240,
+            label_visibility="collapsed",
+        )
 
     if st.button("Save", key=f"workspace_slide_dialog_save_{context_key}", type="primary", width="stretch"):
         edited_value = st.session_state.get("workspace_slide_dialog_value", "").strip()
@@ -1914,6 +1927,12 @@ def _render_workspace_slide_action_dialog(row: dict) -> None:
                 ).strip()
                 _apply_top_comment_to_caption(row, row_num, current_speaker_name, top_comment)
                 st.session_state["workspace_success"] = f"Row {row_num}: custom link saved."
+            elif action == "speaker":
+                if update_speaker_names_batch is None:
+                    raise RuntimeError("Speaker name updates are not supported in this build.")
+                update_speaker_names_batch(GOOGLE_SHEET_ID, {row_num: edited_value})
+                st.session_state[_workspace_speaker_key(row)] = edited_value
+                st.session_state["workspace_success"] = f"Row {row_num}: name saved."
         except Exception as e:
             st.session_state["workspace_error"] = f"Row {row_num}: could not save {dialog_labels[action].lower()} - {describe_error(e)}"
         _close_workspace_slide_action_dialog(clear_inputs=True)
@@ -2545,8 +2564,8 @@ def _copy_tabs(
             if st.button("Edit text 3", key=f"workspace_row_slides_edit_text3_{row_num}", width="stretch"):
                 _open_workspace_slide_action_dialog(row_num, "text3")
                 _rerun_workspace("Edit")
-            if st.button("Edit caption", key=f"workspace_row_slides_edit_caption_{row_num}", width="stretch"):
-                _open_workspace_slide_action_dialog(row_num, "caption")
+            if st.button("Update name", key=f"workspace_row_slides_edit_speaker_{row_num}", width="stretch"):
+                _open_workspace_slide_action_dialog(row_num, "speaker")
                 _rerun_workspace("Edit")
             if st.button("Link: More", key=f"workspace_row_slides_cta_more_{row_num}", width="stretch"):
                 _save_slide_three_cta_choice(row_num, slide_three_cta_key, "more")
@@ -4025,10 +4044,10 @@ if active_section_tab == "Home":
                         st.markdown(f"#### Row {row_num}")
 
                     st.text_input(
-                        "Speaker Name",
+                        "Add context",
                         value=speaker_name,
                         key=speaker_key,
-                        placeholder="Enter name",
+                        placeholder="Add context (e.g. speaker name)",
                         label_visibility="collapsed",
                     )
                     if url:
@@ -4057,6 +4076,10 @@ if active_section_tab == "Home":
                                 if _is_reel_url(url)
                                 else "Use available post text and image text to generate the caption and slide copy."
                             )
+                            if st.button("Edit caption", key=f"workspace_menu_edit_caption_{row_num}", width="stretch"):
+                                _close_workspace_menu(row)
+                                _open_workspace_slide_action_dialog(row_num, "caption")
+                                _rerun_workspace("Edit")
                             if is_instagram and st.button(
                                 menu_label,
                                 key=f"workspace_menu_primary_{row_num}",
