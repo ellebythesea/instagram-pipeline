@@ -2535,7 +2535,7 @@ def _copy_tabs(
                 slide_three_font_adjust_key,
                 current_slide_three_font_adjust,
             )
-        with st.popover("Actions", use_container_width=True):
+        with st.popover("Slide actions", use_container_width=True):
             if st.button("Edit text 1", key=f"workspace_row_slides_edit_text1_{row_num}", width="stretch"):
                 _open_workspace_slide_action_dialog(row_num, "text1")
                 _rerun_workspace("Edit")
@@ -3838,7 +3838,7 @@ if active_section_tab == "Home":
     if st.session_state.get("workspace_slides_dialog"):
         _render_workspace_slides_dialog(workspace_rows, workspace_rows_error)
 
-    with st.popover("Actions", use_container_width=True):
+    with st.popover("App actions", use_container_width=True):
         if st.button(
             "Refresh results",
             key="workspace_refresh_editor_rows",
@@ -4038,7 +4038,7 @@ if active_section_tab == "Home":
                             if link.strip()
                         ]
                         menu_nonce = st.session_state.get(menu_nonce_key, 0)
-                        menu_label_with_nonce = f"Actions{chr(0x200B) * menu_nonce}"
+                        menu_label_with_nonce = f"Post actions{chr(0x200B) * menu_nonce}"
                         with st.popover(menu_label_with_nonce, use_container_width=True):
                             st.link_button(
                                 "Open in Instagram" if is_instagram else "Open source link",
