@@ -2465,6 +2465,8 @@ def _copy_tabs(
             _tab_copy_preview(transcript)
     elif selected_content_tab == "Slides":
         prompt_key = f"workspace_row_slides_prompt_{row_num}"
+        if not st.session_state.get(prompt_key):
+            st.session_state[prompt_key] = _build_single_row_chatgpt_prompt(prompt_row or {})
         slide_one_font_adjust_key = f"workspace_slide_preview_font_adjust_{row_num}"
         slide_one_background_adjust_key = f"workspace_slide_preview_background_adjust_{row_num}"
         slide_one_fit_toggle_key = f"workspace_slide_preview_fit_mode_{row_num}"
@@ -2534,11 +2536,6 @@ def _copy_tabs(
                 current_slide_three_font_adjust,
             )
         with st.popover("Actions", use_container_width=True):
-            if st.button("Generate prompt", key=f"workspace_row_slides_build_{row_num}", width="stretch"):
-                if not st.session_state.get(prompt_key):
-                    st.session_state[prompt_key] = _build_single_row_chatgpt_prompt(prompt_row or {})
-                _open_workspace_slide_action_dialog(row_num, "prompt")
-                _rerun_workspace("Edit")
             if st.button("Edit text 1", key=f"workspace_row_slides_edit_text1_{row_num}", width="stretch"):
                 _open_workspace_slide_action_dialog(row_num, "text1")
                 _rerun_workspace("Edit")
