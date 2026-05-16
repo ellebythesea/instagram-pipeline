@@ -1784,7 +1784,6 @@ def _render_workspace_home_action_dialog() -> None:
 @st.dialog("Slides", width="large", on_dismiss=_close_workspace_slides_dialog)
 def _render_workspace_slides_dialog(workspace_rows: list[dict], workspace_rows_error: str) -> None:
     slides_notice = st.session_state.pop("workspace_slides_notice", "")
-    slides_prompt = st.session_state.get("workspace_slides_prompt", "")
 
     if workspace_rows_error:
         st.error(f"Could not load slide-ready rows: {workspace_rows_error}")
@@ -1826,17 +1825,6 @@ def _render_workspace_slides_dialog(workspace_rows: list[dict], workspace_rows_e
                 )
             _rerun_workspace("Home")
 
-    if st.button("Generate slides prompt", key="workspace_slides_build_prompt", type="primary", width="stretch"):
-        if not ready_rows:
-            st.warning("No rows are ready for slides yet.")
-        else:
-            st.session_state["workspace_slides_prompt"] = _build_chatgpt_handoff_prompt(ready_rows)
-            st.session_state["workspace_slides_notice"] = f"Built slides prompt for {ready_count} {row_word}."
-            _rerun_workspace("Home")
-
-    if slides_prompt:
-        _tab_copy_preview(slides_prompt, show_plain_text=False, key="workspace_slides_prompt_copy")
-
     if st.button("Close", key="workspace_slides_close", width="stretch"):
         _close_workspace_slides_dialog()
         _rerun_workspace("Home")
@@ -1850,14 +1838,12 @@ def _render_workspace_slide_action_dialog(row: dict) -> None:
     if not action:
         return
 
-    prompt_key = f"workspace_row_slides_prompt_{row_num}"
     raw_top_comment = st.session_state.get(_workspace_key(row, "top"), row.get("Top Comment", "")).strip()
     clean_top_comment, pinned_top_comment = _decode_top_comment(raw_top_comment)
     current_speaker_for_dialog = _cell_text(
         st.session_state.get(_workspace_speaker_key(row), row.get("Speaker Name", ""))
     ).strip()
     current_values = {
-        "prompt": st.session_state.get(prompt_key, "") or _build_single_row_chatgpt_prompt(row),
         "text1": _cell_text(row.get("text1")).strip(),
         "text2": _cell_text(row.get("text2")).strip(),
         "text3": _cell_text(row.get("text3")).strip(),
@@ -1866,7 +1852,6 @@ def _render_workspace_slide_action_dialog(row: dict) -> None:
         "speaker": current_speaker_for_dialog,
     }
     dialog_labels = {
-        "prompt": "Generate prompt",
         "text1": "Edit text 1",
         "text2": "Edit text 2",
         "text3": "Edit text 3",
@@ -1904,10 +1889,7 @@ def _render_workspace_slide_action_dialog(row: dict) -> None:
     if st.button("Save", key=f"workspace_slide_dialog_save_{context_key}", type="primary", width="stretch"):
         edited_value = st.session_state.get("workspace_slide_dialog_value", "").strip()
         try:
-            if action == "prompt":
-                st.session_state[prompt_key] = edited_value
-                st.session_state["workspace_success"] = f"Row {row_num}: slide prompt saved."
-            elif action in {"text1", "text2", "text3"}:
+            if action in {"text1", "text2", "text3"}:
                 if update_carousel_fields is None:
                     raise RuntimeError("Carousel field updates are not supported in this build.")
                 name = _cell_text(row.get("name")).strip()
