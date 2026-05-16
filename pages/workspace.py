@@ -1801,6 +1801,10 @@ def _render_workspace_slides_dialog(workspace_rows: list[dict], workspace_rows_e
     if slides_notice:
         st.caption(slides_notice)
 
+    if ready_rows:
+        st.caption("Slide prompt")
+        st.code(_build_chatgpt_handoff_prompt(ready_rows), language=None)
+
     pasted_results = st.text_area(
         "Paste slide results",
         key="workspace_slides_results",
@@ -2546,9 +2550,6 @@ def _copy_tabs(
             if st.button("Edit text 3", key=f"workspace_row_slides_edit_text3_{row_num}", width="stretch"):
                 _open_workspace_slide_action_dialog(row_num, "text3")
                 _rerun_workspace("Edit")
-            if st.button("Update name", key=f"workspace_row_slides_edit_speaker_{row_num}", width="stretch"):
-                _open_workspace_slide_action_dialog(row_num, "speaker")
-                _rerun_workspace("Edit")
             if st.button("Link: More", key=f"workspace_row_slides_cta_more_{row_num}", width="stretch"):
                 _save_slide_three_cta_choice(row_num, slide_three_cta_key, "more")
                 _rerun_workspace("Edit")
@@ -2564,6 +2565,9 @@ def _copy_tabs(
             if st.button("Link: Custom Link", key=f"workspace_row_slides_cta_custom_{row_num}", width="stretch"):
                 _save_slide_three_cta_choice(row_num, slide_three_cta_key, "custom link")
                 _open_workspace_slide_action_dialog(row_num, "custom_link")
+                _rerun_workspace("Edit")
+            if st.button("Update name", key=f"workspace_row_slides_edit_speaker_{row_num}", width="stretch"):
+                _open_workspace_slide_action_dialog(row_num, "speaker")
                 _rerun_workspace("Edit")
             if st.button("Hide link", key=f"workspace_row_slides_cta_hidden_{row_num}", width="stretch"):
                 _save_slide_three_cta_choice(row_num, slide_three_cta_key, "hidden")
