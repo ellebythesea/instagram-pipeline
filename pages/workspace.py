@@ -2477,7 +2477,13 @@ def _copy_tabs(
     elif selected_content_tab == "Slides":
         prompt_key = f"workspace_row_slides_prompt_{row_num}"
         if not st.session_state.get(prompt_key):
-            st.session_state[prompt_key] = _build_single_row_chatgpt_prompt(prompt_row or {})
+            base_row = prompt_row or {}
+            effective_row = {
+                **base_row,
+                "Speaker Name": st.session_state.get(_workspace_speaker_key(base_row), base_row.get("Speaker Name", "")),
+                "Caption Context": st.session_state.get(_workspace_key(base_row, "context"), base_row.get("Caption Context", "")),
+            }
+            st.session_state[prompt_key] = _build_single_row_chatgpt_prompt(effective_row)
         slide_one_font_adjust_key = f"workspace_slide_preview_font_adjust_{row_num}"
         slide_one_background_adjust_key = f"workspace_slide_preview_background_adjust_{row_num}"
         slide_one_fit_toggle_key = f"workspace_slide_preview_fit_mode_{row_num}"
@@ -2548,8 +2554,13 @@ def _copy_tabs(
             )
         with st.popover("Slide actions", use_container_width=True):
             if st.button("Generate prompt", key=f"workspace_row_slides_build_{row_num}", width="stretch"):
-                if not st.session_state.get(prompt_key):
-                    st.session_state[prompt_key] = _build_single_row_chatgpt_prompt(prompt_row or {})
+                base_row = prompt_row or {}
+                effective_row = {
+                    **base_row,
+                    "Speaker Name": st.session_state.get(_workspace_speaker_key(base_row), base_row.get("Speaker Name", "")),
+                    "Caption Context": st.session_state.get(_workspace_key(base_row, "context"), base_row.get("Caption Context", "")),
+                }
+                st.session_state[prompt_key] = _build_single_row_chatgpt_prompt(effective_row)
                 _open_workspace_slide_action_dialog(row_num, "prompt")
                 _rerun_workspace("Edit")
             if st.button("Edit text 1", key=f"workspace_row_slides_edit_text1_{row_num}", width="stretch"):
@@ -4041,10 +4052,10 @@ if active_section_tab == "Home":
                         st.markdown(f"#### Row {row_num}")
 
                     st.text_input(
-                        "Add context",
+                        "Speaker name",
                         value=speaker_name,
                         key=speaker_key,
-                        placeholder="Add context (e.g. speaker name)",
+                        placeholder="Speaker name",
                         label_visibility="collapsed",
                     )
                     if url:
@@ -4056,6 +4067,12 @@ if active_section_tab == "Home":
                         menu_nonce = st.session_state.get(menu_nonce_key, 0)
                         menu_label_with_nonce = f"Post actions{chr(0x200B) * menu_nonce}"
                         with st.popover(menu_label_with_nonce, use_container_width=True):
+                            st.text_input(
+                                "Add context",
+                                key=context_key,
+                                placeholder="Add context",
+                                label_visibility="collapsed",
+                            )
                             st.link_button(
                                 "Open in Instagram" if is_instagram else "Open source link",
                                 url,
