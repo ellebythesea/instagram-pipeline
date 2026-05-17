@@ -1842,12 +1842,14 @@ def _render_workspace_slide_action_dialog(row: dict) -> None:
     if not action:
         return
 
+    prompt_key = f"workspace_row_slides_prompt_{row_num}"
     raw_top_comment = st.session_state.get(_workspace_key(row, "top"), row.get("Top Comment", "")).strip()
     clean_top_comment, pinned_top_comment = _decode_top_comment(raw_top_comment)
     current_speaker_for_dialog = _cell_text(
         st.session_state.get(_workspace_speaker_key(row), row.get("Speaker Name", ""))
     ).strip()
     current_values = {
+        "prompt": st.session_state.get(prompt_key, "") or _build_single_row_chatgpt_prompt(row),
         "text1": _cell_text(row.get("text1")).strip(),
         "text2": _cell_text(row.get("text2")).strip(),
         "text3": _cell_text(row.get("text3")).strip(),
@@ -1856,6 +1858,7 @@ def _render_workspace_slide_action_dialog(row: dict) -> None:
         "speaker": current_speaker_for_dialog,
     }
     dialog_labels = {
+        "prompt": "Generate prompt",
         "text1": "Edit text 1",
         "text2": "Edit text 2",
         "text3": "Edit text 3",
@@ -1893,7 +1896,10 @@ def _render_workspace_slide_action_dialog(row: dict) -> None:
     if st.button("Save", key=f"workspace_slide_dialog_save_{context_key}", type="primary", width="stretch"):
         edited_value = st.session_state.get("workspace_slide_dialog_value", "").strip()
         try:
-            if action in {"text1", "text2", "text3"}:
+            if action == "prompt":
+                st.session_state[prompt_key] = edited_value
+                st.session_state["workspace_success"] = f"Row {row_num}: slide prompt saved."
+            elif action in {"text1", "text2", "text3"}:
                 if update_carousel_fields is None:
                     raise RuntimeError("Carousel field updates are not supported in this build.")
                 name = _cell_text(row.get("name")).strip()
@@ -2541,6 +2547,11 @@ def _copy_tabs(
                 current_slide_three_font_adjust,
             )
         with st.popover("Slide actions", use_container_width=True):
+            if st.button("Generate prompt", key=f"workspace_row_slides_build_{row_num}", width="stretch"):
+                if not st.session_state.get(prompt_key):
+                    st.session_state[prompt_key] = _build_single_row_chatgpt_prompt(prompt_row or {})
+                _open_workspace_slide_action_dialog(row_num, "prompt")
+                _rerun_workspace("Edit")
             if st.button("Edit text 1", key=f"workspace_row_slides_edit_text1_{row_num}", width="stretch"):
                 _open_workspace_slide_action_dialog(row_num, "text1")
                 _rerun_workspace("Edit")
