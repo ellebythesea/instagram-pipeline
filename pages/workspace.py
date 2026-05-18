@@ -3207,9 +3207,10 @@ def _copy_tabs(
         )
         current_slide_two_font_adjust = int(st.session_state.get(slide_two_font_adjust_key, 0) or 0)
         current_slide_three_font_adjust = int(st.session_state.get(slide_three_font_adjust_key, 0) or 0)
+        default_slide_three_cta_option = "article" if _is_candidate_article_row(prompt_row or {}) else "hidden"
         default_slide_three_cta = (
             _cell_text((prompt_row or {}).get("Slide CTA")).strip().lower()
-            or "hidden"
+            or default_slide_three_cta_option
         )
         current_slide_three_cta = _cell_text(
             st.session_state.get(slide_three_cta_key, default_slide_three_cta)
