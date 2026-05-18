@@ -213,6 +213,7 @@ SUBSTACK_CANDIDATE_ARTICLE_PROMPT_TEMPLATE = textwrap.dedent(
     * text2 and text3 = under 900 chars each
     * generated_caption = Instagram caption body under 900 chars before the standard footer/hashtags are appended in-app
     * No em dashes
+    * No paragraph breaks in text1, text2, or text3. Keep each slide text field to one paragraph with no newline characters or escaped newline sequences like \\n or \\n\\n
     * No speculation
     * Avoid repetitive phrasing across fields
     * Never include hashtags in slide text
@@ -237,7 +238,7 @@ SUBSTACK_CANDIDATE_ARTICLE_PROMPT_TEMPLATE = textwrap.dedent(
     * These slides are promoting a full written article, not replacing it. They should feel like a sharp Instagram teaser for a deeper Substack piece.
     * text1 = stop-scrolling opener built from the most dramatic angle in the article. Make it explicit that this post is based on a breakdown article we created about the race. Pull the most surprising number, most loaded conflict, or highest-stakes framing from the piece. Identify the main candidates by name when possible.
     * text2 = "here's what the full article gets into." Summarize the central conflict, money, stakes, and defining contrast from the written piece. Make it clear this is drawn from a larger article.
-    * text3 = election date and latest polling. Include the exact election date, polling numbers with source if mentioned in the article, and any prediction market odds. End with the line: Comment LINK and I'll DM you the full article.
+    * text3 = election date and latest polling. Include the exact election date, polling numbers with source if mentioned in the article, and any prediction market odds. End with: Comment LINK and I'll DM you the full article.
     * generated_caption = a concise, informative Instagram caption summarizing the article's key findings. It should mention that we created a breakdown article for this election, note that the article will be updated as comments come in, and briefly mention any major controversy or talking point if it is central to the race. Keep it neutral and informative rather than persuasive.
 
     Article to base the carousel on:
@@ -253,7 +254,7 @@ SUBSTACK_CANDIDATE_ARTICLE_PROMPT_TEMPLATE = textwrap.dedent(
         "name": "voteinorout",
         "text1": "[clickbait opener under 350 chars]",
         "text2": "[summary of article key points under 900 chars]",
-        "text3": "[dates and polls under 900 chars]\\n\\nComment LINK and I'll DM you the full article.",
+        "text3": "[dates and polls under 900 chars]. Comment LINK and I'll DM you the full article.",
         "generated_caption": "[informative caption body under 900 chars]"
       }
     ]
@@ -750,6 +751,18 @@ def _open_workspace_slides_dialog() -> None:
 
 def _close_workspace_slides_dialog() -> None:
     st.session_state.pop("workspace_slides_dialog", None)
+
+
+def _open_workspace_post_slides_dialog(row_number: int) -> None:
+    if st.session_state.get("workspace_post_slides_dialog_row") != row_number:
+        st.session_state.pop("workspace_post_slides_results", None)
+    st.session_state["workspace_post_slides_dialog_row"] = row_number
+
+
+def _close_workspace_post_slides_dialog(clear_inputs: bool = False) -> None:
+    st.session_state.pop("workspace_post_slides_dialog_row", None)
+    if clear_inputs:
+        st.session_state.pop("workspace_post_slides_results", None)
 
 
 def _workspace_home_link_label(mode: str) -> str:
@@ -2542,6 +2555,45 @@ def _render_workspace_slides_dialog(workspace_rows: list[dict], workspace_rows_e
         _rerun_workspace("Home")
 
 
+@st.dialog("Slides for this post", width="large", on_dismiss=_close_workspace_post_slides_dialog)
+def _render_workspace_post_slides_dialog(row: dict) -> None:
+    row_num = row["row_number"]
+    st.caption(f"Row {row_num}. Pasted results will be applied to this post.")
+
+    pasted_results = st.text_area(
+        "Paste slide results",
+        key="workspace_post_slides_results",
+        height=100,
+        placeholder='[{"row_number":2,"name":"...","text1":"...","text2":"...","text3":"..."}]',
+    )
+    if st.button("Apply to this post", key=f"workspace_post_slides_apply_{row_num}", type="primary", width="stretch"):
+        try:
+            single_row_json = _single_row_slide_result_json(pasted_results, row_num)
+            updated_count, issues = _apply_chatgpt_handoff_results(GOOGLE_SHEET_ID, single_row_json)
+        except Exception as e:
+            st.error(f"Could not apply slide result: {describe_error(e)}")
+        else:
+            if updated_count:
+                message = f"Row {row_num}: slide result applied."
+                if issues:
+                    message += f" {' | '.join(issues[:3])}"
+                st.session_state["workspace_success"] = message
+            else:
+                st.session_state["workspace_error"] = (
+                    f"Row {row_num}: no valid slide result was found."
+                    + (f" {' | '.join(issues[:3])}" if issues else "")
+                )
+            _close_workspace_post_slides_dialog(clear_inputs=True)
+            _rerun_workspace("Edit")
+
+    st.caption("Slide prompt")
+    st.code(_build_chatgpt_handoff_prompt([row]), language=None)
+
+    if st.button("Close", key=f"workspace_post_slides_close_{row_num}", width="stretch"):
+        _close_workspace_post_slides_dialog(clear_inputs=True)
+        _rerun_workspace("Edit")
+
+
 @st.dialog("Slide action", on_dismiss=_dismiss_workspace_slide_action_dialog)
 def _render_workspace_slide_action_dialog(row: dict) -> None:
     dialog_state = st.session_state.get("workspace_slide_action_dialog") or {}
@@ -2611,9 +2663,9 @@ def _render_workspace_slide_action_dialog(row: dict) -> None:
                 if update_carousel_fields is None:
                     raise RuntimeError("Carousel field updates are not supported in this build.")
                 name = _cell_text(row.get("name")).strip()
-                text1 = edited_value if action == "text1" else _cell_text(row.get("text1")).strip()
-                text2 = edited_value if action == "text2" else _cell_text(row.get("text2")).strip()
-                text3 = edited_value if action == "text3" else _cell_text(row.get("text3")).strip()
+                text1 = _single_paragraph_slide_text(edited_value if action == "text1" else row.get("text1"))
+                text2 = _single_paragraph_slide_text(edited_value if action == "text2" else row.get("text2"))
+                text3 = _single_paragraph_slide_text(edited_value if action == "text3" else row.get("text3"))
                 update_carousel_fields(GOOGLE_SHEET_ID, row_num, name, text1, text2, text3)
                 st.session_state["workspace_success"] = f"Row {row_num}: {dialog_labels[action].lower()} saved."
             elif action == "caption":
@@ -3843,9 +3895,9 @@ def _write_specific_carousel_fields(row_number: int, carousel: dict[str, str]) -
         GOOGLE_SHEET_ID,
         row_number,
         carousel.get("name", ""),
-        carousel.get("text1", ""),
-        carousel.get("text2", ""),
-        carousel.get("text3", ""),
+        _single_paragraph_slide_text(carousel.get("text1")),
+        _single_paragraph_slide_text(carousel.get("text2")),
+        _single_paragraph_slide_text(carousel.get("text3")),
     )
 
 
@@ -4159,6 +4211,7 @@ def _build_chatgpt_handoff_prompt(rows: list[dict]) -> str:
         "* text1 = strongest opening carousel slide under 350 chars\n"
         "* text2 and text3 = under 900 chars each\n"
         "* No em dashes\n"
+        "* No paragraph breaks in text1, text2, or text3. Keep each slide text field to one paragraph with no newline characters or escaped newline sequences like \\n or \\n\\n\n"
         "* No speculation\n"
         "* Avoid repetitive phrasing across fields\n"
         "* Never include required hashtags in slide text\n"
@@ -4407,6 +4460,33 @@ def _extract_json_payload(raw_text: str):
                     ) from exc
 
 
+def _single_row_slide_result_json(raw_text: str, row_number: int) -> str:
+    payload = _extract_json_payload(raw_text)
+    items = payload if isinstance(payload, list) else [payload]
+    dict_items = [item for item in items if isinstance(item, dict)]
+    if not dict_items:
+        raise ValueError("Paste one JSON object or an array containing one slide result.")
+
+    selected = None
+    for item in dict_items:
+        try:
+            if int(item.get("row_number")) == int(row_number):
+                selected = item
+                break
+        except Exception:
+            continue
+    if selected is None:
+        selected = dict_items[0]
+
+    selected = dict(selected)
+    selected["row_number"] = row_number
+    return json.dumps([selected])
+
+
+def _single_paragraph_slide_text(value: str) -> str:
+    return re.sub(r"\s+", " ", _cell_text(value).strip()).strip()
+
+
 def _apply_chatgpt_handoff_results(sheet_id: str, raw_text: str) -> tuple[int, list[str]]:
     _QUOTES = '"“”\'‘’ '
     payload = _extract_json_payload(raw_text)
@@ -4438,9 +4518,9 @@ def _apply_chatgpt_handoff_results(sheet_id: str, raw_text: str) -> tuple[int, l
 
         raw_name = _cell_text(item.get("name")).strip()
         name = ("@" + raw_name if raw_name and not raw_name.startswith("@") and " " not in raw_name else raw_name)
-        text1 = _cell_text(item.get("text1")).strip()
-        text2 = _cell_text(item.get("text2")).strip()
-        text3 = _cell_text(item.get("text3")).strip()
+        text1 = _single_paragraph_slide_text(item.get("text1"))
+        text2 = _single_paragraph_slide_text(item.get("text2"))
+        text3 = _single_paragraph_slide_text(item.get("text3"))
 
         if not (name or text1 or text2 or text3):
             issues.append(
@@ -4673,6 +4753,14 @@ if active_section_tab == "Home":
         else:
             _render_workspace_thumbnail_dialog(thumbnail_dialog_row)
 
+    post_slides_dialog_row_number = st.session_state.get("workspace_post_slides_dialog_row")
+    if post_slides_dialog_row_number is not None:
+        post_slides_dialog_row = next((row for row in editor_rows if row.get("row_number") == post_slides_dialog_row_number), None)
+        if post_slides_dialog_row is None:
+            _close_workspace_post_slides_dialog(clear_inputs=True)
+        else:
+            _render_workspace_post_slides_dialog(post_slides_dialog_row)
+
     slide_dialog_state = st.session_state.get("workspace_slide_action_dialog") or {}
     slide_dialog_row_number = slide_dialog_state.get("row_number")
     if slide_dialog_row_number is not None:
@@ -4847,6 +4935,15 @@ if active_section_tab == "Home":
                             ):
                                 _close_workspace_menu(row)
                                 _queue_workspace_action(row_num, "generate_caption")
+                                _rerun_workspace("Edit")
+                            if st.button(
+                                "Slides for this post",
+                                key=f"workspace_menu_post_slides_{row_num}",
+                                width="stretch",
+                                help="Generate a one-post slide prompt and apply pasted slide JSON to this row.",
+                            ):
+                                _close_workspace_menu(row)
+                                _open_workspace_post_slides_dialog(row_num)
                                 _rerun_workspace("Edit")
                             if is_article and _is_substack_url(url) and st.button(
                                 "Process as Candidate Article",

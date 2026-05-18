@@ -1,17 +1,7 @@
-"""Streamlit entrypoint with explicit sidebar page order."""
+"""Streamlit entrypoint for the workspace UI."""
 
-import streamlit as st
+from pathlib import Path
+import runpy
 
 
-navigation = st.navigation(
-    [
-        st.Page("pages/workspace.py", title="Workspace", icon="🏠", default=True),
-        st.Page("pages/instagram_pipeline.py", title="Instagram pipeline", icon="📋"),
-        st.Page("pages/post_editor.py", title="Post editor", icon="✏️"),
-        st.Page("pages/headlines.py", title="Headline generator", icon="🗞️"),
-        st.Page("pages/reel_downloader.py", title="Media downloader", icon="🎞️"),
-        st.Page("caption_this_page.py", title="Caption this", icon="📸"),
-    ]
-)
-
-navigation.run()
+runpy.run_path(Path(__file__).parent / "pages" / "workspace.py", run_name="__main__")

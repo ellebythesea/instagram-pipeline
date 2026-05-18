@@ -350,6 +350,7 @@ Run the app locally in Streamlit:
 
 ```bash
 streamlit run app.py
+.venv/bin/streamlit run app.py
 ```
 
 Run local reel transcription for all blank-transcript reel rows and archive orphaned local media into `safe_for_deletion/`:

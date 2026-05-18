@@ -40,6 +40,10 @@ def _get_client() -> openai.OpenAI:
     return _client
 
 
+def _single_paragraph_slide_text(value: str, limit: int) -> str:
+    return re.sub(r"\s+", " ", (value or "").strip())[:limit].strip()
+
+
 def _extract_hashtags(text: str) -> list[str]:
     return re.findall(r"#[A-Za-z0-9_]+", text or "")
 
@@ -334,6 +338,7 @@ def _carousel_slide_prompt_instructions(include_row_numbers: bool) -> str:
         "* text1 = strongest opening carousel slide under 350 chars\n"
         "* text2 and text3 = under 900 chars each\n"
         "* No em dashes\n"
+        "* No paragraph breaks in text1, text2, or text3. Keep each slide text field to one paragraph with no newline characters or escaped newline sequences like \\n or \\n\\n\n"
         "* No speculation\n"
         "* Avoid repetitive phrasing across fields\n"
         "* Never include required hashtags in slide text\n"
@@ -409,9 +414,9 @@ def generate_carousel_copy_with_model(row: dict, model: str = "gpt-4o") -> dict[
 
     return {
         "name": (payload.get("name") or display_name or "").strip(),
-        "text1": (payload.get("text1") or "").strip()[:350],
-        "text2": (payload.get("text2") or "").strip()[:900],
-        "text3": (payload.get("text3") or "").strip()[:900],
+        "text1": _single_paragraph_slide_text(payload.get("text1") or "", 350),
+        "text2": _single_paragraph_slide_text(payload.get("text2") or "", 900),
+        "text3": _single_paragraph_slide_text(payload.get("text3") or "", 900),
     }
 
 
@@ -480,8 +485,8 @@ def generate_batch_carousel_copy_with_model(rows: list[dict], model: str = "gpt-
             continue
         results[row_number] = {
             "name": (item.get("name") or display_names.get(row_number) or "").strip(),
-            "text1": (item.get("text1") or "").strip()[:350],
-            "text2": (item.get("text2") or "").strip()[:900],
-            "text3": (item.get("text3") or "").strip()[:900],
+            "text1": _single_paragraph_slide_text(item.get("text1") or "", 350),
+            "text2": _single_paragraph_slide_text(item.get("text2") or "", 900),
+            "text3": _single_paragraph_slide_text(item.get("text3") or "", 900),
         }
     return results
