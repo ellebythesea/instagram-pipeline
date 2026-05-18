@@ -35,9 +35,9 @@ Rows that have been processed for editing appear here with:
 - scheduling controls
 - row actions like transcribe, generate caption, skip, add CTA, or delete
 
-### Data tab
+### Candidates tab
 
-This shows the sheet-backed table view and lets you batch-process pending rows into the editor.
+This lets you enter a candidate name, resolve the active race and likely opponent from web search, and generate a copy-ready Vote In Or Out prompt for Substack.
 
 ## Google Sheet Columns
 
@@ -375,4 +375,3 @@ Watch the local `splits` folder and auto-split new videos as you drag them in:
 ```bash
 .venv/bin/python scripts/watch_split_folder.py
 ```
-

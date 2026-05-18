@@ -113,6 +113,7 @@ if not SECRET_MANAGER_PROJECT_ID and BOOTSTRAP_SERVICE_ACCOUNT_JSON:
 
 SECRET_MANAGER_SECRET_NAMES: dict[str, str | tuple[str, ...]] = {
     "OPENAI_API_KEY": str(_runtime_secret("SECRET_MANAGER_OPENAI_API_KEY_NAME", "openai-api-key") or "openai-api-key"),
+    "ANTHROPIC_API_KEY": str(_runtime_secret("SECRET_MANAGER_ANTHROPIC_API_KEY_NAME", "anthropic-api-key") or "anthropic-api-key"),
     "SERPER_API_KEY": str(_runtime_secret("SECRET_MANAGER_SERPER_API_KEY_NAME", "serper-id") or "serper-id"),
     "APP_PASSWORD": str(_runtime_secret("SECRET_MANAGER_APP_PASSWORD_NAME", "password") or "password"),
     "APIFY_API_TOKEN": str(_runtime_secret("SECRET_MANAGER_APIFY_API_TOKEN_NAME", "apify-api") or "apify-api"),
@@ -194,6 +195,7 @@ def _get_secret(key: str, default: str = "") -> str:
 
 
 OPENAI_API_KEY = _get_secret("OPENAI_API_KEY")
+ANTHROPIC_API_KEY = _get_secret("ANTHROPIC_API_KEY")
 SERPER_API_KEY = _get_secret("SERPER_API_KEY")
 APP_PASSWORD = _get_secret("APP_PASSWORD")
 

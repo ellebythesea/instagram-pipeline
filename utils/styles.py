@@ -184,6 +184,36 @@ div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) {
     min-height: 3.15rem;
     border-radius: 14px;
 }
+.workspace-candidate-article-card {
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: 24px;
+    padding: 1.25rem;
+    background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,252,0.92));
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.06);
+    margin: 1rem 0 1.25rem;
+}
+.workspace-candidate-output-card {
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 20px;
+    padding: 1rem;
+    background: rgba(248, 250, 252, 0.92);
+    margin-bottom: 0.9rem;
+}
+div[data-testid="stVerticalBlock"]:has(> div.workspace-candidate-article-anchor) {
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: 24px;
+    padding: 1.25rem;
+    background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,252,0.92));
+    margin: 1rem 0 1.25rem;
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.06);
+}
+div[data-testid="stVerticalBlock"]:has(> div.workspace-candidate-output-anchor) {
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 20px;
+    padding: 1rem;
+    background: rgba(248, 250, 252, 0.92);
+    margin: 0.65rem 0;
+}
 .workspace-status-line {
     color: #64748b;
     font-size: 0.92rem;
