@@ -112,50 +112,58 @@ PINNED_TOP_COMMENT_PREFIX = "[[TOP]] "
 _client: openai.OpenAI | None = None
 VOTER_GUIDE_PROMPT_TEMPLATE = textwrap.dedent(
     """\
-    You are generating a "living voter guide" article for a Substack series called Vote In Or Out. Each article compares the candidates running against each other in a specific election. Your job is to research the race using web search and produce a complete article ready to publish.
+    You are generating a "living voter guide" article for a Substack series called Vote In Or Out. Each article covers one race or, when appropriate, a small set of clearly related races. Your job is to research the elections using web search and produce a complete article ready to publish.
 
     INPUT:
     - Candidates: [CANDIDATE_LIST]
+    - Resolved races:
+    [RACE_SCOPE]
     - Donation URL: [DONATION_LINK]
 
-    STEP 1: RESOLVE THE RACE
+    STEP 1: RESOLVE THE ELECTIONS
 
     Before writing anything, use web search to figure out:
     1. What office these candidates are currently running for, in what jurisdiction, in what cycle.
-    2. Whether these candidates are actually running against each other in the same active race.
-    3. What is the exact election date?
+    2. Which candidates belong in the same active race, and whether the pasted list spans more than one election.
+    3. What are the exact election dates for each race you cover?
     4. What is today's date (for the "last updated" stamp)?
 
-    If you cannot confidently resolve that these candidates are running against each other in the same race, stop and report back: "I could not resolve a clear shared race for [candidate list]. Please verify the names or specify the exact contest."
+    If you cannot confidently resolve at least one clear race from the candidate list, stop and report back: "I could not resolve a clear set of races for [candidate list]. Please verify the names or specify the exact contests."
 
     Once resolved, internally fill in:
     - Candidate list: [CANDIDATE_LIST]
-    - Race: [RACE_NAME]
-    - Election date: [ELECTION_DATE]
+    - Race scope: [RACE_SCOPE]
 
     STEP 2: WRITE THE ARTICLE
 
-    Research both candidates using web search. Pull from a mix of mainstream news, local journalism, neutral reference sources (Ballotpedia, Wikipedia), and prediction markets if available. Cite specific sources for every factual claim, especially numbers, quotes, and polling data.
+    Research the candidates and races using web search. Pull from a mix of mainstream news, local journalism, neutral reference sources (Ballotpedia, Wikipedia), and prediction markets if available. Cite specific sources for every factual claim, especially numbers, quotes, and polling data.
 
-    Identify the three to five issues that most define the difference between these candidates. Do not pad with generic policy categories. If the race is really about one or two big fault lines (loyalty to a party leader, a foreign policy split, a generational divide), let that show in which issues you choose. If there is a real controversy, scandal, viral moment, or unusually prominent talking point shaping the race, include it with clear sourcing and explain why it matters without sensationalizing it.
+    If the candidates fall into one race, compare them directly. If they fall into multiple races, organize the article by race and discuss all of the races you resolved from the candidate list. Be smart about grouping: do not force unrelated candidates into one comparison table, and do not ignore a clearly separate election if it is part of the pasted list.
+
+    Identify the three to five issues that most define the difference between the candidates or races you are covering. Do not pad with generic policy categories. If a race is really about one or two big fault lines (loyalty to a party leader, a foreign policy split, a generational divide), let that show in which issues you choose. If there is a real controversy, scandal, viral moment, or unusually prominent talking point shaping a race, include it with clear sourcing and explain why it matters without sensationalizing it.
 
     Write the article in the voice of The Atlantic: confident, accessible, narrative-driven, not breathless or partisan. Lead with what makes this race interesting beyond the names on the ballot. Treat the reader as a smart adult who has not been following closely. The article should feel informative first, not persuasive, and should help the reader understand the candidates, the stakes, and the most-discussed flashpoints in the race.
 
     If a donation URL is provided, do not let it shape your analysis, tone, issue selection, or candidate framing.
 
-    If a usable donation URL is present, add a strong donation call to action near the top of the article. Make the case for why donations materially help that candidate compete and succeed in this race, and include the exact donation URL.
+    If a usable donation URL is present, add a strong donation call to action near the top of the article. Make the case for why donations materially help the relevant candidate or effort compete and succeed, and include the exact donation URL.
 
     Do not use em dashes anywhere in the article.
 
     Use this exact structure and section order:
 
-    - TITLE in this format: "[candidate last names joined with 'vs.'] | [Race Name] | [Election Date]"
+    - TITLE in this format:
+      * if one race: "[candidate last names joined with 'vs.'] | [Race Name] | [Election Date]"
+      * if multiple races: "[shared jurisdiction or topic] voter guide | [Election year]"
     - Date stamp: "Last updated: [today's date]"
-    - Opening hook: 2-3 short paragraphs framing why this race matters beyond the local context. End with a sentence pointing at the election date.
+    - Opening hook: 2-3 short paragraphs framing why this race or set of races matters beyond the local context. End with a sentence pointing at the relevant election date or dates.
     - "Who Are These Candidates?" section: one paragraph per candidate covering background, experience, and the brand they have built. Include education, career, prior runs for office, and the core argument each candidate is making about themselves.
-    - "The [Three / Four / Five] Issues That Define This Race" section: pick the right number based on the race. For each issue, give it a bold subheading and 1-3 paragraphs explaining where each candidate stands, with direct quotes where possible.
-    - "The Money: Who's Funding What" section: campaign finance breakdown, major super PAC spending, notable donors, and any unusual funding dynamics (foreign lobbying, dark money, deepfake ads, etc.).
-    - "Where the Race Stands Right Now" section: most recent polling, prediction market odds, and a sober assessment of momentum. Note margins of error and undecided voter percentages.
+    - "The [Three / Four / Five] Issues That Define This Race" section:
+      * if one race: pick the right number based on the race
+      * if multiple races: either organize issues across the elections or use race-by-race subsections, whichever is clearer
+      * for each issue or race subsection, explain where the candidates stand, with direct quotes where possible
+    - "The Money: Who's Funding What" section: campaign finance breakdown, major super PAC spending, notable donors, and any unusual funding dynamics (foreign lobbying, dark money, deepfake ads, etc.). If multiple races are covered, separate the analysis clearly by race.
+    - "Where the Race Stands Right Now" section: most recent polling, prediction market odds, and a sober assessment of momentum. Note margins of error and undecided voter percentages. If multiple races are covered, give a concise update for each.
     - "What You Can Do Right Now" section: practical voter actions split into three subgroups:
       * "If you live in [the relevant district/state]" with polling place lookup URL, registration verification URL, ID requirements, and registration deadline status.
       * "If you're watching from elsewhere" with results tracking URL and context on the general election.
@@ -180,7 +188,7 @@ VOTER_GUIDE_PROMPT_TEMPLATE = textwrap.dedent(
 
     At the very top of your output, before the article itself, include a one-line "Resolved race" note so the human editor can verify you picked the right contest:
 
-    Resolved race: [candidate list], [Race Name], [Election Date]
+    Resolved races: [RACE_SCOPE]
 
     Then output the article, then the Tags block.
     """
@@ -337,7 +345,7 @@ def _resolve_candidate_comparison(candidate_names: list[str]) -> dict:
         raise ValueError("Enter two candidate names.")
 
     search_results: list[dict] = []
-    for candidate_name in cleaned_names[:2]:
+    for candidate_name in cleaned_names:
         candidate_results = _collect_candidate_research(candidate_name)
         if not candidate_results:
             raise RuntimeError(f"No search results found for {candidate_name}.")
@@ -363,12 +371,13 @@ def _resolve_candidate_comparison(candidate_names: list[str]) -> dict:
             {
                 "role": "user",
                 "content": (
-                    "Resolve the most immediate active election race shared by these candidates.\n\n"
+                    "Resolve the active election races represented by these candidates.\n\n"
                     f"Candidates: {', '.join(cleaned_names)}\n"
                     f"Today's date: {_today_eastern_label()}\n\n"
                     "Return a JSON object with these keys:\n"
                     "- could_not_resolve: boolean\n"
                     "- candidate_names: array of strings\n"
+                    "- race_groups: array of objects, each with keys candidate_names, office, jurisdiction, cycle, race_name, election_date, resolution_basis\n"
                     "- office: string\n"
                     "- jurisdiction: string\n"
                     "- cycle: string\n"
@@ -378,7 +387,9 @@ def _resolve_candidate_comparison(candidate_names: list[str]) -> dict:
                     "- ambiguity_note: string\n"
                     "- active_races: array of strings\n"
                     "- source_urls: array of strings\n\n"
-                    "If the candidates are not clearly running in the same race, set could_not_resolve to true.\n\n"
+                    "If the candidates span multiple races, group them into the correct races instead of forcing one shared race.\n"
+                    "If you can resolve at least one race clearly, set could_not_resolve to false.\n"
+                    "Only set could_not_resolve to true if you cannot confidently resolve any clear race from the list.\n\n"
                     "Search results:\n"
                     f"{sources_json}"
                 ),
@@ -388,6 +399,8 @@ def _resolve_candidate_comparison(candidate_names: list[str]) -> dict:
         temperature=0,
     )
     resolved = _extract_json_object(response.choices[0].message.content or "")
+    if not isinstance(resolved.get("race_groups"), list):
+        resolved["race_groups"] = []
     resolved["today_date"] = _today_eastern_label()
     resolved["search_results"] = search_results
     return resolved
@@ -452,16 +465,30 @@ def _build_candidate_prompt(candidate_result: dict, donation_link: str = "") -> 
         if _cell_text(name).strip()
     ]
     candidate_list = ", ".join(candidate_names)
-    race_name = _cell_text(candidate_result.get("race_name")).strip()
-    election_date = _cell_text(candidate_result.get("election_date")).strip()
+    race_groups = candidate_result.get("race_groups") or []
+    if race_groups:
+        race_scope_lines = []
+        for group in race_groups:
+            group_names = ", ".join(
+                _cell_text(name).strip()
+                for name in (group.get("candidate_names") or [])
+                if _cell_text(name).strip()
+            )
+            race_name = _cell_text(group.get("race_name")).strip()
+            election_date = _cell_text(group.get("election_date")).strip()
+            office = _cell_text(group.get("office")).strip()
+            label_parts = [part for part in [race_name, office, election_date] if part]
+            race_scope_lines.append(f"- {group_names}: {' | '.join(label_parts)}".strip())
+        race_scope = "\n".join(race_scope_lines)
+    else:
+        race_name = _cell_text(candidate_result.get("race_name")).strip()
+        election_date = _cell_text(candidate_result.get("election_date")).strip()
+        race_scope = f"- {candidate_list}: {' | '.join([part for part in [race_name, election_date] if part])}".strip()
 
     prompt = (
         VOTER_GUIDE_PROMPT_TEMPLATE
         .replace("[CANDIDATE_LIST]", candidate_list)
-        .replace("[RACE_NAME]", race_name)
-        .replace("[ELECTION_DATE]", election_date)
-        .replace("[Race Name]", race_name)
-        .replace("[Election Date]", election_date)
+        .replace("[RACE_SCOPE]", race_scope)
     )
     if cleaned_link:
         return prompt.replace("[DONATION_LINK]", cleaned_link)
@@ -5164,8 +5191,8 @@ if active_section_tab == "Candidates":
     if candidate_result:
         if candidate_result.get("could_not_resolve"):
             st.warning(
-                "I could not resolve a clear shared race for these candidates. "
-                "Verify the names or specify the exact contest."
+                "I could not resolve a clear set of races for these candidates. "
+                "Verify the names or specify the exact contests."
             )
             active_races = candidate_result.get("active_races") or []
             if active_races:
@@ -5173,18 +5200,33 @@ if active_section_tab == "Candidates":
             if candidate_result.get("ambiguity_note"):
                 st.caption(candidate_result["ambiguity_note"])
         else:
-            resolved_names = [
-                _cell_text(name).strip()
-                for name in (candidate_result.get("candidate_names") or [])
-                if _cell_text(name).strip()
-            ]
-            st.markdown(
-                (
-                    f"**Resolved race:** {', '.join(resolved_names) or ', '.join(parsed_candidate_names)}, "
-                    f"{candidate_result.get('race_name', '')}, "
-                    f"{candidate_result.get('election_date', '')}"
+            race_groups = candidate_result.get("race_groups") or []
+            if race_groups:
+                st.markdown("**Resolved races:**")
+                for group in race_groups:
+                    group_names = ", ".join(
+                        _cell_text(name).strip()
+                        for name in (group.get("candidate_names") or [])
+                        if _cell_text(name).strip()
+                    )
+                    race_label_parts = [
+                        _cell_text(group.get("race_name")).strip(),
+                        _cell_text(group.get("election_date")).strip(),
+                    ]
+                    st.markdown(f"- {group_names}: {', '.join(part for part in race_label_parts if part)}")
+            else:
+                resolved_names = [
+                    _cell_text(name).strip()
+                    for name in (candidate_result.get("candidate_names") or [])
+                    if _cell_text(name).strip()
+                ]
+                st.markdown(
+                    (
+                        f"**Resolved race:** {', '.join(resolved_names) or ', '.join(parsed_candidate_names)}, "
+                        f"{candidate_result.get('race_name', '')}, "
+                        f"{candidate_result.get('election_date', '')}"
+                    )
                 )
-            )
             prompt_text = _build_candidate_prompt(candidate_result, donation_link=donation_link)
             st.subheader("Substack prompt")
             st.code(prompt_text, language=None)
