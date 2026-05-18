@@ -289,7 +289,28 @@ def _extract_json_object(raw_text: str) -> dict:
     if cleaned.startswith("```"):
         cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
         cleaned = re.sub(r"\s*```$", "", cleaned)
-    return json.loads(cleaned)
+    cleaned = cleaned.strip()
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        pass
+    pythonish = re.sub(r"\btrue\b", "True", cleaned, flags=re.IGNORECASE)
+    pythonish = re.sub(r"\bfalse\b", "False", pythonish, flags=re.IGNORECASE)
+    pythonish = re.sub(r"\bnull\b", "None", pythonish, flags=re.IGNORECASE)
+    try:
+        result = ast.literal_eval(pythonish)
+        if isinstance(result, dict):
+            return result
+    except Exception:
+        pass
+    # Last resort: extract the first {...} block and retry
+    match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group())
+        except Exception:
+            pass
+    return json.loads(cleaned)  # re-raise original error
 
 
 def _serper_search(query: str, *, num: int = 8, news: bool = False) -> list[dict]:
@@ -2230,63 +2251,21 @@ def _current_row_caption_inputs(row: dict) -> dict:
     }
 
 
-def _save_all_workspace_speaker_names(rows: list[dict]) -> int:
-    intended_updates: dict[int, str] = {}
-    for row in rows:
-        current_inputs = _current_row_caption_inputs(row)
-        current_speaker = current_inputs["Speaker Name"]
-        saved_speaker = _cell_text(row.get("Speaker Name")).strip()
-        if current_speaker == saved_speaker:
-            continue
-        intended_updates[row["row_number"]] = current_speaker
-
-    if intended_updates:
+def _handle_speaker_name_change(row: dict) -> None:
+    speaker_key = _workspace_speaker_key(row)
+    new_name = _cell_text(st.session_state.get(speaker_key, "")).strip()
+    saved_name = _cell_text(row.get("Speaker Name")).strip()
+    if new_name == saved_name:
+        return
+    try:
         if update_speaker_names_batch is None:
             raise RuntimeError("Batch speaker-name updates are not supported in this build.")
-        update_speaker_names_batch(GOOGLE_SHEET_ID, intended_updates)
-        for row in rows:
-            row_number = row["row_number"]
-            if row_number in intended_updates:
-                st.session_state[_workspace_speaker_key(row)] = intended_updates[row_number]
-
-    if intended_updates:
-        refreshed_rows = {
-            refreshed["row_number"]: _cell_text(refreshed.get("Speaker Name")).strip()
-            for refreshed in get_all_rows(GOOGLE_SHEET_ID)
-            if refreshed.get("row_number") in intended_updates
-        }
-        mismatched = [
-            f"row {row_number}"
-            for row_number, expected in intended_updates.items()
-            if refreshed_rows.get(row_number, "") != expected
-        ]
-        if mismatched:
-            raise RuntimeError(
-                "Speaker name update did not persist for " + ", ".join(mismatched[:5]) + "."
-            )
-    return len(intended_updates)
-
-
-def _dirty_workspace_speaker_rows(rows: list[dict]) -> list[dict]:
-    return [
-        row for row in rows
-        if _cell_text(st.session_state.get(_workspace_speaker_key(row), row.get("Speaker Name", ""))).strip()
-        != _cell_text(row.get("Speaker Name")).strip()
-    ]
-
-
-def _handle_update_all_workspace_speaker_names(rows: list[dict], rerun_tab: str = "Edit") -> None:
-    try:
-        updated_count = _save_all_workspace_speaker_names(rows)
+        update_speaker_names_batch(GOOGLE_SHEET_ID, {row["row_number"]: new_name})
     except Exception as e:
-        st.session_state["workspace_error"] = f"Could not save names: {describe_error(e)}"
+        st.session_state["workspace_error"] = f"Could not save name: {describe_error(e)}"
     else:
-        st.session_state["workspace_success"] = (
-            f"Updated {updated_count} speaker name(s)."
-            if updated_count
-            else "No name changes to save."
-        )
-    _rerun_workspace(rerun_tab)
+        st.session_state["workspace_success"] = "Saved speaker name."
+    _rerun_workspace("Edit")
 
 
 def _fundraising_preset_map() -> dict[str, str]:
@@ -4932,6 +4911,8 @@ if active_section_tab == "Home":
                         key=speaker_key,
                         placeholder="Speaker name",
                         label_visibility="collapsed",
+                        on_change=_handle_speaker_name_change,
+                        args=(row,),
                     )
                     if url:
                         media_links = [
@@ -5117,16 +5098,6 @@ if active_section_tab == "Home":
                 unsafe_allow_html=True,
             )
 
-        dirty_name_rows = _dirty_workspace_speaker_rows(editor_rows)
-        st.caption(f"{len(dirty_name_rows)} unsaved name(s).")
-        if st.button(
-            "Update all names",
-            key="workspace_update_all_names_bottom",
-            type="primary",
-            width="stretch",
-            help="Save all edited speaker names to the sheet.",
-        ):
-            _handle_update_all_workspace_speaker_names(editor_rows)
 
 if active_section_tab == "Candidates":
     st.caption("Generate a Substack article prompt for a race by entering the candidates you want compared.")
