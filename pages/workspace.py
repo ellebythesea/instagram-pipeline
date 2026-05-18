@@ -393,6 +393,57 @@ def _resolve_candidate_comparison(candidate_names: list[str]) -> dict:
     return resolved
 
 
+def _extract_candidate_names_from_input(raw_input: str) -> list[str]:
+    cleaned_input = _cell_text(raw_input).strip()
+    if not cleaned_input:
+        return []
+
+    fallback_names = [
+        part.strip(" -•\t,;")
+        for part in re.split(r"[\n,;]+", cleaned_input)
+        if part.strip(" -•\t,;")
+    ]
+    if len(fallback_names) >= 2:
+        fallback_names = list(dict.fromkeys(fallback_names))
+
+    response = _get_client().chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "Extract candidate names from messy pasted election text. "
+                    "Return JSON only in the form {\"candidate_names\": [\"Name 1\", \"Name 2\"]}. "
+                    "Keep only person names. Preserve order of appearance. "
+                    "Do not include party labels, offices, URLs, bullets, or commentary."
+                ),
+            },
+            {
+                "role": "user",
+                "content": cleaned_input,
+            },
+        ],
+        max_completion_tokens=300,
+        temperature=0,
+    )
+    try:
+        payload = _extract_json_object(response.choices[0].message.content or "")
+        candidate_names = [
+            _cell_text(name).strip()
+            for name in (payload.get("candidate_names") or [])
+            if _cell_text(name).strip()
+        ]
+        candidate_names = list(dict.fromkeys(candidate_names))
+        if len(candidate_names) >= 2:
+            return candidate_names
+    except Exception:
+        pass
+
+    if len(fallback_names) >= 2:
+        return fallback_names
+    raise ValueError("Could not identify at least two candidate names from that input.")
+
+
 def _build_candidate_prompt(candidate_result: dict, donation_link: str = "") -> str:
     cleaned_link = _extract_first_url(donation_link)
     candidate_names = [
@@ -2220,16 +2271,6 @@ def _fundraising_preset_map() -> dict[str, str]:
         if label and top_comment and label not in mapping:
             mapping[label] = top_comment
     return mapping
-
-
-def _candidate_input_keys() -> list[str]:
-    count = max(2, int(st.session_state.get("workspace_candidate_count", 2) or 2))
-    return [f"workspace_candidate_name_{index}" for index in range(1, count + 1)]
-
-
-def _add_candidate_input() -> None:
-    current = max(2, int(st.session_state.get("workspace_candidate_count", 2) or 2))
-    st.session_state["workspace_candidate_count"] = current + 1
 
 
 @st.dialog("Workspace action", on_dismiss=_dismiss_workspace_home_action_dialog)
@@ -5064,17 +5105,12 @@ if active_section_tab == "Candidates":
     st.caption("Generate a Substack article prompt for a race by entering the candidates you want compared.")
 
     fundraising_presets = _fundraising_preset_map()
-    candidate_keys = _candidate_input_keys()
-    candidate_inputs: list[str] = []
-    for index, candidate_key in enumerate(candidate_keys, start=1):
-        candidate_inputs.append(
-            st.text_input(
-                f"Candidate {index}",
-                key=candidate_key,
-                placeholder="e.g. Gavin Newsom" if index == 1 else "e.g. Kamala Harris",
-            ).strip()
-        )
-    st.button("Add another candidate", key="workspace_candidate_add", on_click=_add_candidate_input)
+    candidate_input_blob = st.text_area(
+        "Candidates",
+        key="workspace_candidate_names_blob",
+        placeholder="Paste candidate names, one per line or comma-separated",
+        height=140,
+    ).strip()
 
     donation_options = ["No link"] + [option for option in fundraising_presets.keys() if option != "Custom"]
     donation_source = st.selectbox(
@@ -5090,17 +5126,20 @@ if active_section_tab == "Candidates":
             "Process prompt",
             type="primary",
             width="stretch",
-            disabled=len([name for name in candidate_inputs if name]) < 2,
+            disabled=not candidate_input_blob,
             key="workspace_candidate_research",
         ):
             try:
                 with st.spinner("Resolving shared race..."):
+                    candidate_names = _extract_candidate_names_from_input(candidate_input_blob)
+                    st.session_state["workspace_candidate_names_parsed"] = candidate_names
                     st.session_state["workspace_candidate_result"] = _resolve_candidate_comparison(
-                        candidate_inputs
+                        candidate_names
                     )
             except Exception as e:
                 st.session_state["workspace_candidate_error"] = describe_error(e)
                 st.session_state.pop("workspace_candidate_result", None)
+                st.session_state.pop("workspace_candidate_names_parsed", None)
             else:
                 st.session_state.pop("workspace_candidate_error", None)
                 _rerun_workspace("Candidates")
@@ -5108,15 +5147,18 @@ if active_section_tab == "Candidates":
         if st.button("Clear", width="stretch", key="workspace_candidate_clear"):
             st.session_state.pop("workspace_candidate_result", None)
             st.session_state.pop("workspace_candidate_error", None)
-            for candidate_key in _candidate_input_keys():
-                st.session_state.pop(candidate_key, None)
-            st.session_state["workspace_candidate_count"] = 2
+            st.session_state.pop("workspace_candidate_names_blob", None)
+            st.session_state.pop("workspace_candidate_names_parsed", None)
             st.session_state.pop("workspace_candidate_donation_source", None)
             _rerun_workspace("Candidates")
 
     candidate_error = st.session_state.get("workspace_candidate_error", "")
     if candidate_error:
         st.error(candidate_error)
+
+    parsed_candidate_names = st.session_state.get("workspace_candidate_names_parsed") or []
+    if parsed_candidate_names:
+        st.caption(f"Parsed candidates: {', '.join(parsed_candidate_names)}")
 
     candidate_result = st.session_state.get("workspace_candidate_result")
     if candidate_result:
@@ -5138,7 +5180,7 @@ if active_section_tab == "Candidates":
             ]
             st.markdown(
                 (
-                    f"**Resolved race:** {', '.join(resolved_names) or ', '.join([name for name in candidate_inputs if name])}, "
+                    f"**Resolved race:** {', '.join(resolved_names) or ', '.join(parsed_candidate_names)}, "
                     f"{candidate_result.get('race_name', '')}, "
                     f"{candidate_result.get('election_date', '')}"
                 )
