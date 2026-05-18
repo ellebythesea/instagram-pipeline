@@ -25,7 +25,6 @@ import streamlit.components.v1 as components
 
 from article_source import fetch_article_source
 from config import (
-    ANTHROPIC_API_KEY,
     DEFAULT_POST_FOOTER,
     GOOGLE_DRIVE_FOLDER_ID,
     GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER,
@@ -202,6 +201,7 @@ SUBSTACK_CANDIDATE_ARTICLE_PROMPT_TEMPLATE = textwrap.dedent(
     * text1
     * text2
     * text3
+    * generated_caption
 
     Rules:
     * Keep row_number exactly as 1
@@ -211,10 +211,13 @@ SUBSTACK_CANDIDATE_ARTICLE_PROMPT_TEMPLATE = textwrap.dedent(
     * name = "voteinorout"
     * text1 = strongest opening carousel slide under 350 chars
     * text2 and text3 = under 900 chars each
+    * generated_caption = Instagram caption body under 900 chars before the standard footer/hashtags are appended in-app
     * No em dashes
     * No speculation
     * Avoid repetitive phrasing across fields
     * Never include hashtags in slide text
+    * Do not include hashtags in generated_caption
+    * Do not write the standard footer in generated_caption because the app appends it separately
 
     Style priority:
     * Write like a viral political news account creating Instagram carousel slides
@@ -232,9 +235,10 @@ SUBSTACK_CANDIDATE_ARTICLE_PROMPT_TEMPLATE = textwrap.dedent(
 
     Slide-by-slide guidance:
     * These slides are promoting a full written article, not replacing it. They should feel like a sharp Instagram teaser for a deeper Substack piece.
-    * text1 = stop-scrolling opener built from the most dramatic angle in the article. Pull the most surprising number, most loaded conflict, or highest-stakes framing from the piece. Identify the main candidates by name when possible.
+    * text1 = stop-scrolling opener built from the most dramatic angle in the article. Make it explicit that this post is based on a breakdown article we created about the race. Pull the most surprising number, most loaded conflict, or highest-stakes framing from the piece. Identify the main candidates by name when possible.
     * text2 = "here's what the full article gets into." Summarize the central conflict, money, stakes, and defining contrast from the written piece. Make it clear this is drawn from a larger article.
     * text3 = election date and latest polling. Include the exact election date, polling numbers with source if mentioned in the article, and any prediction market odds. End with the line: Comment LINK and I'll DM you the full article.
+    * generated_caption = a concise, informative Instagram caption summarizing the article's key findings. It should mention that we created a breakdown article for this election, note that the article will be updated as comments come in, and briefly mention any major controversy or talking point if it is central to the race. Keep it neutral and informative rather than persuasive.
 
     Article to base the carousel on:
     [ARTICLE]
@@ -249,7 +253,8 @@ SUBSTACK_CANDIDATE_ARTICLE_PROMPT_TEMPLATE = textwrap.dedent(
         "name": "voteinorout",
         "text1": "[clickbait opener under 350 chars]",
         "text2": "[summary of article key points under 900 chars]",
-        "text3": "[dates and polls under 900 chars]\\n\\nComment LINK and I'll DM you the full article."
+        "text3": "[dates and polls under 900 chars]\\n\\nComment LINK and I'll DM you the full article.",
+        "generated_caption": "[informative caption body under 900 chars]"
       }
     ]
     """
@@ -434,6 +439,40 @@ def _build_candidate_article_footer(substack_url: str) -> str:
     )
 
 
+def _build_candidate_article_caption(caption_body: str, required_hashtags: str = "") -> str:
+    cleaned_body = _cell_text(caption_body).strip()
+    article_note = (
+        "We created this article to break down the election, and we'll keep updating it as comments come in."
+    )
+    if article_note.lower() not in cleaned_body.lower():
+        cleaned_body = f"{cleaned_body}\n\n{article_note}" if cleaned_body else article_note
+    return _build_footered_caption(cleaned_body, "", required_hashtags.strip())
+
+
+def _save_candidate_article_assets(row: dict, generated_payload: dict) -> str:
+    row_num = int(row.get("row_number") or 0)
+    if not row_num:
+        raise ValueError("Candidate article row is missing a row number.")
+
+    caption_text = _build_candidate_article_caption(
+        _cell_text(generated_payload.get("generated_caption")).strip(),
+        _cell_text(row.get("Required Hashtags")).strip(),
+    )
+    update_caption(GOOGLE_SHEET_ID, row_num, caption_text, "done")
+    _write_specific_carousel_fields(
+        row_num,
+        {
+            "name": _cell_text(generated_payload.get("name")).strip(),
+            "text1": _cell_text(generated_payload.get("text1")).strip(),
+            "text2": _cell_text(generated_payload.get("text2")).strip(),
+            "text3": _cell_text(generated_payload.get("text3")).strip(),
+        },
+    )
+    _verify_carousel_fields_saved(row_num)
+    st.session_state.pop(f"workspace_preview_upload_links_{row_num}", None)
+    return caption_text
+
+
 def _extract_first_url(value: str) -> str:
     text = _cell_text(value).strip()
     if not text:
@@ -479,42 +518,25 @@ def _render_candidate_output_card(title: str, value: str, copy_key: str) -> None
         _multiline_copy_preview(f"Copy {title}", value, copy_key)
 
 
-def _call_anthropic_candidate_article(article_body: str, substack_url: str) -> dict:
-    if not ANTHROPIC_API_KEY:
-        raise RuntimeError("ANTHROPIC_API_KEY is not configured.")
-
+def _call_openai_candidate_article(article_body: str, substack_url: str) -> dict:
     prompt = _build_substack_candidate_article_prompt(article_body, substack_url)
-    response = requests.post(
-        "https://api.anthropic.com/v1/messages",
-        headers={
-            "x-api-key": ANTHROPIC_API_KEY,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-        },
-        json={
-            "model": "claude-sonnet-4-5",
-            "max_tokens": 2000,
-            "system": prompt,
-            "messages": [{"role": "user", "content": "Generate the carousel JSON."}],
-        },
-        timeout=90,
+    response = _get_client().chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": "Generate the carousel JSON."},
+        ],
+        max_completion_tokens=2000,
+        temperature=0.4,
     )
-    response.raise_for_status()
-    payload = response.json()
-    content_blocks = payload.get("content", []) or []
-    text_chunks = [
-        _cell_text(block.get("text")).strip()
-        for block in content_blocks
-        if isinstance(block, dict) and block.get("type") == "text"
-    ]
-    raw_text = "\n".join(chunk for chunk in text_chunks if chunk).strip()
+    raw_text = _cell_text(response.choices[0].message.content).strip()
     if not raw_text:
-        raise ValueError("Anthropic returned an empty response.")
+        raise ValueError("OpenAI returned an empty response.")
 
     parsed = _extract_json_payload(raw_text)
     items = parsed if isinstance(parsed, list) else [parsed]
     if not items or not isinstance(items[0], dict):
-        raise ValueError("Anthropic response did not contain the expected JSON array.")
+        raise ValueError("OpenAI response did not contain the expected JSON array.")
 
     first = items[0]
     result = {
@@ -523,10 +545,11 @@ def _call_anthropic_candidate_article(article_body: str, substack_url: str) -> d
         "text1": _cell_text(first.get("text1")).strip(),
         "text2": _cell_text(first.get("text2")).strip(),
         "text3": _cell_text(first.get("text3")).strip(),
+        "generated_caption": _cell_text(first.get("generated_caption")).strip(),
         "raw_response": raw_text,
     }
-    if not result["text1"] or not result["text2"] or not result["text3"]:
-        raise ValueError("Anthropic response was missing one or more slide fields.")
+    if not result["text1"] or not result["text2"] or not result["text3"] or not result["generated_caption"]:
+        raise ValueError("OpenAI response was missing one or more slide fields.")
     return result
 
 get_all_rows = sheet_ops.get_all_rows
@@ -2263,7 +2286,7 @@ def _render_workspace_home_action_dialog() -> None:
                 st.session_state.pop("workspace_home_candidate_article_error", None)
                 try:
                     with st.spinner("Generating caption..."):
-                        generated_payload = _call_anthropic_candidate_article(article_body, substack_url)
+                        generated_payload = _call_openai_candidate_article(article_body, substack_url)
                 except Exception as e:
                     st.session_state["workspace_home_candidate_article_error"] = (
                         "Could not generate the caption. "
@@ -2295,7 +2318,7 @@ def _render_workspace_home_action_dialog() -> None:
                     st.session_state.pop("workspace_home_candidate_article_error", None)
                     try:
                         with st.spinner("Generating caption..."):
-                            generated_payload = _call_anthropic_candidate_article(article_body, substack_url)
+                            generated_payload = _call_openai_candidate_article(article_body, substack_url)
                     except Exception as e:
                         st.session_state["workspace_home_candidate_article_error"] = (
                             "Could not generate the caption. "
@@ -2317,18 +2340,19 @@ def _render_workspace_home_action_dialog() -> None:
                 text1 = _cell_text(candidate_article_result.get("text1")).strip()
                 text2 = _cell_text(candidate_article_result.get("text2")).strip()
                 text3 = _cell_text(candidate_article_result.get("text3")).strip()
-                generated_substack_url = _cell_text(candidate_article_result.get("substack_url")).strip() or substack_url
-                footer_text = _build_candidate_article_footer(generated_substack_url)
+                caption_text = _build_candidate_article_caption(
+                    _cell_text(candidate_article_result.get("generated_caption")).strip()
+                )
                 copy_all_text = (
                     f"SLIDE 1:\n{text1}\n\n"
                     f"SLIDE 2:\n{text2}\n\n"
                     f"SLIDE 3:\n{text3}\n\n"
-                    f"{footer_text}"
+                    f"CAPTION:\n{caption_text}"
                 )
                 _render_candidate_output_card("Slide 1", text1, "workspace_home_candidate_article_slide1")
                 _render_candidate_output_card("Slide 2", text2, "workspace_home_candidate_article_slide2")
                 _render_candidate_output_card("Slide 3", text3, "workspace_home_candidate_article_slide3")
-                _render_candidate_output_card("Caption Footer", footer_text, "workspace_home_candidate_article_footer")
+                _render_candidate_output_card("Generated Caption", caption_text, "workspace_home_candidate_article_caption")
                 st.html(_copy_button_html("Copy All", copy_all_text, "workspace_home_candidate_article_copy_all", primary=True))
     elif st.button(_action_label(mode), key=f"workspace_home_dialog_submit_{mode}", type="primary", width="stretch"):
         _run_workspace_home_action(
@@ -2368,7 +2392,8 @@ def _render_workspace_candidate_article_dialog(row: dict) -> None:
         st.session_state.pop("workspace_row_candidate_article_error", None)
         try:
             with st.spinner("Generating article assets..."):
-                generated_payload = _call_anthropic_candidate_article(article_body, substack_url)
+                generated_payload = _call_openai_candidate_article(article_body, substack_url)
+                caption_text = _save_candidate_article_assets(row, generated_payload)
         except Exception as e:
             st.session_state["workspace_row_candidate_article_error"] = (
                 "Could not generate the article assets. "
@@ -2377,7 +2402,11 @@ def _render_workspace_candidate_article_dialog(row: dict) -> None:
             st.session_state.pop("workspace_row_candidate_article_result", None)
         else:
             generated_payload["substack_url"] = substack_url
+            generated_payload["final_caption"] = caption_text
             st.session_state["workspace_row_candidate_article_result"] = generated_payload
+            st.session_state["workspace_success"] = (
+                f"Row {row_num}: article caption and slides saved to the sheet."
+            )
         finally:
             st.session_state["workspace_row_candidate_article_generating"] = False
         _rerun_workspace("Home")
@@ -2398,7 +2427,8 @@ def _render_workspace_candidate_article_dialog(row: dict) -> None:
             st.session_state.pop("workspace_row_candidate_article_error", None)
             try:
                 with st.spinner("Generating article assets..."):
-                    generated_payload = _call_anthropic_candidate_article(article_body, substack_url)
+                    generated_payload = _call_openai_candidate_article(article_body, substack_url)
+                    caption_text = _save_candidate_article_assets(row, generated_payload)
             except Exception as e:
                 st.session_state["workspace_row_candidate_article_error"] = (
                     "Could not generate the article assets. "
@@ -2407,7 +2437,11 @@ def _render_workspace_candidate_article_dialog(row: dict) -> None:
                 st.session_state.pop("workspace_row_candidate_article_result", None)
             else:
                 generated_payload["substack_url"] = substack_url
+                generated_payload["final_caption"] = caption_text
                 st.session_state["workspace_row_candidate_article_result"] = generated_payload
+                st.session_state["workspace_success"] = (
+                    f"Row {row_num}: article caption and slides saved to the sheet."
+                )
             finally:
                 st.session_state["workspace_row_candidate_article_generating"] = False
             _rerun_workspace("Home")
@@ -2418,18 +2452,20 @@ def _render_workspace_candidate_article_dialog(row: dict) -> None:
         text1 = _cell_text(candidate_article_result.get("text1")).strip()
         text2 = _cell_text(candidate_article_result.get("text2")).strip()
         text3 = _cell_text(candidate_article_result.get("text3")).strip()
-        generated_substack_url = _cell_text(candidate_article_result.get("substack_url")).strip() or substack_url
-        footer_text = _build_candidate_article_footer(generated_substack_url)
+        caption_text = _cell_text(candidate_article_result.get("final_caption")).strip() or _build_candidate_article_caption(
+            _cell_text(candidate_article_result.get("generated_caption")).strip(),
+            _cell_text(row.get("Required Hashtags")).strip(),
+        )
         copy_all_text = (
             f"SLIDE 1:\n{text1}\n\n"
             f"SLIDE 2:\n{text2}\n\n"
             f"SLIDE 3:\n{text3}\n\n"
-            f"{footer_text}"
+            f"CAPTION:\n{caption_text}"
         )
         _render_candidate_output_card("Slide 1", text1, f"workspace_row_candidate_article_slide1_{row_num}")
         _render_candidate_output_card("Slide 2", text2, f"workspace_row_candidate_article_slide2_{row_num}")
         _render_candidate_output_card("Slide 3", text3, f"workspace_row_candidate_article_slide3_{row_num}")
-        _render_candidate_output_card("Caption Footer", footer_text, f"workspace_row_candidate_article_footer_{row_num}")
+        _render_candidate_output_card("Generated Caption", caption_text, f"workspace_row_candidate_article_caption_{row_num}")
         st.html(_copy_button_html("Copy All", copy_all_text, f"workspace_row_candidate_article_copy_all_{row_num}", primary=True))
 
     if st.button("Close", key=f"workspace_row_candidate_article_close_{row_num}", width="stretch"):
