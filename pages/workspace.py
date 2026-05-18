@@ -571,6 +571,10 @@ def _save_candidate_article_assets(row: dict, generated_payload: dict) -> str:
             "text3": _cell_text(generated_payload.get("text3")).strip(),
         },
     )
+    if update_speaker_names_batch is not None:
+        update_speaker_names_batch(GOOGLE_SHEET_ID, {row_num: "Vote In Or Out"})
+        speaker_key = _workspace_speaker_key(row)
+        st.session_state[speaker_key] = "Vote In Or Out"
     _verify_carousel_fields_saved(row_num)
     st.session_state.pop(f"workspace_preview_upload_links_{row_num}", None)
     return caption_text
