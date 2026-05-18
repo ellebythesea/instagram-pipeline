@@ -444,8 +444,11 @@ def _build_candidate_article_caption(caption_body: str, required_hashtags: str =
     article_note = (
         "We created this article to break down the election, and we'll keep updating it as comments come in."
     )
+    link_note = "Comment LINK and I'll DM you the full article."
     if article_note.lower() not in cleaned_body.lower():
         cleaned_body = f"{cleaned_body}\n\n{article_note}" if cleaned_body else article_note
+    if link_note.lower() not in cleaned_body.lower():
+        cleaned_body = f"{cleaned_body}\n\n{link_note}" if cleaned_body else link_note
     return _build_footered_caption(cleaned_body, "", required_hashtags.strip())
 
 
@@ -462,7 +465,7 @@ def _save_candidate_article_assets(row: dict, generated_payload: dict) -> str:
     _write_specific_carousel_fields(
         row_num,
         {
-            "name": _cell_text(generated_payload.get("name")).strip(),
+            "name": "Vote In Or Out",
             "text1": _cell_text(generated_payload.get("text1")).strip(),
             "text2": _cell_text(generated_payload.get("text2")).strip(),
             "text3": _cell_text(generated_payload.get("text3")).strip(),
@@ -471,6 +474,19 @@ def _save_candidate_article_assets(row: dict, generated_payload: dict) -> str:
     _verify_carousel_fields_saved(row_num)
     st.session_state.pop(f"workspace_preview_upload_links_{row_num}", None)
     return caption_text
+
+
+def _is_candidate_article_row(row: dict) -> bool:
+    media_type = _cell_text(row.get("Media Type")).strip().lower()
+    slide_name = _cell_text(row.get("name")).strip().lower()
+    generated_caption = _cell_text(row.get("Generated Caption")).strip().lower()
+    return (
+        media_type == "article"
+        and (
+            slide_name == "vote in or out"
+            or "we created this article to break down the election" in generated_caption
+        )
+    )
 
 
 def _extract_first_url(value: str) -> str:
@@ -3183,9 +3199,12 @@ def _copy_tabs(
         slide_three_font_adjust_key = f"workspace_slide_three_preview_font_adjust_{row_num}"
         slide_three_cta_key = f"workspace_slide_three_cta_row_{row_num}"
         preview_links_key = f"workspace_preview_upload_links_{row_num}"
+        default_slide_one_fit_mode = _is_candidate_article_row(prompt_row or {})
         current_slide_one_font_adjust = int(st.session_state.get(slide_one_font_adjust_key, 0) or 0)
         current_slide_one_background_adjust = int(st.session_state.get(slide_one_background_adjust_key, 0) or 0)
-        current_slide_one_fit_mode = bool(st.session_state.get(slide_one_fit_toggle_key, False))
+        current_slide_one_fit_mode = bool(
+            st.session_state.get(slide_one_fit_toggle_key, default_slide_one_fit_mode)
+        )
         current_slide_two_font_adjust = int(st.session_state.get(slide_two_font_adjust_key, 0) or 0)
         current_slide_three_font_adjust = int(st.session_state.get(slide_three_font_adjust_key, 0) or 0)
         default_slide_three_cta = (
