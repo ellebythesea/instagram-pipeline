@@ -71,7 +71,6 @@ MODE_OPTIONS = [
     "Process this",
     "Generate headline",
     "Caption this",
-    "Process as Candidate Article",
 ]
 
 ORG_HASHTAG_OPTIONS = [
@@ -576,6 +575,11 @@ def _is_article_url(url: str) -> bool:
     return _is_https_url(url) and not _is_instagram_url(url)
 
 
+def _is_substack_url(url: str) -> bool:
+    lowered = (url or "").lower()
+    return "substack.com/" in lowered
+
+
 def _format_bytes(num_bytes: int) -> str:
     value = float(num_bytes)
     units = ["B", "KB", "MB", "GB"]
@@ -699,6 +703,24 @@ def _close_workspace_slide_action_dialog(clear_inputs: bool = False) -> None:
 
 def _dismiss_workspace_slide_action_dialog() -> None:
     _close_workspace_slide_action_dialog(clear_inputs=True)
+
+
+def _open_workspace_candidate_article_dialog(row_number: int) -> None:
+    st.session_state["workspace_candidate_article_dialog_row"] = row_number
+
+
+def _close_workspace_candidate_article_dialog(clear_inputs: bool = False) -> None:
+    st.session_state.pop("workspace_candidate_article_dialog_row", None)
+    if clear_inputs:
+        st.session_state.pop("workspace_row_candidate_article_step", None)
+        st.session_state.pop("workspace_row_candidate_article_body", None)
+        st.session_state.pop("workspace_row_candidate_article_error", None)
+        st.session_state.pop("workspace_row_candidate_article_result", None)
+        st.session_state.pop("workspace_row_candidate_article_generating", None)
+
+
+def _dismiss_workspace_candidate_article_dialog() -> None:
+    _close_workspace_candidate_article_dialog(clear_inputs=True)
 
 
 def _run_workspace_home_action(mode: str, link_value: str, org_hashtag: str = "") -> None:
@@ -2270,6 +2292,130 @@ def _render_workspace_home_action_dialog() -> None:
 
     if st.button("Cancel", key=f"workspace_home_dialog_cancel_{mode}", width="stretch"):
         _close_workspace_home_action_dialog(clear_inputs=True)
+        _rerun_workspace("Home")
+
+
+@st.dialog("Process as Candidate Article", width="large", on_dismiss=_dismiss_workspace_candidate_article_dialog)
+def _render_workspace_candidate_article_dialog(row: dict) -> None:
+    row_num = row.get("row_number")
+    substack_url = _cell_text(row.get("Instagram URL")).strip()
+    step = int(st.session_state.get("workspace_row_candidate_article_step", 1) or 1)
+
+    st.caption("Use this post action for Substack article rows to generate a three-slide carousel and footer.")
+    st.text_input(
+        "Substack URL",
+        value=substack_url,
+        disabled=True,
+        key=f"workspace_row_candidate_article_url_{row_num}",
+    )
+
+    if st.button(
+        "Process as Candidate Article",
+        key=f"workspace_row_candidate_article_start_{row_num}",
+        type="primary",
+        width="stretch",
+        disabled=not substack_url,
+    ):
+        st.session_state["workspace_row_candidate_article_step"] = 2
+        st.session_state.pop("workspace_row_candidate_article_error", None)
+        st.session_state.pop("workspace_row_candidate_article_result", None)
+        _rerun_workspace("Home")
+
+    step = int(st.session_state.get("workspace_row_candidate_article_step", 1) or 1)
+    if step >= 2:
+        st.divider()
+        st.caption("Since we can't read the article directly from the Substack URL, paste the full article text here so we can generate the Instagram caption from it.")
+        article_body = st.text_area(
+            "Paste the article body",
+            key="workspace_row_candidate_article_body",
+            height=420,
+        ).strip()
+        generate_disabled = (
+            not substack_url
+            or not article_body
+            or bool(st.session_state.get("workspace_row_candidate_article_generating"))
+        )
+        if st.button(
+            "Generate Caption",
+            key=f"workspace_row_candidate_article_generate_{row_num}",
+            type="primary",
+            width="stretch",
+            disabled=generate_disabled,
+        ):
+            st.session_state["workspace_row_candidate_article_generating"] = True
+            st.session_state.pop("workspace_row_candidate_article_error", None)
+            try:
+                with st.spinner("Generating caption..."):
+                    generated_payload = _call_anthropic_candidate_article(article_body, substack_url)
+            except Exception as e:
+                st.session_state["workspace_row_candidate_article_error"] = (
+                    "Could not generate the caption. "
+                    f"{describe_error(e)}"
+                )
+                st.session_state.pop("workspace_row_candidate_article_result", None)
+                st.session_state["workspace_row_candidate_article_step"] = 2
+            else:
+                generated_payload["substack_url"] = substack_url
+                st.session_state["workspace_row_candidate_article_result"] = generated_payload
+                st.session_state["workspace_row_candidate_article_step"] = 3
+            finally:
+                st.session_state["workspace_row_candidate_article_generating"] = False
+            _rerun_workspace("Home")
+
+        candidate_article_error = _cell_text(
+            st.session_state.get("workspace_row_candidate_article_error", "")
+        ).strip()
+        candidate_article_result = st.session_state.get("workspace_row_candidate_article_result")
+        if candidate_article_error:
+            st.error(candidate_article_error)
+            if st.button(
+                "Retry",
+                key=f"workspace_row_candidate_article_retry_{row_num}",
+                width="stretch",
+                disabled=not substack_url or not article_body,
+            ):
+                st.session_state["workspace_row_candidate_article_generating"] = True
+                st.session_state.pop("workspace_row_candidate_article_error", None)
+                try:
+                    with st.spinner("Generating caption..."):
+                        generated_payload = _call_anthropic_candidate_article(article_body, substack_url)
+                except Exception as e:
+                    st.session_state["workspace_row_candidate_article_error"] = (
+                        "Could not generate the caption. "
+                        f"{describe_error(e)}"
+                    )
+                    st.session_state.pop("workspace_row_candidate_article_result", None)
+                    st.session_state["workspace_row_candidate_article_step"] = 2
+                else:
+                    generated_payload["substack_url"] = substack_url
+                    st.session_state["workspace_row_candidate_article_result"] = generated_payload
+                    st.session_state["workspace_row_candidate_article_step"] = 3
+                finally:
+                    st.session_state["workspace_row_candidate_article_generating"] = False
+                _rerun_workspace("Home")
+
+        if candidate_article_result:
+            st.divider()
+            st.markdown("**Generated Output**")
+            text1 = _cell_text(candidate_article_result.get("text1")).strip()
+            text2 = _cell_text(candidate_article_result.get("text2")).strip()
+            text3 = _cell_text(candidate_article_result.get("text3")).strip()
+            generated_substack_url = _cell_text(candidate_article_result.get("substack_url")).strip() or substack_url
+            footer_text = _build_candidate_article_footer(generated_substack_url)
+            copy_all_text = (
+                f"SLIDE 1:\n{text1}\n\n"
+                f"SLIDE 2:\n{text2}\n\n"
+                f"SLIDE 3:\n{text3}\n\n"
+                f"{footer_text}"
+            )
+            _render_candidate_output_card("Slide 1", text1, f"workspace_row_candidate_article_slide1_{row_num}")
+            _render_candidate_output_card("Slide 2", text2, f"workspace_row_candidate_article_slide2_{row_num}")
+            _render_candidate_output_card("Slide 3", text3, f"workspace_row_candidate_article_slide3_{row_num}")
+            _render_candidate_output_card("Caption Footer", footer_text, f"workspace_row_candidate_article_footer_{row_num}")
+            st.html(_copy_button_html("Copy All", copy_all_text, f"workspace_row_candidate_article_copy_all_{row_num}", primary=True))
+
+    if st.button("Close", key=f"workspace_row_candidate_article_close_{row_num}", width="stretch"):
+        _close_workspace_candidate_article_dialog(clear_inputs=True)
         _rerun_workspace("Home")
 
 
@@ -4463,6 +4609,14 @@ if active_section_tab == "Home":
         else:
             _render_workspace_slide_action_dialog(slide_dialog_row)
 
+    candidate_article_dialog_row_number = st.session_state.get("workspace_candidate_article_dialog_row")
+    if candidate_article_dialog_row_number is not None:
+        candidate_article_dialog_row = next((row for row in editor_rows if row.get("row_number") == candidate_article_dialog_row_number), None)
+        if candidate_article_dialog_row is None:
+            _close_workspace_candidate_article_dialog(clear_inputs=True)
+        else:
+            _render_workspace_candidate_article_dialog(candidate_article_dialog_row)
+
     if not editor_rows:
         st.info("No rows yet. Use the Home actions menu to create work, or use Candidates to build a voter-guide prompt.")
     else:
@@ -4621,6 +4775,15 @@ if active_section_tab == "Home":
                                 _close_workspace_menu(row)
                                 _queue_workspace_action(row_num, "generate_caption")
                                 _rerun_workspace("Edit")
+                            if is_article and _is_substack_url(url) and st.button(
+                                "Process as Candidate Article",
+                                key=f"workspace_menu_candidate_article_{row_num}",
+                                width="stretch",
+                                help="Generate a three-slide carousel and footer from this Substack article row.",
+                            ):
+                                _close_workspace_menu(row)
+                                _open_workspace_candidate_article_dialog(row_num)
+                                _rerun_workspace("Edit")
                             if st.button(
                                 "Update screenshot",
                                 key=f"workspace_menu_thumbnail_open_{row_num}",
@@ -4763,8 +4926,8 @@ if active_section_tab == "Candidates":
         if st.button("Clear", width="stretch", key="workspace_candidate_clear"):
             st.session_state.pop("workspace_candidate_result", None)
             st.session_state.pop("workspace_candidate_error", None)
-            st.session_state["workspace_candidate_name"] = ""
-            st.session_state["workspace_candidate_donation_link"] = ""
+            st.session_state.pop("workspace_candidate_name", None)
+            st.session_state.pop("workspace_candidate_donation_link", None)
             _rerun_workspace("Candidates")
 
     candidate_error = st.session_state.get("workspace_candidate_error", "")
