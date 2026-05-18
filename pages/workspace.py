@@ -113,49 +113,47 @@ PINNED_TOP_COMMENT_PREFIX = "[[TOP]] "
 _client: openai.OpenAI | None = None
 VOTER_GUIDE_PROMPT_TEMPLATE = textwrap.dedent(
     """\
-    You are generating a "living voter guide" article for a Substack series called Vote In Or Out. Each article compares two candidates running against each other in a specific election. Your job is to research the race using web search and produce a complete article ready to publish.
+    You are generating a "living voter guide" article for a Substack series called Vote In Or Out. Each article compares the candidates running against each other in a specific election. Your job is to research the race using web search and produce a complete article ready to publish.
 
     INPUT:
-    - Candidate name: [NAME]
-    - Donation link: [DONATION_LINK]
+    - Candidates: [CANDIDATE_LIST]
+    - Donation URL: [DONATION_LINK]
 
     STEP 1: RESOLVE THE RACE
 
     Before writing anything, use web search to figure out:
-    1. What office is this person currently running for, in what jurisdiction, in what cycle?
-    2. Who is their primary opponent? Use the following priority order:
-       a. If they are in a primary that has not yet occurred, the leading opponent in that primary based on polling and media coverage.
-       b. If they have already won a primary, the general election opponent.
-       c. If multiple races are active, pick the most immediate upcoming election.
+    1. What office these candidates are currently running for, in what jurisdiction, in what cycle.
+    2. Whether these candidates are actually running against each other in the same active race.
     3. What is the exact election date?
     4. What is today's date (for the "last updated" stamp)?
 
-    If you cannot confidently resolve who the opponent is, stop and report back: "I could not resolve a clear opponent for [name]. The candidates I found in active races are: [list]. Please specify which race you want."
+    If you cannot confidently resolve that these candidates are running against each other in the same race, stop and report back: "I could not resolve a clear shared race for [candidate list]. Please verify the names or specify the exact contest."
 
     Once resolved, internally fill in:
-    - Candidate A: [the input name]
-    - Candidate B: [resolved opponent name]
-    - Race: [resolved race name, e.g., "Kentucky U.S. Senate Democratic Primary"]
-    - Election date: [resolved date]
+    - Candidate list: [CANDIDATE_LIST]
+    - Race: [RACE_NAME]
+    - Election date: [ELECTION_DATE]
 
     STEP 2: WRITE THE ARTICLE
 
     Research both candidates using web search. Pull from a mix of mainstream news, local journalism, neutral reference sources (Ballotpedia, Wikipedia), and prediction markets if available. Cite specific sources for every factual claim, especially numbers, quotes, and polling data.
 
-    Identify the three to five issues that most define the difference between the two candidates. Do not pad with generic policy categories. If the race is really about one or two big fault lines (loyalty to a party leader, a foreign policy split, a generational divide), let that show in which issues you choose.
+    Identify the three to five issues that most define the difference between these candidates. Do not pad with generic policy categories. If the race is really about one or two big fault lines (loyalty to a party leader, a foreign policy split, a generational divide), let that show in which issues you choose. If there is a real controversy, scandal, viral moment, or unusually prominent talking point shaping the race, include it with clear sourcing and explain why it matters without sensationalizing it.
 
-    Write the article in the voice of The Atlantic: confident, accessible, narrative-driven, not breathless or partisan. Lead with what makes this race interesting beyond the names on the ballot. Treat the reader as a smart adult who has not been following closely.
+    Write the article in the voice of The Atlantic: confident, accessible, narrative-driven, not breathless or partisan. Lead with what makes this race interesting beyond the names on the ballot. Treat the reader as a smart adult who has not been following closely. The article should feel informative first, not persuasive, and should help the reader understand the candidates, the stakes, and the most-discussed flashpoints in the race.
 
-    If a donation link is provided, add a strong donation call to action near the top of the article. Make the case for why donations materially help that candidate compete and succeed in this race, and include the exact donation link.
+    If a donation URL is provided, do not let it shape your analysis, tone, issue selection, or candidate framing.
+
+    If a usable donation URL is present, add a strong donation call to action near the top of the article. Make the case for why donations materially help that candidate compete and succeed in this race, and include the exact donation URL.
 
     Do not use em dashes anywhere in the article.
 
     Use this exact structure and section order:
 
-    - TITLE in this format: "[Candidate A's last name] vs. [Candidate B's last name] | [Race Name] | [Election Date]"
+    - TITLE in this format: "[candidate last names joined with 'vs.'] | [Race Name] | [Election Date]"
     - Date stamp: "Last updated: [today's date]"
     - Opening hook: 2-3 short paragraphs framing why this race matters beyond the local context. End with a sentence pointing at the election date.
-    - "Who Are These Two People?" section: one paragraph per candidate covering background, experience, and the brand they have built. Include education, career, prior runs for office, and the core argument each candidate is making about themselves.
+    - "Who Are These Candidates?" section: one paragraph per candidate covering background, experience, and the brand they have built. Include education, career, prior runs for office, and the core argument each candidate is making about themselves.
     - "The [Three / Four / Five] Issues That Define This Race" section: pick the right number based on the race. For each issue, give it a bold subheading and 1-3 paragraphs explaining where each candidate stands, with direct quotes where possible.
     - "The Money: Who's Funding What" section: campaign finance breakdown, major super PAC spending, notable donors, and any unusual funding dynamics (foreign lobbying, dark money, deepfake ads, etc.).
     - "Where the Race Stands Right Now" section: most recent polling, prediction market odds, and a sober assessment of momentum. Note margins of error and undecided voter percentages.
@@ -172,7 +170,8 @@ VOTER_GUIDE_PROMPT_TEMPLATE = textwrap.dedent(
 
     CONSTRAINTS:
     - Cite every factual claim, statistic, quote, and poll number to a specific source from your web search results.
-    - Stay scrupulously neutral in tone. Both candidates' arguments should be presented as they would present them. Save critical assessment for the "What People Are Getting Wrong" section, and balance it across both sides.
+    - Stay scrupulously neutral in tone. Each candidate's arguments should be presented as they would present them. Save critical assessment for the "What People Are Getting Wrong" section, and balance it across the field.
+    - When covering controversies or talking points, explain them as reported facts and competing interpretations, not as settled proof unless the sourcing clearly supports that.
     - If polling, funding, or other numbers conflict across sources, note the discrepancy rather than picking one.
     - Do not invent endorsements, quotes, vote counts, or polling data. If you cannot find a fact, omit it.
     - Keep the total article length between 1,800 and 2,500 words.
@@ -182,7 +181,7 @@ VOTER_GUIDE_PROMPT_TEMPLATE = textwrap.dedent(
 
     At the very top of your output, before the article itself, include a one-line "Resolved race" note so the human editor can verify you picked the right contest:
 
-    Resolved race: [Candidate A] vs. [Candidate B], [Race Name], [Election Date]
+    Resolved race: [candidate list], [Race Name], [Election Date]
 
     Then output the article, then the Tags block.
     """
@@ -232,14 +231,15 @@ SUBSTACK_CANDIDATE_ARTICLE_PROMPT_TEMPLATE = textwrap.dedent(
     * Avoid generic summaries
 
     Slide-by-slide guidance:
-    * text1 = clickbait opener that hooks the reader on the most dramatic angle of the race. This is the stop-scrolling slide. Pull the most surprising number, the most loaded conflict, or the most-at-stake framing from the article. Identify both candidates by name.
-    * text2 = summary of the key points laid out in the article. Cover the central fault line between the two candidates, the money, and the stakes. This is the "here's what's actually going on" slide.
-    * text3 = election date and latest polling. Include the exact election date, polling numbers with source if mentioned in the article, and any prediction market odds. End with the line: Comment LINK and I'll DM you the full breakdown.
+    * These slides are promoting a full written article, not replacing it. They should feel like a sharp Instagram teaser for a deeper Substack piece.
+    * text1 = stop-scrolling opener built from the most dramatic angle in the article. Pull the most surprising number, most loaded conflict, or highest-stakes framing from the piece. Identify the main candidates by name when possible.
+    * text2 = "here's what the full article gets into." Summarize the central conflict, money, stakes, and defining contrast from the written piece. Make it clear this is drawn from a larger article.
+    * text3 = election date and latest polling. Include the exact election date, polling numbers with source if mentioned in the article, and any prediction market odds. End with the line: Comment LINK and I'll DM you the full article.
 
     Article to base the carousel on:
     [ARTICLE]
 
-    Substack URL (for reference, do not include in slide text):
+    Article URL if available (for reference only, do not include in slide text unless explicitly relevant):
     [SUBSTACK_URL]
 
     Output format example:
@@ -249,7 +249,7 @@ SUBSTACK_CANDIDATE_ARTICLE_PROMPT_TEMPLATE = textwrap.dedent(
         "name": "voteinorout",
         "text1": "[clickbait opener under 350 chars]",
         "text2": "[summary of article key points under 900 chars]",
-        "text3": "[dates and polls under 900 chars]\\n\\nComment LINK and I'll DM you the full breakdown."
+        "text3": "[dates and polls under 900 chars]\\n\\nComment LINK and I'll DM you the full article."
       }
     ]
     """
@@ -325,13 +325,20 @@ def _collect_candidate_research(candidate_name: str) -> list[dict]:
     return collected[:18]
 
 
-def _resolve_candidate_race(candidate_name: str) -> dict:
-    candidate_name = candidate_name.strip()
-    if not candidate_name:
-        raise ValueError("Enter a candidate name.")
-    search_results = _collect_candidate_research(candidate_name)
-    if not search_results:
-        raise RuntimeError(f"No search results found for {candidate_name}.")
+def _resolve_candidate_comparison(candidate_names: list[str]) -> dict:
+    cleaned_names = [name.strip() for name in candidate_names if name.strip()]
+    if len(cleaned_names) < 2:
+        raise ValueError("Enter two candidate names.")
+
+    search_results: list[dict] = []
+    for candidate_name in cleaned_names[:2]:
+        candidate_results = _collect_candidate_research(candidate_name)
+        if not candidate_results:
+            raise RuntimeError(f"No search results found for {candidate_name}.")
+        for item in candidate_results:
+            tagged_item = dict(item)
+            tagged_item["input_candidate"] = candidate_name
+            search_results.append(tagged_item)
 
     sources_json = json.dumps(search_results, ensure_ascii=True)
     response = _get_client().chat.completions.create(
@@ -350,13 +357,12 @@ def _resolve_candidate_race(candidate_name: str) -> dict:
             {
                 "role": "user",
                 "content": (
-                    "Resolve the most immediate active election race for this candidate.\n\n"
-                    f"Candidate: {candidate_name}\n"
+                    "Resolve the most immediate active election race shared by these candidates.\n\n"
+                    f"Candidates: {', '.join(cleaned_names)}\n"
                     f"Today's date: {_today_eastern_label()}\n\n"
                     "Return a JSON object with these keys:\n"
                     "- could_not_resolve: boolean\n"
-                    "- candidate_name: string\n"
-                    "- opponent_name: string\n"
+                    "- candidate_names: array of strings\n"
                     "- office: string\n"
                     "- jurisdiction: string\n"
                     "- cycle: string\n"
@@ -366,12 +372,13 @@ def _resolve_candidate_race(candidate_name: str) -> dict:
                     "- ambiguity_note: string\n"
                     "- active_races: array of strings\n"
                     "- source_urls: array of strings\n\n"
+                    "If the candidates are not clearly running in the same race, set could_not_resolve to true.\n\n"
                     "Search results:\n"
                     f"{sources_json}"
                 ),
             },
         ],
-        max_tokens=1200,
+        max_completion_tokens=1200,
         temperature=0,
     )
     resolved = _extract_json_object(response.choices[0].message.content or "")
@@ -380,9 +387,25 @@ def _resolve_candidate_race(candidate_name: str) -> dict:
     return resolved
 
 
-def _build_candidate_prompt(candidate_name: str, donation_link: str = "") -> str:
-    cleaned_link = donation_link.strip()
-    prompt = VOTER_GUIDE_PROMPT_TEMPLATE.replace("[NAME]", candidate_name.strip())
+def _build_candidate_prompt(candidate_result: dict, donation_link: str = "") -> str:
+    cleaned_link = _extract_first_url(donation_link)
+    candidate_names = [
+        _cell_text(name).strip()
+        for name in (candidate_result.get("candidate_names") or [])
+        if _cell_text(name).strip()
+    ]
+    candidate_list = ", ".join(candidate_names)
+    race_name = _cell_text(candidate_result.get("race_name")).strip()
+    election_date = _cell_text(candidate_result.get("election_date")).strip()
+
+    prompt = (
+        VOTER_GUIDE_PROMPT_TEMPLATE
+        .replace("[CANDIDATE_LIST]", candidate_list)
+        .replace("[RACE_NAME]", race_name)
+        .replace("[ELECTION_DATE]", election_date)
+        .replace("[Race Name]", race_name)
+        .replace("[Election Date]", election_date)
+    )
     if cleaned_link:
         return prompt.replace("[DONATION_LINK]", cleaned_link)
     return prompt.replace("[DONATION_LINK]", "(none provided)")
@@ -397,11 +420,26 @@ def _build_substack_candidate_article_prompt(article_body: str, substack_url: st
 
 
 def _build_candidate_article_footer(substack_url: str) -> str:
+    cleaned_url = substack_url.strip()
+    if cleaned_url:
+        return (
+            "This post is pulled from a longer Vote In Or Out article.\n\n"
+            f"Comment LINK and I'll DM you the full article: {cleaned_url}\n\n"
+            "Full guide updated daily based on your comments."
+        )
     return (
-        "Full guide updated daily based on your comments.\n\n"
-        f"Comment LINK and I'll DM you the article at {substack_url.strip()}\n\n"
-        "Follow @voteinorout for the next race breakdown."
+        "This post is pulled from a longer Vote In Or Out article.\n\n"
+        "Comment LINK and I'll DM you the full article.\n\n"
+        "Full guide updated daily based on your comments."
     )
+
+
+def _extract_first_url(value: str) -> str:
+    text = _cell_text(value).strip()
+    if not text:
+        return ""
+    match = re.search(r"https?://\S+", text)
+    return match.group(0).rstrip(".,);]") if match else text
 
 
 def _copy_button_html(label: str, value: str, key: str, primary: bool = False) -> str:
@@ -712,7 +750,6 @@ def _open_workspace_candidate_article_dialog(row_number: int) -> None:
 def _close_workspace_candidate_article_dialog(clear_inputs: bool = False) -> None:
     st.session_state.pop("workspace_candidate_article_dialog_row", None)
     if clear_inputs:
-        st.session_state.pop("workspace_row_candidate_article_step", None)
         st.session_state.pop("workspace_row_candidate_article_body", None)
         st.session_state.pop("workspace_row_candidate_article_error", None)
         st.session_state.pop("workspace_row_candidate_article_result", None)
@@ -2133,6 +2170,16 @@ def _fundraising_preset_map() -> dict[str, str]:
     return mapping
 
 
+def _candidate_input_keys() -> list[str]:
+    count = max(2, int(st.session_state.get("workspace_candidate_count", 2) or 2))
+    return [f"workspace_candidate_name_{index}" for index in range(1, count + 1)]
+
+
+def _add_candidate_input() -> None:
+    current = max(2, int(st.session_state.get("workspace_candidate_count", 2) or 2))
+    st.session_state["workspace_candidate_count"] = current + 1
+
+
 @st.dialog("Workspace action", on_dismiss=_dismiss_workspace_home_action_dialog)
 def _render_workspace_home_action_dialog() -> None:
     mode = st.session_state.get("workspace_home_action_dialog", "").strip()
@@ -2143,7 +2190,7 @@ def _render_workspace_home_action_dialog() -> None:
         "Process this": "Add the link as a new sheet row, download media, ingest metadata, generate the transcript/caption, and build slide text in one shot.",
         "Generate headline": "Pull source text from an Instagram post or article link, then return three headline options plus a footered caption.",
         "Caption this": "Generate a caption directly from an Instagram post or article link using the selected hashtag preset.",
-        "Process as Candidate Article": "Paste a Substack article link, then paste the full article body to generate a three-slide carousel and caption footer.",
+        "Process as Candidate Article": "Paste the full article body to generate article-based slides and a caption footer.",
     }
 
     default_link = _clean_home_links()[0] if _clean_home_links() else ""
@@ -2299,120 +2346,91 @@ def _render_workspace_home_action_dialog() -> None:
 def _render_workspace_candidate_article_dialog(row: dict) -> None:
     row_num = row.get("row_number")
     substack_url = _cell_text(row.get("Instagram URL")).strip()
-    step = int(st.session_state.get("workspace_row_candidate_article_step", 1) or 1)
 
-    st.caption("Use this post action for Substack article rows to generate a three-slide carousel and footer.")
-    st.text_input(
-        "Substack URL",
-        value=substack_url,
-        disabled=True,
-        key=f"workspace_row_candidate_article_url_{row_num}",
+    st.caption("Paste the full article text here to generate the article-based slides and caption footer.")
+    article_body = st.text_area(
+        "Paste the full article",
+        key="workspace_row_candidate_article_body",
+        height=420,
+    ).strip()
+    generate_disabled = (
+        not article_body
+        or bool(st.session_state.get("workspace_row_candidate_article_generating"))
     )
-
     if st.button(
-        "Process as Candidate Article",
-        key=f"workspace_row_candidate_article_start_{row_num}",
+        "Generate Article Assets",
+        key=f"workspace_row_candidate_article_generate_{row_num}",
         type="primary",
         width="stretch",
-        disabled=not substack_url,
+        disabled=generate_disabled,
     ):
-        st.session_state["workspace_row_candidate_article_step"] = 2
+        st.session_state["workspace_row_candidate_article_generating"] = True
         st.session_state.pop("workspace_row_candidate_article_error", None)
-        st.session_state.pop("workspace_row_candidate_article_result", None)
+        try:
+            with st.spinner("Generating article assets..."):
+                generated_payload = _call_anthropic_candidate_article(article_body, substack_url)
+        except Exception as e:
+            st.session_state["workspace_row_candidate_article_error"] = (
+                "Could not generate the article assets. "
+                f"{describe_error(e)}"
+            )
+            st.session_state.pop("workspace_row_candidate_article_result", None)
+        else:
+            generated_payload["substack_url"] = substack_url
+            st.session_state["workspace_row_candidate_article_result"] = generated_payload
+        finally:
+            st.session_state["workspace_row_candidate_article_generating"] = False
         _rerun_workspace("Home")
 
-    step = int(st.session_state.get("workspace_row_candidate_article_step", 1) or 1)
-    if step >= 2:
-        st.divider()
-        st.caption("Since we can't read the article directly from the Substack URL, paste the full article text here so we can generate the Instagram caption from it.")
-        article_body = st.text_area(
-            "Paste the article body",
-            key="workspace_row_candidate_article_body",
-            height=420,
-        ).strip()
-        generate_disabled = (
-            not substack_url
-            or not article_body
-            or bool(st.session_state.get("workspace_row_candidate_article_generating"))
-        )
+    candidate_article_error = _cell_text(
+        st.session_state.get("workspace_row_candidate_article_error", "")
+    ).strip()
+    candidate_article_result = st.session_state.get("workspace_row_candidate_article_result")
+    if candidate_article_error:
+        st.error(candidate_article_error)
         if st.button(
-            "Generate Caption",
-            key=f"workspace_row_candidate_article_generate_{row_num}",
-            type="primary",
+            "Retry",
+            key=f"workspace_row_candidate_article_retry_{row_num}",
             width="stretch",
-            disabled=generate_disabled,
+            disabled=not article_body,
         ):
             st.session_state["workspace_row_candidate_article_generating"] = True
             st.session_state.pop("workspace_row_candidate_article_error", None)
             try:
-                with st.spinner("Generating caption..."):
+                with st.spinner("Generating article assets..."):
                     generated_payload = _call_anthropic_candidate_article(article_body, substack_url)
             except Exception as e:
                 st.session_state["workspace_row_candidate_article_error"] = (
-                    "Could not generate the caption. "
+                    "Could not generate the article assets. "
                     f"{describe_error(e)}"
                 )
                 st.session_state.pop("workspace_row_candidate_article_result", None)
-                st.session_state["workspace_row_candidate_article_step"] = 2
             else:
                 generated_payload["substack_url"] = substack_url
                 st.session_state["workspace_row_candidate_article_result"] = generated_payload
-                st.session_state["workspace_row_candidate_article_step"] = 3
             finally:
                 st.session_state["workspace_row_candidate_article_generating"] = False
             _rerun_workspace("Home")
 
-        candidate_article_error = _cell_text(
-            st.session_state.get("workspace_row_candidate_article_error", "")
-        ).strip()
-        candidate_article_result = st.session_state.get("workspace_row_candidate_article_result")
-        if candidate_article_error:
-            st.error(candidate_article_error)
-            if st.button(
-                "Retry",
-                key=f"workspace_row_candidate_article_retry_{row_num}",
-                width="stretch",
-                disabled=not substack_url or not article_body,
-            ):
-                st.session_state["workspace_row_candidate_article_generating"] = True
-                st.session_state.pop("workspace_row_candidate_article_error", None)
-                try:
-                    with st.spinner("Generating caption..."):
-                        generated_payload = _call_anthropic_candidate_article(article_body, substack_url)
-                except Exception as e:
-                    st.session_state["workspace_row_candidate_article_error"] = (
-                        "Could not generate the caption. "
-                        f"{describe_error(e)}"
-                    )
-                    st.session_state.pop("workspace_row_candidate_article_result", None)
-                    st.session_state["workspace_row_candidate_article_step"] = 2
-                else:
-                    generated_payload["substack_url"] = substack_url
-                    st.session_state["workspace_row_candidate_article_result"] = generated_payload
-                    st.session_state["workspace_row_candidate_article_step"] = 3
-                finally:
-                    st.session_state["workspace_row_candidate_article_generating"] = False
-                _rerun_workspace("Home")
-
-        if candidate_article_result:
-            st.divider()
-            st.markdown("**Generated Output**")
-            text1 = _cell_text(candidate_article_result.get("text1")).strip()
-            text2 = _cell_text(candidate_article_result.get("text2")).strip()
-            text3 = _cell_text(candidate_article_result.get("text3")).strip()
-            generated_substack_url = _cell_text(candidate_article_result.get("substack_url")).strip() or substack_url
-            footer_text = _build_candidate_article_footer(generated_substack_url)
-            copy_all_text = (
-                f"SLIDE 1:\n{text1}\n\n"
-                f"SLIDE 2:\n{text2}\n\n"
-                f"SLIDE 3:\n{text3}\n\n"
-                f"{footer_text}"
-            )
-            _render_candidate_output_card("Slide 1", text1, f"workspace_row_candidate_article_slide1_{row_num}")
-            _render_candidate_output_card("Slide 2", text2, f"workspace_row_candidate_article_slide2_{row_num}")
-            _render_candidate_output_card("Slide 3", text3, f"workspace_row_candidate_article_slide3_{row_num}")
-            _render_candidate_output_card("Caption Footer", footer_text, f"workspace_row_candidate_article_footer_{row_num}")
-            st.html(_copy_button_html("Copy All", copy_all_text, f"workspace_row_candidate_article_copy_all_{row_num}", primary=True))
+    if candidate_article_result:
+        st.divider()
+        st.markdown("**Generated Output**")
+        text1 = _cell_text(candidate_article_result.get("text1")).strip()
+        text2 = _cell_text(candidate_article_result.get("text2")).strip()
+        text3 = _cell_text(candidate_article_result.get("text3")).strip()
+        generated_substack_url = _cell_text(candidate_article_result.get("substack_url")).strip() or substack_url
+        footer_text = _build_candidate_article_footer(generated_substack_url)
+        copy_all_text = (
+            f"SLIDE 1:\n{text1}\n\n"
+            f"SLIDE 2:\n{text2}\n\n"
+            f"SLIDE 3:\n{text3}\n\n"
+            f"{footer_text}"
+        )
+        _render_candidate_output_card("Slide 1", text1, f"workspace_row_candidate_article_slide1_{row_num}")
+        _render_candidate_output_card("Slide 2", text2, f"workspace_row_candidate_article_slide2_{row_num}")
+        _render_candidate_output_card("Slide 3", text3, f"workspace_row_candidate_article_slide3_{row_num}")
+        _render_candidate_output_card("Caption Footer", footer_text, f"workspace_row_candidate_article_footer_{row_num}")
+        st.html(_copy_button_html("Copy All", copy_all_text, f"workspace_row_candidate_article_copy_all_{row_num}", primary=True))
 
     if st.button("Close", key=f"workspace_row_candidate_article_close_{row_num}", width="stretch"):
         _close_workspace_candidate_article_dialog(clear_inputs=True)
@@ -4482,7 +4500,6 @@ elif st.session_state["workspace_active_tab"] == "Data":
 active_section_tab = st.segmented_control(
     "Workspace section",
     ["Home", "Candidates"],
-    default=st.session_state.get("workspace_active_tab", "Home"),
     key="workspace_active_tab",
     label_visibility="collapsed",
     width="stretch",
@@ -4891,31 +4908,43 @@ if active_section_tab == "Home":
             _handle_update_all_workspace_speaker_names(editor_rows)
 
 if active_section_tab == "Candidates":
-    st.caption("Resolve a candidate's current race, verify the opponent, and generate a copy-ready Vote In Or Out prompt.")
+    st.caption("Generate a Substack article prompt for a race by entering the candidates you want compared.")
 
-    candidate_input = st.text_input(
-        "Candidate name",
-        key="workspace_candidate_name",
-        placeholder="e.g. Gavin Newsom",
-    ).strip()
-    donation_link = st.text_input(
+    fundraising_presets = _fundraising_preset_map()
+    candidate_keys = _candidate_input_keys()
+    candidate_inputs: list[str] = []
+    for index, candidate_key in enumerate(candidate_keys, start=1):
+        candidate_inputs.append(
+            st.text_input(
+                f"Candidate {index}",
+                key=candidate_key,
+                placeholder="e.g. Gavin Newsom" if index == 1 else "e.g. Kamala Harris",
+            ).strip()
+        )
+    st.button("Add another candidate", key="workspace_candidate_add", on_click=_add_candidate_input)
+
+    donation_options = ["No link"] + [option for option in fundraising_presets.keys() if option != "Custom"]
+    donation_source = st.selectbox(
         "Donation link",
-        key="workspace_candidate_donation_link",
-        placeholder="https://secure.actblue.com/donate/...",
-    ).strip()
+        options=donation_options,
+        key="workspace_candidate_donation_source",
+    )
+    donation_link = "" if donation_source == "No link" else fundraising_presets.get(donation_source, "").strip()
 
     action_left, action_right = st.columns(2)
     with action_left:
         if st.button(
-            "Research candidate",
+            "Process prompt",
             type="primary",
             width="stretch",
-            disabled=not candidate_input,
+            disabled=len([name for name in candidate_inputs if name]) < 2,
             key="workspace_candidate_research",
         ):
             try:
-                with st.spinner("Resolving race and opponent..."):
-                    st.session_state["workspace_candidate_result"] = _resolve_candidate_race(candidate_input)
+                with st.spinner("Resolving shared race..."):
+                    st.session_state["workspace_candidate_result"] = _resolve_candidate_comparison(
+                        candidate_inputs
+                    )
             except Exception as e:
                 st.session_state["workspace_candidate_error"] = describe_error(e)
                 st.session_state.pop("workspace_candidate_result", None)
@@ -4926,8 +4955,10 @@ if active_section_tab == "Candidates":
         if st.button("Clear", width="stretch", key="workspace_candidate_clear"):
             st.session_state.pop("workspace_candidate_result", None)
             st.session_state.pop("workspace_candidate_error", None)
-            st.session_state.pop("workspace_candidate_name", None)
-            st.session_state.pop("workspace_candidate_donation_link", None)
+            for candidate_key in _candidate_input_keys():
+                st.session_state.pop(candidate_key, None)
+            st.session_state["workspace_candidate_count"] = 2
+            st.session_state.pop("workspace_candidate_donation_source", None)
             _rerun_workspace("Candidates")
 
     candidate_error = st.session_state.get("workspace_candidate_error", "")
@@ -4937,87 +4968,28 @@ if active_section_tab == "Candidates":
     candidate_result = st.session_state.get("workspace_candidate_result")
     if candidate_result:
         if candidate_result.get("could_not_resolve"):
-            unresolved_name = candidate_result.get("candidate_name") or candidate_input
-            active_races = candidate_result.get("active_races") or []
-            race_list = ", ".join(active_races) if active_races else "none"
             st.warning(
-                f"I could not resolve a clear opponent for {unresolved_name}. "
-                f"The candidates I found in active races are: {race_list}. Please specify which race you want."
+                "I could not resolve a clear shared race for these candidates. "
+                "Verify the names or specify the exact contest."
             )
+            active_races = candidate_result.get("active_races") or []
+            if active_races:
+                st.caption(f"Active races found: {', '.join(active_races)}")
             if candidate_result.get("ambiguity_note"):
                 st.caption(candidate_result["ambiguity_note"])
         else:
+            resolved_names = [
+                _cell_text(name).strip()
+                for name in (candidate_result.get("candidate_names") or [])
+                if _cell_text(name).strip()
+            ]
             st.markdown(
                 (
-                    f"**Resolved race:** {candidate_result.get('candidate_name', candidate_input)} vs. "
-                    f"{candidate_result.get('opponent_name', '')}, {candidate_result.get('race_name', '')}, "
+                    f"**Resolved race:** {', '.join(resolved_names) or ', '.join([name for name in candidate_inputs if name])}, "
+                    f"{candidate_result.get('race_name', '')}, "
                     f"{candidate_result.get('election_date', '')}"
                 )
             )
-            info_left, info_right = st.columns(2)
-            with info_left:
-                st.text_input(
-                    "Office",
-                    value=_cell_text(candidate_result.get("office")).strip(),
-                    disabled=True,
-                    key="workspace_candidate_office_display",
-                )
-                st.text_input(
-                    "Jurisdiction",
-                    value=_cell_text(candidate_result.get("jurisdiction")).strip(),
-                    disabled=True,
-                    key="workspace_candidate_jurisdiction_display",
-                )
-                st.text_input(
-                    "Election date",
-                    value=_cell_text(candidate_result.get("election_date")).strip(),
-                    disabled=True,
-                    key="workspace_candidate_election_display",
-                )
-            with info_right:
-                st.text_input(
-                    "Opponent",
-                    value=_cell_text(candidate_result.get("opponent_name")).strip(),
-                    disabled=True,
-                    key="workspace_candidate_opponent_display",
-                )
-                st.text_input(
-                    "Race",
-                    value=_cell_text(candidate_result.get("race_name")).strip(),
-                    disabled=True,
-                    key="workspace_candidate_race_display",
-                )
-                st.text_input(
-                    "Last updated stamp",
-                    value=_cell_text(candidate_result.get("today_date")).strip(),
-                    disabled=True,
-                    key="workspace_candidate_today_display",
-                )
-                st.text_input(
-                    "Donation link",
-                    value=donation_link,
-                    disabled=True,
-                    key="workspace_candidate_donation_display",
-                )
-
-            if candidate_result.get("resolution_basis"):
-                st.caption(candidate_result["resolution_basis"])
-
-            prompt_text = _build_candidate_prompt(
-                candidate_result.get("candidate_name") or candidate_input,
-                donation_link=donation_link,
-            )
+            prompt_text = _build_candidate_prompt(candidate_result, donation_link=donation_link)
             st.subheader("Substack prompt")
-            _multiline_copy_preview("copy prompt", prompt_text, "workspace_candidate_prompt")
-
-        source_rows = candidate_result.get("search_results") or []
-        if source_rows:
-            st.subheader("Sources used for race resolution")
-            for idx, source in enumerate(source_rows[:8], start=1):
-                source_name = source.get("source") or "Source"
-                title = source.get("title") or source.get("url") or f"Result {idx}"
-                url = source.get("url") or ""
-                snippet = source.get("snippet") or ""
-                st.markdown(f"{idx}. **{source_name}**: [{title}]({url})")
-                if snippet:
-                    st.caption(snippet)
+            st.code(prompt_text, language=None)
