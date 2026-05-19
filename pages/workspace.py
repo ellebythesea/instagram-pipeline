@@ -22,9 +22,12 @@ import openai
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
+from apify_client import ApifyClient
 
 from article_source import fetch_article_source
 from config import (
+    APIFY_API_TOKEN,
+    APIFY_POST_ACTOR_ID,
     DEFAULT_POST_FOOTER,
     GOOGLE_DRIVE_FOLDER_ID,
     GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER,
@@ -282,6 +285,345 @@ def _get_client() -> openai.OpenAI:
 def _today_eastern_label() -> str:
     now = datetime.now(ZoneInfo("America/New_York"))
     return f"{now.strftime('%B')} {now.day}, {now.year}"
+
+
+def _now_eastern() -> datetime:
+    return datetime.now(ZoneInfo("America/New_York"))
+
+
+def _format_eastern_timestamp(value: datetime) -> str:
+    eastern = value.astimezone(ZoneInfo("America/New_York"))
+    return eastern.strftime("%Y-%m-%d %I:%M %p ET")
+
+
+def _parse_candidate_comment_timestamp(value) -> datetime | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, (int, float)):
+        numeric = float(value)
+        if numeric > 1_000_000_000_000:
+            numeric /= 1000.0
+        try:
+            return datetime.fromtimestamp(numeric, tz=ZoneInfo("UTC"))
+        except Exception:
+            return None
+    parsed = pd.to_datetime(value, errors="coerce", utc=True)
+    if pd.isna(parsed):
+        return None
+    return parsed.to_pydatetime()
+
+
+def _candidate_comments_worksheet():
+    workbook = sheet_ops._workbook(GOOGLE_SHEET_ID)
+    for title in ("Candidates", "candidates"):
+        try:
+            return workbook.worksheet(title)
+        except Exception:
+            pass
+    for worksheet in workbook.worksheets():
+        if (worksheet.title or "").strip().lower() == "candidates":
+            return worksheet
+    raise RuntimeError("Candidates worksheet not found in the configured Google Sheet.")
+
+
+def _load_open_candidate_comment_rows() -> list[dict]:
+    ws = _candidate_comments_worksheet()
+    values = sheet_ops._with_backoff(ws.get_all_values)
+    if not values:
+        return []
+
+    header_row = [cell.strip() for cell in values[0]]
+    normalized_headers = {header.strip().lower(): index for index, header in enumerate(header_row) if header.strip()}
+    summary_index = normalized_headers.get("summary")
+    url_index = normalized_headers.get("instagram")
+    last_checked_index = normalized_headers.get("last checked")
+    status_index = normalized_headers.get("status")
+
+    if url_index is None or status_index is None:
+        raise RuntimeError("Candidates worksheet must include Instagram and Status columns.")
+
+    rows: list[dict] = []
+    for row_number, row in enumerate(values[1:], start=2):
+        url = row[url_index].strip() if len(row) > url_index else ""
+        last_checked_raw = row[last_checked_index].strip() if last_checked_index is not None and len(row) > last_checked_index else ""
+        status = row[status_index].strip() if len(row) > status_index else ""
+        if not url or status.lower() != "open":
+            continue
+        rows.append(
+            {
+                "row_number": row_number,
+                "summary": row[summary_index].strip() if summary_index is not None and len(row) > summary_index else "",
+                "url": url,
+                "last_checked_raw": last_checked_raw,
+                "last_checked_at": _parse_candidate_comment_timestamp(last_checked_raw),
+            }
+        )
+    return rows
+
+
+def _extract_comment_records(items: list[dict], since: datetime | None) -> list[dict]:
+    collected: list[dict] = []
+    seen: set[tuple[str, str, str]] = set()
+
+    def visit_comment(payload: dict) -> None:
+        if not isinstance(payload, dict):
+            return
+        text = ""
+        for key in ("text", "comment", "content", "commentText"):
+            candidate = payload.get(key)
+            if isinstance(candidate, str) and candidate.strip():
+                text = candidate.strip()
+                break
+        timestamp = None
+        for key in ("timestamp", "createdAt", "created_at", "time"):
+            timestamp = _parse_candidate_comment_timestamp(payload.get(key))
+            if timestamp is not None:
+                break
+        if since is not None and timestamp is not None and timestamp <= since:
+            return
+        username = ""
+        for key in ("ownerUsername", "username", "userName", "authorUsername"):
+            candidate = payload.get(key)
+            if isinstance(candidate, str) and candidate.strip():
+                username = candidate.strip().lstrip("@")
+                break
+        if not username:
+            owner = payload.get("owner")
+            if isinstance(owner, dict):
+                for key in ("username", "userName"):
+                    candidate = owner.get(key)
+                    if isinstance(candidate, str) and candidate.strip():
+                        username = candidate.strip().lstrip("@")
+                        break
+        fingerprint = (
+            text.lower(),
+            username.lower(),
+            timestamp.isoformat() if timestamp is not None else "",
+        )
+        if text and fingerprint not in seen:
+            seen.add(fingerprint)
+            collected.append(
+                {
+                    "text": text,
+                    "username": username,
+                    "timestamp": timestamp.isoformat() if timestamp is not None else "",
+                }
+            )
+
+    def walk(payload) -> None:
+        if isinstance(payload, dict):
+            visit_comment(payload)
+            for key in ("comments", "latestComments", "latest_comments", "items"):
+                nested = payload.get(key)
+                if isinstance(nested, list):
+                    for child in nested:
+                        walk(child)
+        elif isinstance(payload, list):
+            for child in payload:
+                walk(child)
+
+    walk(items)
+    return collected
+
+
+def _fetch_candidate_comments_since(url: str, since: datetime | None) -> list[dict]:
+    if not APIFY_API_TOKEN:
+        raise RuntimeError("APIFY_API_TOKEN is not configured.")
+
+    apify_client = ApifyClient(APIFY_API_TOKEN)
+    actor = apify_client.actor(APIFY_POST_ACTOR_ID)
+    run = None
+    last_error = None
+    candidate_inputs = [
+        {
+            "directUrls": [url],
+            "resultsType": "comments",
+            "resultsLimit": 50,
+        },
+        {
+            "directUrls": [url],
+            "scrapeType": "comments",
+            "resultsLimit": 50,
+        },
+    ]
+    for run_input in candidate_inputs:
+        try:
+            run = actor.call(run_input=run_input, timeout_secs=300)
+            break
+        except Exception as exc:
+            last_error = exc
+    if run is None:
+        raise last_error or RuntimeError("Apify comments run did not start.")
+    if run.get("status") != "SUCCEEDED":
+        raise RuntimeError(f"Comments actor failed: {run.get('status') or 'unknown status'}")
+
+    items = list(apify_client.dataset(run["defaultDatasetId"]).iterate_items())
+    return _extract_comment_records(items, since)
+
+
+def _is_link_request_comment(comment: str) -> bool:
+    lowered = comment.lower()
+    return "link" in lowered and not any(
+        phrase in lowered
+        for phrase in (
+            "missing link",
+            "source link",
+            "link to source",
+            "where is the source",
+        )
+    )
+
+
+def _empty_comment_groups() -> dict[str, list[dict]]:
+    return {
+        "What About": [],
+        "Missing": [],
+        "Biased": [],
+        "Wrong": [],
+        "Controversies": [],
+    }
+
+
+def _fallback_issue_comment_examples(comments: list[dict]) -> dict[str, list[dict]]:
+    groups = _empty_comment_groups()
+    for comment in comments:
+        text = (comment.get("text") or "").strip()
+        lowered = text.lower()
+        if not text or _is_link_request_comment(text):
+            continue
+        if "what about" in lowered:
+            groups["What About"].append(comment)
+        if any(marker in lowered for marker in (
+            "missing",
+            "you missed",
+            "you left out",
+            "left out",
+            "forgot",
+            "doesn't mention",
+            "doesnt mention",
+            "should mention",
+            "should include",
+            "needs to include",
+            "no mention of",
+        )):
+            groups["Missing"].append(comment)
+        if any(marker in lowered for marker in ("biased", "bias", "unfair")):
+            groups["Biased"].append(comment)
+        if any(marker in lowered for marker in (
+            "wrong",
+            "incorrect",
+            "inaccurate",
+            "misleading",
+            "not true",
+            "false",
+            "source?",
+            "where's the source",
+            "where is the source",
+            "proof?",
+        )):
+            groups["Wrong"].append(comment)
+        if any(marker in lowered for marker in (
+            "controvers",
+            "scandal",
+            "lawsuit",
+            "corruption",
+            "fraud",
+            "investigation",
+            "indict",
+            "ethics",
+            "criminal",
+            "cover up",
+            "cover-up",
+            "allegation",
+            "accusation",
+        )):
+            groups["Controversies"].append(comment)
+    return {label: entries for label, entries in groups.items() if entries}
+
+
+def _summarize_candidate_comments(comments: list[dict]) -> dict[str, list[dict]]:
+    cleaned_comments = []
+    for comment in comments:
+        text = (comment.get("text") or "").strip()
+        if not text:
+            continue
+        cleaned_comments.append(
+            {
+                "text": text,
+                "username": (comment.get("username") or "").strip(),
+                "timestamp": (comment.get("timestamp") or "").strip(),
+            }
+        )
+    if not cleaned_comments:
+        return {}
+    candidate_comments = [comment for comment in cleaned_comments if not _is_link_request_comment(comment["text"])]
+    if not candidate_comments:
+        return {}
+
+    numbered_comments = []
+    for index, comment in enumerate(candidate_comments[:80], start=1):
+        username = f"@{comment['username']}" if comment.get("username") else "(unknown user)"
+        numbered_comments.append(f"{index}. {username}: {comment['text']}")
+
+    prompt = (
+        "Review these Instagram comments and classify every qualifying comment into one or more of these headings: "
+        "What About, Missing, Biased, Wrong, Controversies. "
+        "Phrases like 'what about', 'you missed', and 'why didn't you mention' are strong signals, but use judgment "
+        "and do not require exact wording. Ignore requests that are only asking for a link. "
+        "Use Controversies for comments asking about scandals, allegations, investigations, corruption, lawsuits, ethics issues, or other controversies around the person. "
+        "Do not rewrite, shorten, or paraphrase the comments. Choose the exact comment numbers from the list. "
+        "Return all qualifying comments from this list, not just a sample. A comment may appear in more than one heading if needed. "
+        "Return JSON only in this format: "
+        "{\"groups\": {\"What About\": [1, 4], \"Missing\": [2], \"Biased\": [3], \"Wrong\": [5, 6], \"Controversies\": [7]}}. "
+        "Use empty arrays for headings with no matches. Return all five headings every time."
+    )
+    joined_comments = "\n".join(numbered_comments)
+    response = _get_client().chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": f"Comments to review:\n{joined_comments}"},
+        ],
+        max_completion_tokens=220,
+        temperature=0.2,
+    )
+    summary = (response.choices[0].message.content or "").strip()
+    if not summary:
+        raise ValueError("OpenAI returned an empty comments summary.")
+    try:
+        payload = _extract_json_object(summary)
+    except Exception:
+        return _fallback_issue_comment_examples(candidate_comments)
+    raw_groups = payload.get("groups") or {}
+    grouped_comments = _empty_comment_groups()
+    for label in grouped_comments:
+        raw_numbers = raw_groups.get(label) or []
+        seen_indexes: set[int] = set()
+        for value in raw_numbers:
+            try:
+                index = int(value)
+            except Exception:
+                continue
+            if index < 1 or index > len(candidate_comments) or index in seen_indexes:
+                continue
+            seen_indexes.add(index)
+            grouped_comments[label].append(candidate_comments[index - 1])
+    grouped_comments = {label: entries for label, entries in grouped_comments.items() if entries}
+    return grouped_comments or _fallback_issue_comment_examples(candidate_comments)
+
+
+def _update_candidate_last_checked(row_number: int, checked_at: datetime) -> None:
+    ws = _candidate_comments_worksheet()
+    values = sheet_ops._with_backoff(ws.get_all_values)
+    if not values:
+        raise RuntimeError("Candidates worksheet is empty.")
+    header_row = [cell.strip() for cell in values[0]]
+    normalized_headers = {header.strip().lower(): index for index, header in enumerate(header_row) if header.strip()}
+    last_checked_index = normalized_headers.get("last checked")
+    if last_checked_index is None:
+        raise RuntimeError("Candidates worksheet must include a Last checked column.")
+    column_letter = chr(ord("A") + last_checked_index)
+    sheet_ops._with_backoff(ws.update, f"{column_letter}{row_number}", [[checked_at.isoformat(timespec="seconds")]])
 
 
 def _extract_json_object(raw_text: str) -> dict:
@@ -5205,3 +5547,138 @@ if active_section_tab == "Candidates":
             prompt_text = _build_candidate_prompt(candidate_result, donation_link=donation_link)
             st.subheader("Substack prompt")
             st.code(prompt_text, language=None)
+
+    st.divider()
+    st.subheader("Latest Comments")
+    commentary_entries = st.session_state.setdefault("workspace_candidate_commentary_entries", [])
+    open_comment_rows: list[dict] = []
+    open_comment_rows_error = ""
+    try:
+        open_comment_rows = _load_open_candidate_comment_rows()
+    except Exception as e:
+        open_comment_rows_error = describe_error(e)
+
+    selected_rows: list[dict] = []
+    if open_comment_rows_error:
+        st.error(open_comment_rows_error)
+    elif not open_comment_rows:
+        st.caption('No rows with Status "open" were found in the Candidates sheet.')
+    else:
+        selector_default_rows = []
+        for row in open_comment_rows:
+            selector_default_rows.append(
+                {
+                    "Check": False,
+                    "Summary": row.get("summary") or "",
+                    "Instagram": row["url"],
+                    "_row_number": row["row_number"],
+                }
+            )
+        selector_df = pd.DataFrame(selector_default_rows)
+        edited_selector_df = st.data_editor(
+            selector_df,
+            hide_index=True,
+            width="stretch",
+            key="workspace_candidate_comments_selector",
+            column_config={
+                "Check": st.column_config.CheckboxColumn("Check", default=False),
+                "Summary": st.column_config.TextColumn("Summary", disabled=True),
+                "Instagram": st.column_config.TextColumn("Instagram", disabled=True),
+                "_row_number": None,
+            },
+            disabled=["Summary", "Instagram", "_row_number"],
+        )
+        selected_row_numbers = {
+            int(row["_row_number"])
+            for row in edited_selector_df.to_dict("records")
+            if row.get("Check") and row.get("_row_number") not in (None, "")
+        }
+        selected_rows = [
+            row for row in open_comment_rows
+            if row["row_number"] in selected_row_numbers
+        ]
+
+    comments_action_left, comments_action_right = st.columns(2)
+    with comments_action_left:
+        if st.button(
+            "Check for New Comments",
+            type="primary",
+            width="stretch",
+            key="workspace_candidate_comments_check",
+        ):
+            checked_at = _now_eastern()
+            new_entries: list[dict] = []
+            if open_comment_rows_error:
+                st.error(open_comment_rows_error)
+            elif not open_comment_rows:
+                st.info('No rows with Status "open" were found in the Candidates sheet.')
+            elif not selected_rows:
+                st.warning("Select at least one open row before checking for new comments.")
+            else:
+                with st.spinner("Checking selected candidate posts for new comments..."):
+                    for candidate_row in selected_rows:
+                        url = candidate_row["url"]
+                        checked_label = _format_eastern_timestamp(checked_at)
+                        try:
+                            comments = _fetch_candidate_comments_since(
+                                url,
+                                candidate_row.get("last_checked_at"),
+                            )
+                            summary = _summarize_candidate_comments(comments)
+                            _update_candidate_last_checked(candidate_row["row_number"], checked_at)
+                            new_entries.append(
+                                {
+                                    "label": candidate_row.get("summary") or url,
+                                    "url": url,
+                                    "checked_at": checked_label,
+                                    "summary_groups": summary,
+                                    "error": "",
+                                }
+                            )
+                        except Exception as e:
+                            new_entries.append(
+                                {
+                                    "label": candidate_row.get("summary") or url,
+                                    "url": url,
+                                    "checked_at": checked_label,
+                                    "summary_groups": {},
+                                    "error": describe_error(e),
+                                }
+                            )
+                if new_entries:
+                    st.session_state["workspace_candidate_commentary_entries"] = new_entries + commentary_entries
+                    commentary_entries = st.session_state["workspace_candidate_commentary_entries"]
+    with comments_action_right:
+        if st.button(
+            "Clear Commentary",
+            width="stretch",
+            key="workspace_candidate_comments_clear",
+        ):
+            st.session_state["workspace_candidate_commentary_entries"] = []
+            commentary_entries = []
+
+    if not commentary_entries:
+        st.caption("No comment summaries yet.")
+    else:
+        for entry in commentary_entries:
+            st.markdown(f"**{entry['url']}**")
+            st.caption(f"{entry.get('label') or entry['url']} last checked {entry['checked_at']}")
+            if entry.get("error"):
+                st.error(entry["error"])
+            else:
+                groups = entry.get("summary_groups") or {}
+                if not groups:
+                    st.caption("No missing, biased, wrong, or controversy-comment patterns found.")
+                else:
+                    for heading in ("What About", "Missing", "Biased", "Wrong", "Controversies"):
+                        comments = groups.get(heading) or []
+                        if not comments:
+                            continue
+                        st.markdown(f"**{heading}**")
+                        for comment in comments:
+                            username = (comment.get("username") or "").strip()
+                            text = (comment.get("text") or "").strip()
+                            if not text:
+                                continue
+                            prefix = f"@{username}: " if username else ""
+                            st.markdown(f"- {prefix}{text}")
