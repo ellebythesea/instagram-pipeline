@@ -168,16 +168,43 @@ def _video_duration_seconds(input_path: Path) -> float:
     return float(duration_text)
 
 
+def _video_dimensions(input_path: Path) -> tuple[int, int]:
+    command = [
+        _ffprobe_path(),
+        "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=width,height",
+        "-of", "csv=p=0",
+        str(input_path),
+    ]
+    result = subprocess.run(command, capture_output=True, text=True, check=True)
+    parts = result.stdout.strip().split(",")
+    if len(parts) < 2:
+        raise RuntimeError(f"Could not determine dimensions for {input_path.name}.")
+    return int(parts[0]), int(parts[1])
+
+
+def _fit_target_dimensions(width: int, height: int) -> tuple[int, int]:
+    """Return the 4:5 bounding box for the input, keeping the larger relevant dimension."""
+    target_ar = 4 / 5
+    if width / height >= target_ar:
+        # Wider than 4:5 — constrain by height
+        target_w = (round(height * target_ar) // 2) * 2
+        target_h = (height // 2) * 2
+    else:
+        # Narrower than 4:5 — constrain by width
+        target_w = (width // 2) * 2
+        target_h = (round(width / target_ar) // 2) * 2
+    return target_w, target_h
+
+
 def _run_ffmpeg(input_path: Path, output_dir: Path) -> list[Path]:
     ffmpeg_path = _ffmpeg_path()
-    crop_width = (
-        f"if(gte(iw/ih\\,{TARGET_ASPECT_RATIO})\\,trunc(ih*{TARGET_ASPECT_RATIO}/2)*2\\,iw)"
-    )
-    crop_height = (
-        f"if(gte(iw/ih\\,{TARGET_ASPECT_RATIO})\\,ih\\,trunc(iw/({TARGET_ASPECT_RATIO})/2)*2)"
-    )
+    src_w, src_h = _video_dimensions(input_path)
+    target_w, target_h = _fit_target_dimensions(src_w, src_h)
     video_filter = (
-        f"crop={crop_width}:{crop_height}:(iw-ow)/2:(ih-oh)/2,"
+        f"scale={target_w}:{target_h}:force_original_aspect_ratio=decrease,"
+        f"pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2:color=black,"
         "scale=trunc(iw/2)*2:trunc(ih/2)*2"
     )
     duration = _video_duration_seconds(input_path)
