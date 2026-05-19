@@ -5583,7 +5583,7 @@ if active_section_tab == "Candidates":
             column_config={
                 "Check": st.column_config.CheckboxColumn("Check", default=False),
                 "Summary": st.column_config.TextColumn("Summary", disabled=True),
-                "Instagram": st.column_config.TextColumn("Instagram", disabled=True),
+                "Instagram": st.column_config.LinkColumn("Instagram", disabled=True),
                 "_row_number": None,
             },
             disabled=["Summary", "Instagram", "_row_number"],
