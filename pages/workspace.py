@@ -336,6 +336,7 @@ def _load_open_candidate_comment_rows() -> list[dict]:
     normalized_headers = {header.strip().lower(): index for index, header in enumerate(header_row) if header.strip()}
     summary_index = normalized_headers.get("summary")
     url_index = normalized_headers.get("instagram")
+    substack_index = normalized_headers.get("substack")
     last_checked_index = normalized_headers.get("last checked")
     status_index = normalized_headers.get("status")
 
@@ -354,6 +355,7 @@ def _load_open_candidate_comment_rows() -> list[dict]:
                 "row_number": row_number,
                 "summary": row[summary_index].strip() if summary_index is not None and len(row) > summary_index else "",
                 "url": url,
+                "substack": row[substack_index].strip() if substack_index is not None and len(row) > substack_index else "",
                 "last_checked_raw": last_checked_raw,
                 "last_checked_at": _parse_candidate_comment_timestamp(last_checked_raw),
             }
@@ -5571,6 +5573,7 @@ if active_section_tab == "Candidates":
                     "Check": False,
                     "Summary": row.get("summary") or "",
                     "Instagram": row["url"],
+                    "Substack": row.get("substack") or "",
                     "_row_number": row["row_number"],
                 }
             )
@@ -5584,9 +5587,10 @@ if active_section_tab == "Candidates":
                 "Check": st.column_config.CheckboxColumn("Check", default=False),
                 "Summary": st.column_config.TextColumn("Summary", disabled=True),
                 "Instagram": st.column_config.LinkColumn("Instagram", disabled=True),
+                "Substack": st.column_config.LinkColumn("Substack", disabled=True),
                 "_row_number": None,
             },
-            disabled=["Summary", "Instagram", "_row_number"],
+            disabled=["Summary", "Instagram", "Substack", "_row_number"],
         )
         selected_row_numbers = {
             int(row["_row_number"])
