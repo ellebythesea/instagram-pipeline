@@ -174,7 +174,7 @@ VOTER_GUIDE_PROMPT_TEMPLATE = textwrap.dedent(
     - "What People Are Getting Wrong" section: 3-5 common pieces of misinformation or misleading framings, each with a brief correction. Be fair to both sides; do not only debunk one candidate's critics.
     - "Read More" section: 5-8 sources, each with the publication name in bold, article title in quotes, a one-sentence description of what the piece offers, and the full URL written out on its own line.
     - Closing line in italics: "Something missing? Something wrong? Drop it in the comments. This article is updated daily based on what readers add."
-    - AI disclaimer in italics, placed as the final element of the article: "This guide was researched and written with the assistance of AI, guided and reviewed by a human editor. It can make mistakes. If you spot something wrong, missing, or outdated, leave a comment below and it will be reviewed and updated. This is a living document."
+    - AI disclaimer in italics, placed as the final element of the article: "This guide was researched and written with the assistance of AI, guided and reviewed by a human editor. It can make mistakes. If you spot something wrong, missing, or outdated, leave a comment below and it will be reviewed and updated. This is a living document. [Read about our methodology here.](https://voteinorout.substack.com/p/we-are-building-our-voter-guides)"
 
     After the article, output a "Tags" block with five Substack tags optimized for search and discovery. Use the names of both candidates, the race name, the election cycle, and one issue-based tag.
 
@@ -4508,6 +4508,21 @@ def _process_next_workspace_action() -> None:
             with st.spinner(f"Updating screenshot for row {row_number}..."):
                 _refresh_row_thumbnail_from_video(row, offset_seconds=5.0)
             st.session_state["workspace_success"] = f"Row {row_number}: screenshot updated from 5 seconds into the video."
+        elif action == "split_video_fill":
+            with st.spinner(f"Cropping and splitting video for row {row_number}..."):
+                media_links = [
+                    lnk.strip()
+                    for lnk in _cell_text(row.get("Media Drive Link")).split(",")
+                    if lnk.strip()
+                ]
+                if not media_links:
+                    raise ValueError("No media link found for this row.")
+                media_link = media_links[0]
+                username = _cell_text(row.get("Source Username")).strip().lstrip("@")
+                handle_text = _cell_text(row.get("Speaker Name")).strip()
+                preview_folder_id, _, _ = _ensure_preview_folder(row_number, username, handle_text, media_link)
+                _upload_split_videos(media_link, preview_folder_id)
+            st.session_state["workspace_success"] = f"Row {row_number}: video cropped to fill and uploaded to Drive."
         else:
             raise ValueError(f"Unknown action: {action}")
         _mark_workspace_action_complete(row_number, action)
@@ -5288,6 +5303,15 @@ if active_section_tab == "Home":
                                     media_links[0],
                                     width="stretch",
                                 )
+                            if is_reel and media_links and st.button(
+                                "Crop video to fill",
+                                key=f"workspace_menu_crop_video_{row_num}",
+                                width="stretch",
+                                help="Re-crop the original video to fill the 4:5 canvas and upload segments to Drive.",
+                            ):
+                                _close_workspace_menu(row)
+                                _queue_workspace_action(row_num, "split_video_fill")
+                                _rerun_workspace("Edit")
                             primary_action = "process_post" if is_instagram else "image_text"
                             primary_help = (
                                 "Transcribe, generate the caption, and generate slide copy."
