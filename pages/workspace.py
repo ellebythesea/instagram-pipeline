@@ -3758,6 +3758,12 @@ def _copy_tabs(
             if st.button("Hide link", key=f"workspace_row_slides_cta_hidden_{row_num}", width="stretch"):
                 _save_slide_three_cta_choice(row_num, slide_three_cta_key, "hidden")
                 _rerun_workspace("Edit")
+        if media_link:
+            st.link_button(
+                "Open reel in Drive" if media_type.lower() == "reel" else "Open media in Drive",
+                media_link,
+                width="stretch",
+            )
         if (slide_text3 or "").strip():
             st.code(
                 _caption_tab_value(
@@ -3772,6 +3778,19 @@ def _copy_tabs(
             )
             st.caption("Custom link text")
             st.code(top_comment or "(none)", language=None)
+        if (slide_text1 or "").strip() and prompt_row:
+            if st.button(
+                "Delete row",
+                key=f"workspace_slides_delete_{row_num}",
+                width="stretch",
+            ):
+                try:
+                    _delete_workspace_row(prompt_row)
+                except Exception as e:
+                    st.session_state["workspace_error"] = f"Row {row_num}: could not delete row - {describe_error(e)}"
+                else:
+                    st.session_state["workspace_success"] = f"Row {row_num}: deleted from the sheet."
+                _rerun_workspace("Edit")
 
 
 def _icon_copy_button(label: str, value: str) -> None:
