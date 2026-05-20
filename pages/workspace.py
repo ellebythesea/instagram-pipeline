@@ -2298,10 +2298,15 @@ def _copy_source_video_into_preview_folder(media_link: str, preview_folder_id: s
     return copy_drive_file_to_folder(media_link, preview_folder_id, source_filename)
 
 
-def _split_video_to_folder(local_video_path: str, output_dir: str) -> list[str]:
-    crop_width = "if(gte(iw/ih\\,4/5)\\,trunc(ih*(4/5)/2)*2\\,iw)"
-    crop_height = "if(gte(iw/ih\\,4/5)\\,ih\\,trunc(iw/(4/5)/2)*2)"
-    video_filter = f"crop={crop_width}:{crop_height}:(iw-ow)/2:(ih-oh)/2,scale=trunc(iw/2)*2:trunc(ih/2)*2"
+def _split_video_to_folder(local_video_path: str, output_dir: str, mode: str = "fill") -> list[str]:
+    if mode == "fit":
+        pad_w = "if(gte(iw/ih\\,4/5)\\,iw\\,trunc(ih*(4/5)/2)*2)"
+        pad_h = "if(gte(iw/ih\\,4/5)\\,trunc(iw*(5/4)/2)*2\\,ih)"
+        video_filter = f"pad={pad_w}:{pad_h}:(ow-iw)/2:(oh-ih)/2:black,scale=trunc(iw/2)*2:trunc(ih/2)*2"
+    else:
+        crop_width = "if(gte(iw/ih\\,4/5)\\,trunc(ih*(4/5)/2)*2\\,iw)"
+        crop_height = "if(gte(iw/ih\\,4/5)\\,ih\\,trunc(iw/(4/5)/2)*2)"
+        video_filter = f"crop={crop_width}:{crop_height}:(iw-ow)/2:(ih-oh)/2,scale=trunc(iw/2)*2:trunc(ih/2)*2"
     duration = _video_duration_seconds(local_video_path)
     if duration <= 0:
         raise RuntimeError("Could not determine video duration for splitting.")
@@ -2346,7 +2351,7 @@ def _split_video_to_folder(local_video_path: str, output_dir: str) -> list[str]:
     return outputs
 
 
-def _upload_split_videos(media_link: str, preview_folder_id: str) -> list[dict[str, str]]:
+def _upload_split_videos(media_link: str, preview_folder_id: str, mode: str = "fill") -> list[dict[str, str]]:
     if not media_link:
         return []
     metadata = get_drive_file_metadata(media_link)
@@ -2360,7 +2365,7 @@ def _upload_split_videos(media_link: str, preview_folder_id: str) -> list[dict[s
         download_drive_file(media_link, local_video_path)
         split_dir = os.path.join(tmp_dir, "segments")
         os.makedirs(split_dir, exist_ok=True)
-        segment_paths = _split_video_to_folder(local_video_path, split_dir)
+        segment_paths = _split_video_to_folder(local_video_path, split_dir, mode=mode)
         uploaded: list[dict[str, str]] = []
         for segment_path in segment_paths:
             segment_filename = os.path.basename(segment_path)
@@ -4508,7 +4513,9 @@ def _process_next_workspace_action() -> None:
             with st.spinner(f"Updating screenshot for row {row_number}..."):
                 _refresh_row_thumbnail_from_video(row, offset_seconds=5.0)
             st.session_state["workspace_success"] = f"Row {row_number}: screenshot updated from 5 seconds into the video."
-        elif action == "split_video_fill":
+        elif action in ("split_video_fill", "split_video_fit"):
+            mode = "fill" if action == "split_video_fill" else "fit"
+            label = "fill" if mode == "fill" else "fit"
             with st.spinner(f"Cropping and splitting video for row {row_number}..."):
                 media_links = [
                     lnk.strip()
@@ -4521,8 +4528,8 @@ def _process_next_workspace_action() -> None:
                 username = _cell_text(row.get("Source Username")).strip().lstrip("@")
                 handle_text = _cell_text(row.get("Speaker Name")).strip()
                 preview_folder_id, _, _ = _ensure_preview_folder(row_number, username, handle_text, media_link)
-                _upload_split_videos(media_link, preview_folder_id)
-            st.session_state["workspace_success"] = f"Row {row_number}: video cropped to fill and uploaded to Drive."
+                _upload_split_videos(media_link, preview_folder_id, mode=mode)
+            st.session_state["workspace_success"] = f"Row {row_number}: video cropped to {label} and uploaded to Drive."
         else:
             raise ValueError(f"Unknown action: {action}")
         _mark_workspace_action_complete(row_number, action)
@@ -5289,6 +5296,15 @@ if active_section_tab == "Home":
                             ):
                                 _close_workspace_menu(row)
                                 _queue_workspace_action(row_num, "split_video_fill")
+                                _rerun_workspace("Edit")
+                            if is_reel and media_links and st.button(
+                                "Crop video to fit",
+                                key=f"workspace_menu_crop_video_fit_{row_num}",
+                                width="stretch",
+                                help="Scale the original video to fit the 4:5 canvas with black bars and upload segments to Drive.",
+                            ):
+                                _close_workspace_menu(row)
+                                _queue_workspace_action(row_num, "split_video_fit")
                                 _rerun_workspace("Edit")
                             primary_action = "process_post" if is_instagram else "image_text"
                             primary_help = (
