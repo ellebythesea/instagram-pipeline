@@ -193,10 +193,11 @@ SYS_PROMPT = (
     "with verified facts, dates, and numbers when relevant. Include direct quotes "
     "where available. Verify names and quotes carefully. Any hashtag that appears in the caption "
     "body counts toward the same total of 3 to 5 hashtags. Never use these hashtags: #Trump, "
-    "#ICE, #DonaldTrump, #Epstein, #JeffreyEpstein. Avoid speculation, flourish, links, or Trump's current "
-    "office status. Do not refer to the source as a transcript, clip, speech, interview, or video unless that is explicitly certain. "
+    "#ICE, #DonaldTrump, #Epstein, #JeffreyEpstein. Avoid speculation, invented framing, invented motives, invented reactions, invented legal conclusions, or unsupported factual claims. "
+    "Do not refer to the source as a transcript, clip, speech, interview, or video unless that is explicitly certain. "
     "Do not write phrases like during his speech, in the transcript, in this clip, or in the video. "
-    "Write as if you are describing the underlying event or claim directly."
+    "Write as if you are describing the underlying event or claim directly. "
+    "Do not use first-person narrative."
 )
 
 

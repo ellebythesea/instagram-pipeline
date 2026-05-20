@@ -3779,6 +3779,7 @@ def _copy_tabs(
             st.caption("Custom link text")
             st.code(top_comment or "(none)", language=None)
         if (slide_text1 or "").strip() and prompt_row:
+            st.markdown("<div style='padding-top:100px'></div>", unsafe_allow_html=True)
             if st.button(
                 "Delete row",
                 key=f"workspace_slides_delete_{row_num}",
