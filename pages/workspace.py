@@ -4533,10 +4533,8 @@ def _process_next_workspace_action() -> None:
             with st.spinner(f"Updating screenshot for row {row_number}..."):
                 _refresh_row_thumbnail_from_video(row, offset_seconds=5.0)
             st.session_state["workspace_success"] = f"Row {row_number}: screenshot updated from 5 seconds into the video."
-        elif action in ("split_video_fill", "split_video_fit"):
-            mode = "fill" if action == "split_video_fill" else "fit"
-            label = "fill" if mode == "fill" else "fit"
-            with st.spinner(f"Cropping and splitting video for row {row_number}..."):
+        elif action == "split_video_fit":
+            with st.spinner(f"Scaling and splitting video for row {row_number}..."):
                 media_links = [
                     lnk.strip()
                     for lnk in _cell_text(row.get("Media Drive Link")).split(",")
@@ -4548,8 +4546,8 @@ def _process_next_workspace_action() -> None:
                 username = _cell_text(row.get("Source Username")).strip().lstrip("@")
                 handle_text = _cell_text(row.get("Speaker Name")).strip()
                 preview_folder_id, _, _ = _ensure_preview_folder(row_number, username, handle_text, media_link)
-                _upload_split_videos(media_link, preview_folder_id, mode=mode)
-            st.session_state["workspace_success"] = f"Row {row_number}: video cropped to {label} and uploaded to Drive."
+                _upload_split_videos(media_link, preview_folder_id, mode="fit")
+            st.session_state["workspace_success"] = f"Row {row_number}: video scaled to fit and uploaded to Drive."
         else:
             raise ValueError(f"Unknown action: {action}")
         _mark_workspace_action_complete(row_number, action)
@@ -5311,14 +5309,9 @@ if active_section_tab == "Home":
                                     media_links[0],
                                     width="stretch",
                                 )
-                            if is_reel and media_links and st.button(
-                                "Crop video to fill",
-                                key=f"workspace_menu_crop_video_{row_num}",
-                                width="stretch",
-                                help="Re-crop the original video to fill the 4:5 canvas and upload segments to Drive.",
-                            ):
+                            if st.button("Add link", key=f"workspace_link_open_{row_num}", width="stretch"):
                                 _close_workspace_menu(row)
-                                _queue_workspace_action(row_num, "split_video_fill")
+                                st.session_state["workspace_link_dialog_row"] = row_num
                                 _rerun_workspace("Edit")
                             if is_reel and media_links and st.button(
                                 "Crop video to fit",
@@ -5359,20 +5352,6 @@ if active_section_tab == "Home":
                                         _rerun_workspace("Edit")
                                 _close_workspace_menu(row)
                                 _queue_workspace_action(row_num, primary_action)
-                                _rerun_workspace("Edit")
-                            if st.button(
-                                "Generate caption only" if is_photo_post else "Generate caption",
-                                key=f"workspace_menu_generate_{row_num}",
-                                width="stretch",
-                                help=(
-                                    "Generate only the caption from existing source text and saved image text. "
-                                    "Use Process this post to read the images and create slide copy."
-                                    if is_photo_post
-                                    else "Generate a caption for this row from its existing source text, transcript, and context."
-                                ),
-                            ):
-                                _close_workspace_menu(row)
-                                _queue_workspace_action(row_num, "generate_caption")
                                 _rerun_workspace("Edit")
                             if st.button(
                                 "Slides for this post",
@@ -5419,10 +5398,6 @@ if active_section_tab == "Home":
                                     if next_status != "skipped"
                                     else f"Row {row_num}: skipped and moved to the bottom."
                                 )
-                                _rerun_workspace("Edit")
-                            if st.button("Add link", key=f"workspace_link_open_{row_num}", width="stretch"):
-                                _close_workspace_menu(row)
-                                st.session_state["workspace_link_dialog_row"] = row_num
                                 _rerun_workspace("Edit")
                             if st.button(
                                 "Delete row",
