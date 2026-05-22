@@ -3650,6 +3650,7 @@ def _copy_tabs(
         slide_one_background_adjust_key = f"workspace_slide_preview_background_adjust_{row_num}"
         slide_one_fit_toggle_key = f"workspace_slide_preview_fit_mode_{row_num}"
         slide_two_font_adjust_key = f"workspace_slide_two_preview_font_adjust_{row_num}"
+        slide_two_cta_key = f"workspace_slide_two_cta_row_{row_num}"
         slide_three_font_adjust_key = f"workspace_slide_three_preview_font_adjust_{row_num}"
         slide_three_cta_key = f"workspace_slide_three_cta_row_{row_num}"
         preview_links_key = f"workspace_preview_upload_links_{row_num}"
@@ -3660,6 +3661,12 @@ def _copy_tabs(
             st.session_state.get(slide_one_fit_toggle_key, default_slide_one_fit_mode)
         )
         current_slide_two_font_adjust = int(st.session_state.get(slide_two_font_adjust_key, 0) or 0)
+        current_slide_two_cta = _cell_text(
+            st.session_state.get(slide_two_cta_key, "hidden")
+        ).strip().lower() or "hidden"
+        if current_slide_two_cta not in {"more", "article", "petition", "video", "custom link", "hidden"}:
+            current_slide_two_cta = "hidden"
+            st.session_state[slide_two_cta_key] = current_slide_two_cta
         current_slide_three_font_adjust = int(st.session_state.get(slide_three_font_adjust_key, 0) or 0)
         default_slide_three_cta_option = "article" if _is_candidate_article_row(prompt_row or {}) else "hidden"
         default_slide_three_cta = (
@@ -3698,7 +3705,14 @@ def _copy_tabs(
                 current_slide_one_fit_mode,
             )
         if (slide_text2 or "").strip():
-            _render_text_slide_preview(2, slide_text2, current_slide_two_font_adjust)
+            _render_text_slide_preview(
+                2,
+                slide_text2,
+                current_slide_two_font_adjust,
+                include_link_cta=current_slide_two_cta != "hidden",
+                link_cta_target=current_slide_two_cta,
+                link_cta_text=_slide_three_cta_text(current_slide_two_cta, top_comment),
+            )
             _render_workspace_preview_control_bar(
                 f"{row_num}_slide2",
                 slide_two_font_adjust_key,
@@ -3738,6 +3752,27 @@ def _copy_tabs(
             if st.button("Edit text 3", key=f"workspace_row_slides_edit_text3_{row_num}", width="stretch"):
                 _open_workspace_slide_action_dialog(row_num, "text3")
                 _rerun_workspace("Edit")
+            st.markdown("**Slide 2 link**")
+            if st.button("S2 Link: More", key=f"workspace_row_slides_s2cta_more_{row_num}", width="stretch"):
+                st.session_state[slide_two_cta_key] = "more"
+                _rerun_workspace("Edit")
+            if st.button("S2 Link: Video", key=f"workspace_row_slides_s2cta_video_{row_num}", width="stretch"):
+                st.session_state[slide_two_cta_key] = "video"
+                _rerun_workspace("Edit")
+            if st.button("S2 Link: Article", key=f"workspace_row_slides_s2cta_article_{row_num}", width="stretch"):
+                st.session_state[slide_two_cta_key] = "article"
+                _rerun_workspace("Edit")
+            if st.button("S2 Link: Petition", key=f"workspace_row_slides_s2cta_petition_{row_num}", width="stretch"):
+                st.session_state[slide_two_cta_key] = "petition"
+                _rerun_workspace("Edit")
+            if st.button("S2 Link: Custom Link", key=f"workspace_row_slides_s2cta_custom_{row_num}", width="stretch"):
+                st.session_state[slide_two_cta_key] = "custom link"
+                _open_workspace_slide_action_dialog(row_num, "custom_link")
+                _rerun_workspace("Edit")
+            if st.button("S2 Hide link", key=f"workspace_row_slides_s2cta_hidden_{row_num}", width="stretch"):
+                st.session_state[slide_two_cta_key] = "hidden"
+                _rerun_workspace("Edit")
+            st.markdown("**Slide 3 link**")
             if st.button("Link: More", key=f"workspace_row_slides_cta_more_{row_num}", width="stretch"):
                 _save_slide_three_cta_choice(row_num, slide_three_cta_key, "more")
                 _rerun_workspace("Edit")
