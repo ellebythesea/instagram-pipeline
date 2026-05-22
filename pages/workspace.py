@@ -3335,8 +3335,8 @@ def _render_slide_one_preview(
     safe_headline = html.escape(headline_text)
     safe_background = html.escape(background_url.strip()) if background_url else ""
     headline_clamp_css = (
-        f"clamp(calc(1.55rem + {headline_font_adjust_px}px), "
-        f"calc(4cqw + {headline_font_adjust_px}px), "
+        f"clamp(calc(1rem + {headline_font_adjust_px}px), "
+        f"calc(5cqw + {headline_font_adjust_px}px), "
         f"calc(2.8rem + {headline_font_adjust_px}px))"
     )
     background_position = f"center {background_y_adjust_px}px"
