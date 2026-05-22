@@ -3718,6 +3718,26 @@ def _copy_tabs(
                 slide_two_font_adjust_key,
                 current_slide_two_font_adjust,
             )
+            with st.popover("Slide 2 actions", use_container_width=True):
+                if st.button("S2 Link: More", key=f"workspace_row_slides_s2cta_more_{row_num}", width="stretch"):
+                    st.session_state[slide_two_cta_key] = "more"
+                    _rerun_workspace("Edit")
+                if st.button("S2 Link: Video", key=f"workspace_row_slides_s2cta_video_{row_num}", width="stretch"):
+                    st.session_state[slide_two_cta_key] = "video"
+                    _rerun_workspace("Edit")
+                if st.button("S2 Link: Article", key=f"workspace_row_slides_s2cta_article_{row_num}", width="stretch"):
+                    st.session_state[slide_two_cta_key] = "article"
+                    _rerun_workspace("Edit")
+                if st.button("S2 Link: Petition", key=f"workspace_row_slides_s2cta_petition_{row_num}", width="stretch"):
+                    st.session_state[slide_two_cta_key] = "petition"
+                    _rerun_workspace("Edit")
+                if st.button("S2 Link: Custom Link", key=f"workspace_row_slides_s2cta_custom_{row_num}", width="stretch"):
+                    st.session_state[slide_two_cta_key] = "custom link"
+                    _open_workspace_slide_action_dialog(row_num, "custom_link")
+                    _rerun_workspace("Edit")
+                if st.button("S2 Hide link", key=f"workspace_row_slides_s2cta_hidden_{row_num}", width="stretch"):
+                    st.session_state[slide_two_cta_key] = "hidden"
+                    _rerun_workspace("Edit")
         if (slide_text3 or "").strip():
             _render_text_slide_preview(
                 3,
@@ -3751,26 +3771,6 @@ def _copy_tabs(
                 _rerun_workspace("Edit")
             if st.button("Edit text 3", key=f"workspace_row_slides_edit_text3_{row_num}", width="stretch"):
                 _open_workspace_slide_action_dialog(row_num, "text3")
-                _rerun_workspace("Edit")
-            st.markdown("**Slide 2 link**")
-            if st.button("S2 Link: More", key=f"workspace_row_slides_s2cta_more_{row_num}", width="stretch"):
-                st.session_state[slide_two_cta_key] = "more"
-                _rerun_workspace("Edit")
-            if st.button("S2 Link: Video", key=f"workspace_row_slides_s2cta_video_{row_num}", width="stretch"):
-                st.session_state[slide_two_cta_key] = "video"
-                _rerun_workspace("Edit")
-            if st.button("S2 Link: Article", key=f"workspace_row_slides_s2cta_article_{row_num}", width="stretch"):
-                st.session_state[slide_two_cta_key] = "article"
-                _rerun_workspace("Edit")
-            if st.button("S2 Link: Petition", key=f"workspace_row_slides_s2cta_petition_{row_num}", width="stretch"):
-                st.session_state[slide_two_cta_key] = "petition"
-                _rerun_workspace("Edit")
-            if st.button("S2 Link: Custom Link", key=f"workspace_row_slides_s2cta_custom_{row_num}", width="stretch"):
-                st.session_state[slide_two_cta_key] = "custom link"
-                _open_workspace_slide_action_dialog(row_num, "custom_link")
-                _rerun_workspace("Edit")
-            if st.button("S2 Hide link", key=f"workspace_row_slides_s2cta_hidden_{row_num}", width="stretch"):
-                st.session_state[slide_two_cta_key] = "hidden"
                 _rerun_workspace("Edit")
             st.markdown("**Slide 3 link**")
             if st.button("Link: More", key=f"workspace_row_slides_cta_more_{row_num}", width="stretch"):
@@ -4678,42 +4678,12 @@ def _build_chatgpt_handoff_prompt(rows: list[dict]) -> str:
         "* Do not add unverified claims. If context cannot be verified, stay close to the supplied transcript and caption.\n"
         "* Never cite sources in the JSON output. Use research only to improve accuracy and context.\n\n"
 
-        "Rules:\n"
+        + "Rules:\n"
         "* Keep row_number exactly as shown\n"
         "* No markdown, no commentary outside JSON\n"
         "* Plain straight double quotes only, no smart quotes\n"
-        "* name = short lowercase username, no @ symbol\n"
-        "* text1 = 250 to 349 chars when enough verified material exists\n"
-        "* text2 = 425 to 549 chars when enough verified material exists\n"
-        "* text3 = 325 to 449 chars when enough verified material exists\n"
-        "* If the source material is too thin, write the strongest accurate version without padding\n"
-        "* No em dashes, no newlines, no \\n sequences inside any text field\n"
-        "* Every text field must be a single continuous paragraph with no line breaks or paragraph spacing\n"
-        "* Never insert carriage returns, tabs, bullet points, numbered lists, or sentence spacing tricks inside fields\n"
-        "* Do not use escaped newline characters like \\n, \\r, or unicode line separators\n"
-        "* Collapse all whitespace into normal single spaces before returning JSON\n"
-        "* No speculation or invented framing\n"
-        "* Never include hashtags in slide text\n"
-        "* Never use phrases like 'the speaker,' 'the clip,' 'the transcript,' or 'the video'\n\n"
-
-        "Quote rules:\n"
-        "* Pull direct quotes from the transcript first before writing anything in your own words\n"
-        "* Each slide must contain at least one direct quote from the transcript if one is available\n"
-        "* Short punchy quotes are preferred over paraphrasing\n"
-        "* Do not invent, paraphrase as a quote, or attribute anything not said verbatim in the transcript\n"
-        "* If no strong quote exists for a slide, write around verified facts without fabricating one\n\n"
-
-        "Slide structure:\n"
-        "* text1 = strongest opening slide. Lead with the best direct quote, most explosive verified fact, or clearest news hook\n"
-        "* text2 = new facts, quotes, verified context, names, dates, numbers, contradictions, or legal details only\n"
-        "* text3 = fallout, unanswered questions, public consequences, policy stakes, legal implications, or next steps only\n"
-        "* Never repeat information across text1, text2, and text3\n"
-        "* Assume the viewer already read previous slides. Do not restate information\n"
-        "* Each field should feel like a complete standalone carousel slide\n"
-        "* Prioritize numbers, names, dates, direct quotes, charges, rulings, dollar amounts, and locations over generic summaries\n"
-        "* Use emotionally charged but factual framing only\n\n"
-
-        "Quality check before final output:\n"
+        + pipeline_caption_ops.carousel_slide_rules()
+        + "Quality check before final output:\n"
         "* Confirm every object has exactly row_number, name, text1, text2, text3\n"
         "* Confirm character limits are respected\n"
         "* Confirm text is not too short when more verified context exists\n"

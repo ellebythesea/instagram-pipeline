@@ -310,6 +310,53 @@ def _carousel_display_name(row: dict) -> str:
     return username
 
 
+def carousel_slide_rules() -> str:
+    """Canonical slide generation rules shared by all carousel prompt builders."""
+    return (
+        "* name = short lowercase account username, no @ symbol\n"
+        "* text1 = strongest opening slide under 350 chars\n"
+        "* text2 = usually 350 to 475 chars depending on source strength\n"
+        "* text3 = usually 350 to 475 chars depending on source strength\n"
+        "* If the source material is too thin, write the strongest accurate version without padding\n"
+        "* No em dashes, emojis, hashtags, paragraph breaks, or newline characters inside text fields\n"
+        "* Every text field must be a single continuous paragraph with no line breaks or paragraph spacing\n"
+        "* Do not use escaped newline characters like \\n, \\r, or unicode line separators\n"
+        "* Collapse all whitespace into normal single spaces before returning JSON\n"
+        "* No speculation or invented framing\n"
+        "* Never include hashtags in slide text\n"
+        "* Never use phrases like 'the speaker,' 'the clip,' 'the transcript,' 'the video,' or 'the creator said'\n"
+        "* Never repeat the same fact, quote, setup, accusation, or disclaimer across text1, text2, and text3\n\n"
+
+        "Slide structure:\n"
+        "* text1 = strongest opening slide. Lead with the best direct quote, most explosive verified fact, or clearest news hook\n"
+        "* text2 = quote heavy. Use the strongest exchanges, pushback, direct lines, new facts, verified context, names, dates, numbers, contradictions, or legal details only\n"
+        "* text3 = broader context, stakes, political backdrop, public reaction, fallout, unanswered questions, public consequences, policy stakes, legal implications, or next steps\n"
+        "* Assume the viewer already read previous slides. Do not restate information\n"
+        "* Each field should feel like a complete standalone carousel slide\n"
+        "* Prioritize numbers, names, dates, direct quotes, charges, rulings, dollar amounts, and locations over generic summaries\n"
+        "* Use emotionally charged but factual framing only\n"
+        "* Avoid obvious framing like 'this matters because,' 'why this matters,' or 'the reason this is important'\n"
+        "* Every slide must add a new concrete detail, quote, context point, or consequence\n\n"
+
+        "Style priority:\n"
+        "* Write like a viral political news account creating Instagram carousel slides\n"
+        "* Sound natural, conversational, punchy, emotionally charged, and factual\n"
+        "* Prioritize specificity: names, numbers, accusations, stakes, consequences, and strong quotes\n"
+        "* Avoid robotic transitions, filler phrases, generic summaries, and over explaining\n"
+        "* Expand beyond the transcript and caption only when reliable context materially improves the carousel\n\n"
+
+        "Quote guidance:\n"
+        "* Pull direct quotes from the transcript first before writing anything in your own words\n"
+        "* Each slide must contain at least one direct quote from the transcript if one is available\n"
+        "* Short punchy quotes are preferred over paraphrasing\n"
+        "* Do not invent, paraphrase as a quote, or attribute anything not said verbatim in the transcript\n"
+        "* If no strong quote exists for a slide, write around verified facts without fabricating one\n"
+        "* Use the person's name when provided\n"
+        "* Prioritize text1 and text2 for direct quotes\n"
+        "* text3 may use fewer quotes when context explains the stakes more naturally\n"
+    )
+
+
 def _carousel_slide_prompt_instructions(include_row_numbers: bool) -> str:
     header = (
         "Return ONLY valid JSON as an array.\n\n"
@@ -328,43 +375,12 @@ def _carousel_slide_prompt_instructions(include_row_numbers: bool) -> str:
         "* text3\n\n"
     )
     return (
-        header +
-        "Rules:\n"
+        header
+        + "Rules:\n"
         + ("* Keep row_number exactly the same numeric value shown in the row block\n" if include_row_numbers else "")
         + "* Return only valid JSON. No markdown or commentary outside JSON\n"
         + "* Use plain straight double quotes only. No smart quotes\n"
-        + "* name = short lowercase account username, no @ symbol\n"
-        + "* text1 = strongest opening slide under 350 chars\n"
-        + "* text2 = usually 350 to 750 chars depending on source strength\n"
-        + "* text3 = usually 250 to 600 chars depending on source strength\n"
-        + "* No em dashes, emojis, hashtags, paragraph breaks, or newline characters inside text fields\n"
-        + "* No speculation or invented framing\n"
-        + "* Never use phrases like 'the speaker,' 'the clip,' 'the transcript,' 'the video,' or 'the creator said'\n"
-        + "* Never repeat the same fact, quote, setup, accusation, or disclaimer across text1, text2, and text3\n"
-        + "* Never restate the same quote, accusation, setup, statistic, or framing in different words across slides\n"
-        + "* Do not pad text2 or text3. Shorter is better when source material is thin\n\n"
-
-        + "Slide structure:\n"
-        + "* text1 = strongest accusation, statistic, conflict, consequence, or direct quote\n"
-        + "* text2 = quote heavy slide using the strongest exchanges, pushback, or direct lines from the transcript\n"
-        + "* text3 = broader context, stakes, political backdrop, public reaction, historical comparison, or real world impact tied to the story\n"
-        + "* Assume the viewer already read the previous slide\n"
-        + "* Avoid obvious framing like 'this matters because,' 'why this matters,' or 'the reason this is important'\n"
-        + "* Every slide must add a new concrete detail, quote, context point, or consequence\n\n"
-
-        + "Style priority:\n"
-        + "* Write like a viral political news account creating Instagram carousel slides\n"
-        + "* Sound natural, conversational, punchy, emotionally charged, and factual\n"
-        + "* Prioritize specificity: names, numbers, accusations, stakes, consequences, and strong quotes\n"
-        + "* Avoid robotic transitions, filler phrases, generic summaries, and over explaining\n"
-        + "* Expand beyond the transcript and caption only when reliable context materially improves the carousel\n\n"
-
-        + "Quote guidance:\n"
-        + "* Use the person's name when provided\n"
-        + "* Prefer short direct quotes when they strengthen the slide\n"
-        + "* Do not force quotes into awkward sentences\n"
-        + "* Prioritize text1 and text2 for direct quotes\n"
-        + "* text3 may use fewer quotes when context explains the stakes more naturally\n"
+        + carousel_slide_rules()
     )
 
 
