@@ -3963,17 +3963,22 @@ def _run_all_steps() -> None:
     if untranscribed:
         with st.status(f"Step 2: Transcribing {len(untranscribed)} reel(s) with Whisper…", expanded=True) as s2:
             succeeded = 0
-            for row in untranscribed:
+            for i, row in enumerate(untranscribed, 1):
                 row_num = row["row_number"]
+                username = _cell_text(row.get("Source Username")).strip() or f"row {row_num}"
+                s2.update(label=f"Step 2: Transcribing {i}/{len(untranscribed)} — {username} (row {row_num})…")
                 try:
+                    st.write(f"Downloading row {row_num}…")
                     transcript = _transcribe_reel_from_drive(row)
                     if transcript:
+                        st.write(f"Row {row_num}: transcript received ({len(transcript)} chars), saving…")
                         update_transcript(GOOGLE_SHEET_ID, row_num, transcript)
                         updated_row = dict(row)
                         updated_row["Transcript"] = transcript
                         caption = generate_row_caption(updated_row)
                         next_status = "skipped" if (row.get("Status", "") or "").strip().lower() == "skipped" else "done"
                         update_caption(GOOGLE_SHEET_ID, row_num, caption, next_status)
+                        st.write(f"Row {row_num}: done.")
                         succeeded += 1
                     else:
                         st.warning(f"Row {row_num}: Whisper returned no transcript")
@@ -3991,14 +3996,18 @@ def _run_all_steps() -> None:
     if new_reels:
         with st.status(f"Step 3: Splitting {len(new_reels)} reel(s)…", expanded=True) as s3:
             split_succeeded = 0
-            for row in new_reels:
+            for i, row in enumerate(new_reels, 1):
                 row_num = row["row_number"]
+                username = _cell_text(row.get("Source Username")).strip() or f"row {row_num}"
+                s3.update(label=f"Step 3: Splitting {i}/{len(new_reels)} — {username} (row {row_num})…")
                 try:
+                    st.write(f"Row {row_num}: downloading and splitting…")
                     media_link = _cell_text(row.get("Media Drive Link")).strip().split(",")[0].strip()
-                    username = _cell_text(row.get("Source Username")).strip().lstrip("@")
+                    username_clean = _cell_text(row.get("Source Username")).strip().lstrip("@")
                     handle_text = _cell_text(row.get("Speaker Name")).strip()
-                    preview_folder_id, _, _ = _ensure_preview_folder(row_num, username, handle_text, media_link)
+                    preview_folder_id, _, _ = _ensure_preview_folder(row_num, username_clean, handle_text, media_link)
                     _upload_split_videos(media_link, preview_folder_id, mode="fit")
+                    st.write(f"Row {row_num}: done.")
                     split_succeeded += 1
                 except Exception as e:
                     st.warning(f"Row {row_num}: {describe_error(e)}")
