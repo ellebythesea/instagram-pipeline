@@ -319,8 +319,8 @@ def carousel_slide_rules() -> str:
     return (
         "* name = short lowercase account username, no @ symbol\n"
         "* text1 = strongest opening slide under 350 chars\n"
-        "* text2 = usually 350 to 475 chars depending on source strength\n"
-        "* text3 = usually 350 to 475 chars depending on source strength\n"
+        "* text2 = usually 350 to 450 chars depending on source strength\n"
+        "* text3 = usually 350 to 450 chars depending on source strength\n"
         "* If the source material is too thin, write the strongest accurate version without padding\n"
         "* No em dashes, emojis, hashtags, paragraph breaks, or newline characters inside text fields\n"
         "* Every text field must be a single continuous paragraph with no line breaks or paragraph spacing\n"
