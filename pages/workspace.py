@@ -44,7 +44,6 @@ from drive import (
     get_or_create_subfolder,
     upload_to_drive,
 )
-from scripts.local_transcribe_reels import _archive_orphaned_media, _default_media_dir
 from ingest_helpers import _compact_post_date, build_filename_prefix, upload_media_bundle
 import pipeline_caption as pipeline_caption_ops
 from post_scraper import process_url as process_post_url
@@ -4008,6 +4007,7 @@ def _run_all_steps() -> None:
     # Step 4: Archive orphaned local media files and screenshots
     with st.status("Step 4: Cleaning up orphaned local media…", expanded=True) as s4:
         try:
+            from scripts.local_transcribe_reels import _archive_orphaned_media, _default_media_dir
             media_root = _default_media_dir()
             if media_root.exists():
                 service = _get_service()
