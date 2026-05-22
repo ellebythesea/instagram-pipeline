@@ -104,10 +104,10 @@ PREVIEW_SLIDE_FONT_WEIGHT = 500
 PREVIEW_SLIDE_LETTER_SPACING = "0.01em"
 PREVIEW_SLIDE_LINE_HEIGHT = "1.26"
 SLIDE_TWO_FONT_MIN_REM = 1.4
-SLIDE_TWO_FONT_VW = 4.4
+SLIDE_TWO_FONT_CQW = 6.0
 SLIDE_TWO_FONT_MAX_REM = 3.35
 SLIDE_THREE_FONT_MIN_REM = 1.4
-SLIDE_THREE_FONT_VW = 4.0
+SLIDE_THREE_FONT_CQW = 5.5
 SLIDE_THREE_FONT_MAX_REM = 3.0
 PREVIEW_UPLOAD_SUBFOLDER = "previews"
 PINNED_TOP_COMMENT_PREFIX = "[[TOP]] "
@@ -3336,7 +3336,7 @@ def _render_slide_one_preview(
     safe_background = html.escape(background_url.strip()) if background_url else ""
     headline_clamp_css = (
         f"clamp(calc(1.55rem + {headline_font_adjust_px}px), "
-        f"calc(4vw + {headline_font_adjust_px}px), "
+        f"calc(8cqw + {headline_font_adjust_px}px), "
         f"calc(2.8rem + {headline_font_adjust_px}px))"
     )
     background_position = f"center {background_y_adjust_px}px"
@@ -3358,6 +3358,7 @@ def _render_slide_one_preview(
           width: 100%;
           max-width: {PREVIEW_CANVAS_WIDTH_PX}px;
           margin: 0 auto;
+          container-type: inline-size;
         }}
         .workspace-preview-card {{
           width: 100%;
@@ -3415,7 +3416,7 @@ def _render_slide_one_preview(
             background: linear-gradient(180deg, rgba(18, 23, 34, 0) 0%, rgba(18, 23, 34, 0.9) 36.34%, #121722 80.76%);
           ">
             <div class="workspace-slide-preview-handle" style="
-              font-size: clamp(0.7rem, 1.15vw, 1rem);
+              font-size: clamp(0.7rem, 2.7cqw, 1rem);
               letter-spacing: 0.3em;
               line-height: 1.38;
               text-transform: uppercase;
@@ -3450,13 +3451,13 @@ def _render_text_slide_preview(
     if slide_number == 3:
         body_clamp_css = (
             f"clamp(calc({SLIDE_THREE_FONT_MIN_REM}rem + {body_font_adjust_px}px), "
-            f"calc({SLIDE_THREE_FONT_VW}vw + {body_font_adjust_px}px), "
+            f"calc({SLIDE_THREE_FONT_CQW}cqw + {body_font_adjust_px}px), "
             f"calc({SLIDE_THREE_FONT_MAX_REM}rem + {body_font_adjust_px}px))"
         )
     else:
         body_clamp_css = (
             f"clamp(calc({SLIDE_TWO_FONT_MIN_REM}rem + {body_font_adjust_px}px), "
-            f"calc({SLIDE_TWO_FONT_VW}vw + {body_font_adjust_px}px), "
+            f"calc({SLIDE_TWO_FONT_CQW}cqw + {body_font_adjust_px}px), "
             f"calc({SLIDE_TWO_FONT_MAX_REM}rem + {body_font_adjust_px}px))"
         )
     cta_html = ""
@@ -3486,6 +3487,7 @@ def _render_text_slide_preview(
           width: 100%;
           max-width: {PREVIEW_CANVAS_WIDTH_PX}px;
           margin: 0 auto;
+          container-type: inline-size;
         }}
         .workspace-preview-card {{
           width: 100%;
