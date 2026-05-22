@@ -103,12 +103,9 @@ PREVIEW_SLIDE_FONT_FAMILY = "'Poppins', sans-serif"
 PREVIEW_SLIDE_FONT_WEIGHT = 500
 PREVIEW_SLIDE_LETTER_SPACING = "0.01em"
 PREVIEW_SLIDE_LINE_HEIGHT = "1.26"
-SLIDE_TWO_FONT_MIN_REM = 1.4
-SLIDE_TWO_FONT_CQW = 6.0
-SLIDE_TWO_FONT_MAX_REM = 3.35
-SLIDE_THREE_FONT_MIN_REM = 1.4
-SLIDE_THREE_FONT_CQW = 5.5
-SLIDE_THREE_FONT_MAX_REM = 3.0
+SLIDE_BODY_FONT_MIN_REM = pipeline_caption_ops.SLIDE_BODY_FONT_MIN_REM
+SLIDE_BODY_FONT_CQW = pipeline_caption_ops.SLIDE_BODY_FONT_CQW
+SLIDE_BODY_FONT_MAX_REM = pipeline_caption_ops.SLIDE_BODY_FONT_MAX_REM
 PREVIEW_UPLOAD_SUBFOLDER = "previews"
 PINNED_TOP_COMMENT_PREFIX = "[[TOP]] "
 
@@ -3448,18 +3445,11 @@ def _render_text_slide_preview(
         return
 
     safe_body = html.escape(content_text)
-    if slide_number == 3:
-        body_clamp_css = (
-            f"clamp(calc({SLIDE_THREE_FONT_MIN_REM}rem + {body_font_adjust_px}px), "
-            f"calc({SLIDE_THREE_FONT_CQW}cqw + {body_font_adjust_px}px), "
-            f"calc({SLIDE_THREE_FONT_MAX_REM}rem + {body_font_adjust_px}px))"
-        )
-    else:
-        body_clamp_css = (
-            f"clamp(calc({SLIDE_TWO_FONT_MIN_REM}rem + {body_font_adjust_px}px), "
-            f"calc({SLIDE_TWO_FONT_CQW}cqw + {body_font_adjust_px}px), "
-            f"calc({SLIDE_TWO_FONT_MAX_REM}rem + {body_font_adjust_px}px))"
-        )
+    body_clamp_css = (
+        f"clamp(calc({SLIDE_BODY_FONT_MIN_REM}rem + {body_font_adjust_px}px), "
+        f"calc({SLIDE_BODY_FONT_CQW}cqw + {body_font_adjust_px}px), "
+        f"calc({SLIDE_BODY_FONT_MAX_REM}rem + {body_font_adjust_px}px))"
+    )
     cta_html = ""
     if include_link_cta:
         cta_value = (link_cta_text or "").strip() or _slide_three_cta_text(link_cta_target, "")
