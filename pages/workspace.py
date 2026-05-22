@@ -37,12 +37,14 @@ from config import (
 )
 from caption import transcribe_video
 from drive import (
+    _get_service,
     copy_drive_file_to_folder,
     download_drive_file,
     get_drive_file_metadata,
     get_or_create_subfolder,
     upload_to_drive,
 )
+from scripts.local_transcribe_reels import _archive_orphaned_media, _default_media_dir
 from ingest_helpers import _compact_post_date, build_filename_prefix, upload_media_bundle
 import pipeline_caption as pipeline_caption_ops
 from post_scraper import process_url as process_post_url
@@ -4003,8 +4005,20 @@ def _run_all_steps() -> None:
                     st.warning(f"Row {row_num}: {describe_error(e)}")
             s3.update(label=f"Step 3: Split {split_succeeded}/{len(new_reels)} reel(s)", state="complete")
 
-    queued_note = f" Queued: {len(new_reels)} split(s)." if new_reels else ""
-    st.session_state["workspace_success"] = f"Run all complete.{queued_note}"
+    # Step 4: Archive orphaned local media files and screenshots
+    with st.status("Step 4: Cleaning up orphaned local media…", expanded=True) as s4:
+        try:
+            media_root = _default_media_dir()
+            if media_root.exists():
+                service = _get_service()
+                moved = _archive_orphaned_media(media_root, all_rows, service, dry_run=False)
+                s4.update(label=f"Step 4: Archived {moved} orphaned item(s)", state="complete")
+            else:
+                s4.update(label="Step 4: Local media folder not found, skipped", state="complete")
+        except Exception as e:
+            s4.update(label=f"Step 4 cleanup error: {describe_error(e)}", state="error")
+
+    st.session_state["workspace_success"] = "Run all complete."
 
 
 def _process_pending_rows_from_sheet() -> int:
