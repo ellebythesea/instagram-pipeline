@@ -12,7 +12,7 @@ PINNED_TOP_COMMENT_PREFIX = "[[TOP]] "
 
 SLIDE_BODY_FONT_MIN_REM = 1.4
 SLIDE_BODY_FONT_CQW = 5.5
-SLIDE_BODY_FONT_MAX_REM = 3.0
+SLIDE_BODY_FONT_MAX_REM = 2.7
 
 SYS_PROMPT = (
     "You are a sharp political analyst. Rewrite the source material into a short, clear social post "
