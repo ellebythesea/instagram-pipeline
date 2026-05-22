@@ -3968,6 +3968,11 @@ def _run_all_steps() -> None:
                     transcript = _transcribe_reel_from_drive(row)
                     if transcript:
                         update_transcript(GOOGLE_SHEET_ID, row_num, transcript)
+                        updated_row = dict(row)
+                        updated_row["Transcript"] = transcript
+                        caption = generate_row_caption(updated_row)
+                        next_status = "skipped" if (row.get("Status", "") or "").strip().lower() == "skipped" else "done"
+                        update_caption(GOOGLE_SHEET_ID, row_num, caption, next_status)
                         succeeded += 1
                     else:
                         st.warning(f"Row {row_num}: Whisper returned no transcript")
