@@ -94,16 +94,8 @@ def process_url(url: str, include_transcript: bool = False) -> dict:
         or ""
     )
 
-    transcript = (
-        item.get("transcript")
-        or item.get("transcription")
-        or item.get("captionText")
-        or item.get("accessibilityCaption")
-        or item.get("captions")
-        or ""
-    )
-    if isinstance(transcript, list):
-        transcript = " ".join(str(t) for t in transcript)
+    # Transcription is handled by OpenAI Whisper in the pipeline, not Apify.
+    transcript = ""
 
     original_caption = item.get("caption") or item.get("description") or ""
 

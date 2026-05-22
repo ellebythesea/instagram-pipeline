@@ -11,8 +11,9 @@ import streamlit as st
 
 from config import (
     GOOGLE_SHEET_ID,
+    OPENAI_API_KEY,
 )
-from ingest_helpers import upload_media_bundle, upload_thumbnail_only
+from ingest_helpers import upload_media_bundle
 from pipeline_caption import generate_row_caption
 from post_scraper import process_url as process_post_url
 from reel_scraper import process_url as process_reel_url
@@ -26,6 +27,18 @@ from sheets import (
 from utils.auth import require_auth
 from utils.styles import inject as inject_styles
 
+def _transcribe_with_whisper(video_path: str) -> str:
+    """Transcribe a local video file using OpenAI Whisper. Returns empty string on failure."""
+    try:
+        import openai
+        client = openai.OpenAI(api_key=OPENAI_API_KEY)
+        with open(video_path, "rb") as f:
+            result = client.audio.transcriptions.create(model="whisper-1", file=f)
+        return result.text.strip()
+    except Exception as e:
+        return f"[whisper error: {e}]"
+
+
 def _ingest_row(row: dict) -> dict:
     """Process one row through ingest and return sheet fields."""
     url = row["Instagram URL"].strip()
@@ -33,8 +46,11 @@ def _ingest_row(row: dict) -> dict:
     try:
         if "/reel/" in url.lower() or "/reels/" in url.lower():
             data = process_reel_url(url, include_transcript=False)
-            uploaded = upload_thumbnail_only(data)
+            uploaded = upload_media_bundle(data)
             tmp_dir = uploaded["tmp_dir"]
+            transcript = ""
+            if uploaded.get("media_paths"):
+                transcript = _transcribe_with_whisper(uploaded["media_paths"][0])
             return {
                 "username": data["username"],
                 "media_type": data["media_type"],
@@ -42,7 +58,7 @@ def _ingest_row(row: dict) -> dict:
                 "media_link": uploaded["media_link"],
                 "thumbnail_link": uploaded["thumbnail_link"],
                 "original_caption": data["original_caption"],
-                "transcript": data["transcript"],
+                "transcript": transcript,
                 "status": "ingested",
             }
 
@@ -81,15 +97,26 @@ def _ingest_row(row: dict) -> dict:
 
 
 def _rerun_with_transcript(row: dict) -> None:
-    """Fetch a reel transcript on demand, rewrite the sheet row, and regenerate the caption."""
+    """Transcribe a reel via Whisper, rewrite the sheet row, and regenerate the caption."""
     url = row.get("Instagram URL", "").strip()
     if "/reel/" not in url.lower() and "/reels/" not in url.lower():
         raise ValueError("Re-run with transcript is only available for reel URLs.")
 
-    refreshed = process_reel_url(url, include_transcript=True)
-    transcript = (refreshed.get("transcript") or "").strip()
-    if not transcript:
-        raise ValueError("Apify did not return a transcript for this reel.")
+    data = process_reel_url(url, include_transcript=False)
+    tmp_dir = None
+    try:
+        from ingest_helpers import download_file, make_filename
+        import tempfile
+        tmp_dir = tempfile.mkdtemp(prefix="ig_whisper_")
+        video_path = os.path.join(tmp_dir, make_filename(data["post_id"], data["post_date"], ".mp4"))
+        download_file(data["media_urls"][0], video_path)
+        transcript = _transcribe_with_whisper(video_path)
+    finally:
+        if tmp_dir:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    if not transcript or transcript.startswith("[whisper error"):
+        raise ValueError(f"Whisper transcription failed: {transcript}")
 
     row_num = row["row_number"]
     update_transcript(GOOGLE_SHEET_ID, row_num, transcript)
