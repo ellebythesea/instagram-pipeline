@@ -35,6 +35,7 @@ from config import (
     OPENAI_API_KEY,
     SERPER_API_KEY,
 )
+from caption import transcribe_video
 from drive import (
     copy_drive_file_to_folder,
     download_drive_file,
@@ -3901,6 +3902,95 @@ def _run_with_sheet_quota_countdown(fn, waiting_label: str):
             countdown.empty()
 
 
+def _transcribe_reel_from_drive(row: dict) -> str | None:
+    """Download reel from Drive and transcribe with Whisper. Returns transcript text or None."""
+    media_link = _cell_text(row.get("Media Drive Link")).strip()
+    if not media_link:
+        return None
+    row_num = row["row_number"]
+    tmp_dir = tempfile.mkdtemp(prefix="workspace_transcribe_")
+    try:
+        try:
+            metadata = get_drive_file_metadata(media_link)
+            filename = metadata.get("name") or f"row_{row_num}.mp4"
+        except Exception:
+            filename = f"row_{row_num}.mp4"
+        local_path = os.path.join(tmp_dir, filename)
+        download_drive_file(media_link, local_path)
+        return transcribe_video(local_path)
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def _run_all_steps() -> None:
+    """Ingest new rows, transcribe untranscribed reels, and split newly ingested reel videos."""
+    # Capture pending rows before ingesting so we know which ones are new
+    try:
+        pending_before = _run_with_sheet_quota_countdown(
+            lambda: get_pending_rows(GOOGLE_SHEET_ID),
+            "Run all paused (sheet quota):",
+        )
+        pending_row_nums = {r["row_number"] for r in pending_before}
+    except Exception:
+        pending_row_nums = set()
+
+    # Step 1: Ingest + auto-caption new rows
+    with st.status("Step 1: Ingesting new rows…", expanded=True) as s:
+        try:
+            processed = _process_pending_rows_from_sheet()
+            s.update(label=f"Step 1: Ingested {processed} new row(s)", state="complete")
+        except Exception as e:
+            s.update(label=f"Step 1 error: {describe_error(e)}", state="error")
+
+    # Reload sheet after ingest
+    try:
+        all_rows = _run_with_sheet_quota_countdown(
+            lambda: get_all_rows(GOOGLE_SHEET_ID),
+            "Run all paused (sheet quota):",
+        )
+    except Exception as e:
+        st.error(f"Could not reload sheet after ingest: {describe_error(e)}")
+        return
+
+    # Step 2: Transcribe untranscribed reels directly with Whisper
+    untranscribed = [
+        r for r in all_rows
+        if r.get("Media Type", "").strip().lower() == "reel"
+        and not r.get("Transcript", "").strip()
+        and r.get("Media Drive Link", "").strip()
+    ]
+    if untranscribed:
+        with st.status(f"Step 2: Transcribing {len(untranscribed)} reel(s) with Whisper…", expanded=True) as s2:
+            succeeded = 0
+            for row in untranscribed:
+                row_num = row["row_number"]
+                try:
+                    transcript = _transcribe_reel_from_drive(row)
+                    if transcript:
+                        update_transcript(GOOGLE_SHEET_ID, row_num, transcript)
+                        succeeded += 1
+                    else:
+                        st.warning(f"Row {row_num}: Whisper returned no transcript")
+                except Exception as e:
+                    st.warning(f"Row {row_num}: {describe_error(e)}")
+            s2.update(label=f"Step 2: Transcribed {succeeded}/{len(untranscribed)} reel(s)", state="complete")
+
+    # Step 3: Queue split_video_fit for newly ingested reel rows
+    new_reels = [
+        r for r in all_rows
+        if r["row_number"] in pending_row_nums
+        and r.get("Media Type", "").strip().lower() == "reel"
+        and r.get("Media Drive Link", "").strip()
+    ]
+    if new_reels:
+        st.caption(f"Step 3: Queuing video splits for {len(new_reels)} reel(s)…")
+        for row in new_reels:
+            _queue_workspace_action(row["row_number"], "split_video_fit")
+
+    queued_note = f" Queued: {len(new_reels)} split(s)." if new_reels else ""
+    st.session_state["workspace_success"] = f"Run all complete.{queued_note}"
+
+
 def _process_pending_rows_from_sheet() -> int:
     pending = _run_with_sheet_quota_countdown(
         lambda: get_pending_rows(GOOGLE_SHEET_ID),
@@ -5098,6 +5188,16 @@ if active_section_tab == "Home":
         _render_workspace_slides_dialog(workspace_rows, workspace_rows_error)
 
     with st.popover("App actions", use_container_width=True):
+        if st.button(
+            "⚡ Run all",
+            key="workspace_run_all",
+            width="stretch",
+            help="Ingest new rows, transcribe untranscribed reels, and split newly ingested videos.",
+            type="primary",
+        ):
+            _run_all_steps()
+            _rerun_workspace("Home")
+
         if st.button(
             "Refresh results",
             key="workspace_refresh_editor_rows",
