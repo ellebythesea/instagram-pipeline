@@ -4632,44 +4632,64 @@ def _build_chatgpt_handoff_prompt(rows: list[dict]) -> str:
         )
 
     instructions = (
-        "Return ONLY valid JSON as an array.\n\n"
+        "Return ONLY valid JSON as an array. No markdown, no commentary outside JSON.\n\n"
+
         "Each object must include: row_number, name, text1, text2, text3\n\n"
+
+        "Mandatory research step before writing:\n"
+        "* For every row with a current event, public figure, legal case, government action, investigation, company, or breaking news claim, search online for reliable context before writing.\n"
+        "* Use search to verify names, dates, charges, court rulings, dollar amounts, locations, and status of claims.\n"
+        "* Prefer primary sources, Reuters, AP, local public radio, court records, official statements, and reputable outlets.\n"
+        "* Do not add unverified claims. If context cannot be verified, stay close to the supplied transcript and caption.\n"
+        "* Never cite sources in the JSON output. Use research only to improve accuracy and context.\n\n"
+
         "Rules:\n"
         "* Keep row_number exactly as shown\n"
         "* No markdown, no commentary outside JSON\n"
-        "* Plain straight double quotes only — no smart quotes\n"
+        "* Plain straight double quotes only, no smart quotes\n"
         "* name = short lowercase username, no @ symbol\n"
-        "* text1 = under 350 chars\n"
-        "* text2 = under 550 chars\n"
-        "* text3 = under 450 chars\n"
+        "* text1 = 250 to 349 chars when enough verified material exists\n"
+        "* text2 = 425 to 549 chars when enough verified material exists\n"
+        "* text3 = 325 to 449 chars when enough verified material exists\n"
+        "* If the source material is too thin, write the strongest accurate version without padding\n"
         "* No em dashes, no newlines, no \\n sequences inside any text field\n"
         "* No speculation or invented framing\n"
         "* Never include hashtags in slide text\n"
         "* Never use phrases like 'the speaker,' 'the clip,' 'the transcript,' or 'the video'\n\n"
+
         "Quote rules:\n"
         "* Pull direct quotes from the transcript first before writing anything in your own words\n"
         "* Each slide must contain at least one direct quote from the transcript if one is available\n"
         "* Short punchy quotes are preferred over paraphrasing\n"
         "* Do not invent, paraphrase as a quote, or attribute anything not said verbatim in the transcript\n"
-        "* If no strong quote exists for a slide, write around the facts without fabricating one\n\n"
+        "* If no strong quote exists for a slide, write around verified facts without fabricating one\n\n"
+
         "Slide structure:\n"
-        "* text1 = strongest opening slide -- lead with the best direct quote or most explosive fact\n"
-        "* text2 = new facts, quotes, or context only\n"
-        "* text3 = fallout, unanswered questions, or implications only\n"
-        "* Never repeat information across slides\n"
-        "* Assume the viewer already read previous slides. Do not restate information.\n"
-        "* Each field should feel like a standalone carousel slide\n"
-        "* Prioritize numbers, names, and direct quotes over generic summaries\n"
-        "* Emotionally charged but factual framing only\n"
-        "\n"
+        "* text1 = strongest opening slide. Lead with the best direct quote, most explosive verified fact, or clearest news hook\n"
+        "* text2 = new facts, quotes, verified context, names, dates, numbers, contradictions, or legal details only\n"
+        "* text3 = fallout, unanswered questions, public consequences, policy stakes, legal implications, or next steps only\n"
+        "* Never repeat information across text1, text2, and text3\n"
+        "* Assume the viewer already read previous slides. Do not restate information\n"
+        "* Each field should feel like a complete standalone carousel slide\n"
+        "* Prioritize numbers, names, dates, direct quotes, charges, rulings, dollar amounts, and locations over generic summaries\n"
+        "* Use emotionally charged but factual framing only\n\n"
+
+        "Quality check before final output:\n"
+        "* Confirm every object has exactly row_number, name, text1, text2, text3\n"
+        "* Confirm character limits are respected\n"
+        "* Confirm text is not too short when more verified context exists\n"
+        "* Confirm no field repeats another field\n"
+        "* Confirm no hashtags, em dashes, smart quotes, markdown, newlines, or source citations appear\n"
+        "* Confirm every quote is verbatim from supplied text\n\n"
+
         "Output format example:\n"
         "[\n"
         "  {\n"
         '    "row_number": 1,\n'
         '    "name": "nowthis",\n'
-        '    "text1": "\\"We could abolish medical debt 10 times over.\\"",\n'
-        '    "text2": "He compared military spending with healthcare costs and argued billions are being diverted away from public needs while families still drown in debt and coverage gaps. The attack centered on lobbying money, Medicaid cuts, and the claim that Washington keeps funding war while basic healthcare needs go unmet.",\n'
-        '    "text3": "The fallout is political as much as financial. The carousel ties insurance lobbying, federal spending priorities, and Medicaid pressure to the daily reality facing working Americans who are still buried in debt and losing coverage."\n'
+        '    "text1": "\\"We could abolish medical debt 10 times over.\\" The line frames the central contrast: billions flowing into military spending while families still face unpaid medical bills, coverage gaps, and debt that can follow them for years.",\n'
+        '    "text2": "The argument connects military funding, healthcare costs, Medicaid pressure, and lobbying money into one political charge: Washington keeps finding money for war while ordinary people are told basic care is too expensive. The strongest details should be names, dollar amounts, dates, and direct claims from the source material.",\n'
+        '    "text3": "The fallout is political as much as financial. The carousel should leave viewers with the real stakes: who benefits from federal spending choices, who absorbs the cost, and why healthcare debt remains unresolved even when Congress approves massive spending elsewhere."\n'
         "  }\n"
         "]\n"
     )
