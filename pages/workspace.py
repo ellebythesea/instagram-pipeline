@@ -3980,7 +3980,7 @@ def _run_all_steps() -> None:
                     st.warning(f"Row {row_num}: {describe_error(e)}")
             s2.update(label=f"Step 2: Transcribed {succeeded}/{len(untranscribed)} reel(s)", state="complete")
 
-    # Step 3: Queue split_video_fit for newly ingested reel rows
+    # Step 3: Split and upload newly ingested reel videos into their preview folders
     new_reels = [
         r for r in all_rows
         if r["row_number"] in pending_row_nums
@@ -3988,9 +3988,20 @@ def _run_all_steps() -> None:
         and r.get("Media Drive Link", "").strip()
     ]
     if new_reels:
-        st.caption(f"Step 3: Queuing video splits for {len(new_reels)} reel(s)…")
-        for row in new_reels:
-            _queue_workspace_action(row["row_number"], "split_video_fit")
+        with st.status(f"Step 3: Splitting {len(new_reels)} reel(s)…", expanded=True) as s3:
+            split_succeeded = 0
+            for row in new_reels:
+                row_num = row["row_number"]
+                try:
+                    media_link = _cell_text(row.get("Media Drive Link")).strip().split(",")[0].strip()
+                    username = _cell_text(row.get("Source Username")).strip().lstrip("@")
+                    handle_text = _cell_text(row.get("Speaker Name")).strip()
+                    preview_folder_id, _, _ = _ensure_preview_folder(row_num, username, handle_text, media_link)
+                    _upload_split_videos(media_link, preview_folder_id, mode="fit")
+                    split_succeeded += 1
+                except Exception as e:
+                    st.warning(f"Row {row_num}: {describe_error(e)}")
+            s3.update(label=f"Step 3: Split {split_succeeded}/{len(new_reels)} reel(s)", state="complete")
 
     queued_note = f" Queued: {len(new_reels)} split(s)." if new_reels else ""
     st.session_state["workspace_success"] = f"Run all complete.{queued_note}"
