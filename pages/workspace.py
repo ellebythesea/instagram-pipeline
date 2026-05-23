@@ -2316,7 +2316,8 @@ def _split_video_to_folder(local_video_path: str, output_dir: str, mode: str = "
     segment_index = 0
     while start_seconds < duration - 0.01:
         clip_duration = min(60.0, duration - start_seconds)
-        output_path = os.path.join(output_dir, f"{_segment_name(segment_index)}.mp4")
+        suffix = "_fit" if mode == "fit" else ""
+        output_path = os.path.join(output_dir, f"{_segment_name(segment_index)}{suffix}.mp4")
         command = [
             ffmpeg_path,
             "-hide_banner",
