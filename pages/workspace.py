@@ -5475,6 +5475,14 @@ if active_section_tab == "Home":
                                     width="stretch",
                                 )
                             if st.button(
+                                "Slides",
+                                key=f"workspace_menu_post_slides_{row_num}",
+                                width="stretch",
+                            ):
+                                _close_workspace_menu(row)
+                                _open_workspace_post_slides_dialog(row_num)
+                                _rerun_workspace("Edit")
+                            if st.button(
                                 "Update screenshot",
                                 key=f"workspace_menu_thumbnail_open_{row_num}",
                                 width="stretch",
