@@ -3986,20 +3986,19 @@ def _run_all_steps() -> None:
                     st.warning(f"Row {row_num}: {describe_error(e)}")
             s2.update(label=f"Step 2: Transcribed {succeeded}/{len(untranscribed)} reel(s)", state="complete")
 
-    # Step 3: Split and upload newly ingested reel videos into their preview folders
-    new_reels = [
+    # Step 3: Split and upload all reels with a media link into their preview folders
+    reels_to_split = [
         r for r in all_rows
-        if r["row_number"] in pending_row_nums
-        and r.get("Media Type", "").strip().lower() == "reel"
+        if r.get("Media Type", "").strip().lower() == "reel"
         and r.get("Media Drive Link", "").strip()
     ]
-    if new_reels:
-        with st.status(f"Step 3: Splitting {len(new_reels)} reel(s)…", expanded=True) as s3:
+    if reels_to_split:
+        with st.status(f"Step 3: Splitting {len(reels_to_split)} reel(s)…", expanded=True) as s3:
             split_succeeded = 0
-            for i, row in enumerate(new_reels, 1):
+            for i, row in enumerate(reels_to_split, 1):
                 row_num = row["row_number"]
                 username = _cell_text(row.get("Source Username")).strip() or f"row {row_num}"
-                s3.update(label=f"Step 3: Splitting {i}/{len(new_reels)} — {username} (row {row_num})…")
+                s3.update(label=f"Step 3: Splitting {i}/{len(reels_to_split)} — {username} (row {row_num})…")
                 try:
                     st.write(f"Row {row_num}: downloading and splitting…")
                     media_link = _cell_text(row.get("Media Drive Link")).strip().split(",")[0].strip()
@@ -4011,7 +4010,7 @@ def _run_all_steps() -> None:
                     split_succeeded += 1
                 except Exception as e:
                     st.warning(f"Row {row_num}: {describe_error(e)}")
-            s3.update(label=f"Step 3: Split {split_succeeded}/{len(new_reels)} reel(s)", state="complete")
+            s3.update(label=f"Step 3: Split {split_succeeded}/{len(reels_to_split)} reel(s)", state="complete")
 
     # Step 4: Archive orphaned local media files and screenshots
     with st.status("Step 4: Cleaning up orphaned local media…", expanded=True) as s4:
