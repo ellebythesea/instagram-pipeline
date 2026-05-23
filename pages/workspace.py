@@ -5238,9 +5238,6 @@ if active_section_tab == "Home":
         ):
             _rerun_workspace("Home")
 
-        if st.button("Slides", key="workspace_open_slides_dialog", width="stretch"):
-            _open_workspace_slides_dialog()
-            _rerun_workspace("Home")
 
         for action_mode in MODE_OPTIONS:
             if st.button(action_mode, key=f"workspace_home_action_{action_mode}", width="stretch"):
@@ -5519,15 +5516,6 @@ if active_section_tab == "Home":
                                         _rerun_workspace("Edit")
                                 _close_workspace_menu(row)
                                 _queue_workspace_action(row_num, primary_action)
-                                _rerun_workspace("Edit")
-                            if st.button(
-                                "Slides",
-                                key=f"workspace_menu_post_slides_{row_num}",
-                                width="stretch",
-                                help="Generate a slide prompt for this post and apply pasted results.",
-                            ):
-                                _close_workspace_menu(row)
-                                _open_workspace_post_slides_dialog(row_num)
                                 _rerun_workspace("Edit")
                             if is_article and _is_substack_url(url) and st.button(
                                 "Process as Candidate Article",
