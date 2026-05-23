@@ -5471,6 +5471,14 @@ if active_section_tab == "Home":
                                     media_links[0],
                                     width="stretch",
                                 )
+                            if st.button(
+                                "Update screenshot",
+                                key=f"workspace_menu_thumbnail_open_{row_num}",
+                                width="stretch",
+                            ):
+                                _close_workspace_menu(row)
+                                st.session_state["workspace_thumbnail_dialog_row"] = row_num
+                                _rerun_workspace("Edit")
                             if st.button("Add link", key=f"workspace_link_open_{row_num}", width="stretch"):
                                 _close_workspace_menu(row)
                                 st.session_state["workspace_link_dialog_row"] = row_num
@@ -5523,14 +5531,6 @@ if active_section_tab == "Home":
                             ):
                                 _close_workspace_menu(row)
                                 _open_workspace_candidate_article_dialog(row_num)
-                                _rerun_workspace("Edit")
-                            if st.button(
-                                "Update screenshot",
-                                key=f"workspace_menu_thumbnail_open_{row_num}",
-                                width="stretch",
-                            ):
-                                _close_workspace_menu(row)
-                                st.session_state["workspace_thumbnail_dialog_row"] = row_num
                                 _rerun_workspace("Edit")
                             skip_label = "Unskip" if status.strip().lower() == "skipped" else "Skip"
                             if st.button(
