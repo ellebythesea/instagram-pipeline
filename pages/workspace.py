@@ -72,9 +72,7 @@ generate_batch_carousel_copy_with_model = getattr(
 )
 
 MODE_OPTIONS = [
-    "Process this",
     "Generate headline",
-    "Caption this",
 ]
 
 ORG_HASHTAG_OPTIONS = [
