@@ -2419,12 +2419,13 @@ def _slide_three_cta_text(option: str, top_comment: str) -> str:
         return custom
     cta_text_by_option = {
         "article": "Say LINK for the article",
+        "substack": "Say LINK for the article",
         "petition": "Say LINK for the petition",
         "video": "Say LINK for the video",
     }
     if normalized in cta_text_by_option:
         return cta_text_by_option[normalized]
-    if normalized not in {"more", "article", "petition", "video"}:
+    if normalized not in {"more", "article", "substack", "petition", "video"}:
         normalized = "more"
     return "Say LINK for more"
 
@@ -3667,7 +3668,7 @@ def _copy_tabs(
         current_slide_three_cta = _cell_text(
             st.session_state.get(slide_three_cta_key, default_slide_three_cta)
         ).strip().lower() or default_slide_three_cta
-        if current_slide_three_cta not in {"more", "article", "petition", "video", "custom link", "hidden"}:
+        if current_slide_three_cta not in {"more", "article", "substack", "petition", "video", "custom link", "hidden"}:
             current_slide_three_cta = default_slide_three_cta
             st.session_state[slide_three_cta_key] = current_slide_three_cta
         current_speaker_name = _cell_text(
@@ -3763,22 +3764,21 @@ def _copy_tabs(
             if st.button("Edit text 3", key=f"workspace_row_slides_edit_text3_{row_num}", width="stretch"):
                 _open_workspace_slide_action_dialog(row_num, "text3")
                 _rerun_workspace("Edit")
-            st.markdown("**Slide 3 link**")
-            if st.button("Link: More", key=f"workspace_row_slides_cta_more_{row_num}", width="stretch"):
-                _save_slide_three_cta_choice(row_num, slide_three_cta_key, "more")
-                _rerun_workspace("Edit")
-            if st.button("Link: Video", key=f"workspace_row_slides_cta_video_{row_num}", width="stretch"):
-                _save_slide_three_cta_choice(row_num, slide_three_cta_key, "video")
-                _rerun_workspace("Edit")
-            if st.button("Link: Article", key=f"workspace_row_slides_cta_article_{row_num}", width="stretch"):
-                _save_slide_three_cta_choice(row_num, slide_three_cta_key, "article")
-                _rerun_workspace("Edit")
-            if st.button("Link: Petition", key=f"workspace_row_slides_cta_petition_{row_num}", width="stretch"):
-                _save_slide_three_cta_choice(row_num, slide_three_cta_key, "petition")
-                _rerun_workspace("Edit")
-            if st.button("Link: Custom Link", key=f"workspace_row_slides_cta_custom_{row_num}", width="stretch"):
+            if st.button("Link", key=f"workspace_row_slides_cta_custom_{row_num}", width="stretch"):
                 _save_slide_three_cta_choice(row_num, slide_three_cta_key, "custom link")
                 _open_workspace_slide_action_dialog(row_num, "custom_link")
+                _rerun_workspace("Edit")
+            if st.button("More link", key=f"workspace_row_slides_cta_more_{row_num}", width="stretch"):
+                _save_slide_three_cta_choice(row_num, slide_three_cta_key, "more")
+                _rerun_workspace("Edit")
+            if st.button("Video link", key=f"workspace_row_slides_cta_video_{row_num}", width="stretch"):
+                _save_slide_three_cta_choice(row_num, slide_three_cta_key, "video")
+                _rerun_workspace("Edit")
+            if st.button("Article link", key=f"workspace_row_slides_cta_article_{row_num}", width="stretch"):
+                _save_slide_three_cta_choice(row_num, slide_three_cta_key, "article")
+                _rerun_workspace("Edit")
+            if st.button("Link for Sub Stack", key=f"workspace_row_slides_cta_substack_{row_num}", width="stretch"):
+                _save_slide_three_cta_choice(row_num, slide_three_cta_key, "substack")
                 _rerun_workspace("Edit")
             if st.button("Update name", key=f"workspace_row_slides_edit_speaker_{row_num}", width="stretch"):
                 _open_workspace_slide_action_dialog(row_num, "speaker")
