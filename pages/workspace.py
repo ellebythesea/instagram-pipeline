@@ -5178,13 +5178,6 @@ if not require_auth():
 
 _process_next_workspace_action()
 
-success_message = st.session_state.pop("workspace_success", "")
-error_message = st.session_state.pop("workspace_error", "")
-if success_message:
-    st.success(success_message)
-if error_message:
-    st.error(error_message)
-
 pending_tab = st.session_state.pop("_workspace_pending_tab", None)
 if pending_tab:
     if pending_tab in {"Edit", "Grid", "Actions", "Slides"}:
@@ -5234,8 +5227,8 @@ if active_section_tab == "Home":
             help="Ingest new rows, transcribe untranscribed reels, and split newly ingested videos.",
             type="primary",
         ):
-            _run_all_steps()
-            _rerun_workspace("Home")
+            st.session_state["workspace_run_all_pending"] = True
+            st.rerun()
 
         if st.button(
             "Refresh results",
@@ -5253,6 +5246,19 @@ if active_section_tab == "Home":
             if st.button(action_mode, key=f"workspace_home_action_{action_mode}", width="stretch"):
                 _open_workspace_home_action_dialog(action_mode)
                 _rerun_workspace("Home")
+
+    # Show success/error feedback below the action buttons
+    success_message = st.session_state.pop("workspace_success", "")
+    error_message = st.session_state.pop("workspace_error", "")
+    if success_message:
+        st.success(success_message)
+    if error_message:
+        st.error(error_message)
+
+    # Run All executes here so status output appears below the buttons
+    if st.session_state.pop("workspace_run_all_pending", False):
+        _run_all_steps()
+        _rerun_workspace("Home")
 
     if home_notice:
         st.caption(home_notice)
