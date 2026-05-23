@@ -5236,6 +5236,9 @@ if active_section_tab == "Home":
         ):
             _rerun_workspace("Home")
 
+        if st.button("Slides", key="workspace_open_slides_dialog", width="stretch"):
+            _open_workspace_slides_dialog()
+            _rerun_workspace("Home")
 
         for action_mode in MODE_OPTIONS:
             if st.button(action_mode, key=f"workspace_home_action_{action_mode}", width="stretch"):
