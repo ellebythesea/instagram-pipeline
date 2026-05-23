@@ -3924,6 +3924,34 @@ def _transcribe_reel_from_drive(row: dict) -> str | None:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+def _generate_all_slides() -> None:
+    """Generate slide copy for all rows that are ready."""
+    ready = _ready_rows_from_loaded_rows(
+        _run_with_sheet_quota_countdown(
+            lambda: get_all_rows(GOOGLE_SHEET_ID),
+            "Generate slides paused (sheet quota):",
+        )
+    )
+    if not ready:
+        st.session_state["workspace_success"] = "No rows are ready for slides."
+        return
+    with st.status(f"Generating slides for {len(ready)} row(s)…", expanded=True) as s:
+        succeeded = 0
+        for i, row in enumerate(ready, 1):
+            row_num = row["row_number"]
+            username = _cell_text(row.get("Source Username")).strip() or f"row {row_num}"
+            s.update(label=f"Generating slides {i}/{len(ready)} — {username} (row {row_num})…")
+            try:
+                carousel = _generate_reliable_carousel_copy(row)
+                _write_specific_carousel_fields(row_num, carousel)
+                st.write(f"Row {row_num}: done.")
+                succeeded += 1
+            except Exception as e:
+                st.warning(f"Row {row_num}: {describe_error(e)}")
+        s.update(label=f"Slides generated for {succeeded}/{len(ready)} row(s).", state="complete")
+    st.session_state["workspace_success"] = f"Slides generated for {succeeded}/{len(ready)} row(s)."
+
+
 def _run_all_steps() -> None:
     """Ingest new rows, transcribe untranscribed reels, and split newly ingested reel videos."""
     # Capture pending rows before ingesting so we know which ones are new
@@ -4689,6 +4717,11 @@ def _process_next_workspace_action() -> None:
             with st.spinner(f"Updating screenshot for row {row_number}..."):
                 _refresh_row_thumbnail_from_video(row, offset_seconds=5.0)
             st.session_state["workspace_success"] = f"Row {row_number}: screenshot updated from 5 seconds into the video."
+        elif action == "generate_slides":
+            with st.spinner(f"Generating slides for row {row_number}..."):
+                carousel = _generate_reliable_carousel_copy(row)
+                _write_specific_carousel_fields(row_number, carousel)
+            st.session_state["workspace_success"] = f"Row {row_number}: slides generated."
         elif action == "split_video_fit":
             with st.spinner(f"Scaling and splitting video for row {row_number}..."):
                 media_links = [
@@ -5238,6 +5271,11 @@ if active_section_tab == "Home":
         ):
             _rerun_workspace("Home")
 
+        if st.button("Generate slides", key="workspace_gen_all_slides", width="stretch",
+                     help="Generate slide copy for all ready rows using AI."):
+            st.session_state["workspace_gen_all_slides_pending"] = True
+            st.rerun()
+
         if st.button("Slides", key="workspace_open_slides_dialog", width="stretch"):
             _open_workspace_slides_dialog()
             _rerun_workspace("Home")
@@ -5258,6 +5296,10 @@ if active_section_tab == "Home":
     # Run All executes here so status output appears below the buttons
     if st.session_state.pop("workspace_run_all_pending", False):
         _run_all_steps()
+        _rerun_workspace("Home")
+
+    if st.session_state.pop("workspace_gen_all_slides_pending", False):
+        _generate_all_slides()
         _rerun_workspace("Home")
 
     if home_notice:
@@ -5520,13 +5562,13 @@ if active_section_tab == "Home":
                                 _queue_workspace_action(row_num, primary_action)
                                 _rerun_workspace("Edit")
                             if st.button(
-                                "Slides for this post",
+                                "Generate slides",
                                 key=f"workspace_menu_post_slides_{row_num}",
                                 width="stretch",
-                                help="Generate a one-post slide prompt and apply pasted slide JSON to this row.",
+                                help="Generate slide copy for this post using AI.",
                             ):
                                 _close_workspace_menu(row)
-                                _open_workspace_post_slides_dialog(row_num)
+                                _queue_workspace_action(row_num, "generate_slides")
                                 _rerun_workspace("Edit")
                             if is_article and _is_substack_url(url) and st.button(
                                 "Process as Candidate Article",
