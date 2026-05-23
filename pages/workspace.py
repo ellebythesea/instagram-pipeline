@@ -1562,17 +1562,16 @@ def _render_editor_grid(editor_rows: list[dict], selected_row_num: int | None = 
     st.html(f'<div class="workspace-grid">{grid_html}</div>')
 
 
-def _scroll_to_editor_row(row_number: str) -> None:
-    if not row_number:
+def _scroll_to_element(element_id: str, block: str = "center") -> None:
+    if not element_id:
         return
-    target_id = f"workspace-row-{row_number}"
     script = f"""
     <script>
-    const targetId = {json.dumps(target_id)};
+    const targetId = {json.dumps(element_id)};
     function scrollToTarget(attempt) {{
       const target = window.parent.document.getElementById(targetId);
       if (target) {{
-        target.scrollIntoView({{ behavior: "smooth", block: "start" }});
+        target.scrollIntoView({{ behavior: "smooth", block: {json.dumps(block)} }});
         return;
       }}
       if (attempt < 20) {{
@@ -1583,6 +1582,12 @@ def _scroll_to_editor_row(row_number: str) -> None:
     </script>
     """
     components.html(script, height=0, width=0)
+
+
+def _scroll_to_editor_row(row_number: str) -> None:
+    if not row_number:
+        return
+    _scroll_to_element(f"workspace-row-{row_number}", block="start")
 
 
 WEEKDAY_OPTIONS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -2419,7 +2424,7 @@ def _slide_three_cta_text(option: str, top_comment: str) -> str:
         return custom
     cta_text_by_option = {
         "article": "Say LINK for the article",
-        "substack": "Say LINK for the article",
+        "substack": "Say LINK for the Substack",
         "petition": "Say LINK for the petition",
         "video": "Say LINK for the video",
     }
@@ -3541,8 +3546,9 @@ def _render_workspace_preview_control_bar(
     fit_toggle_key: str | None = None,
     fit_toggle_current: bool = False,
 ) -> None:
+    anchor_id = f"workspace-preview-ctrl-{control_id}"
     with st.container():
-        st.markdown('<div class="workspace-preview-controls-anchor"></div>', unsafe_allow_html=True)
+        st.markdown(f'<div id="{anchor_id}" class="workspace-preview-controls-anchor"></div>', unsafe_allow_html=True)
         controls = [("A-", "font_down"), ("A+", "font_up")]
         if background_adjust_key is not None:
             controls.extend([("Up", "bg_up"), ("Down", "bg_down")])
@@ -3562,6 +3568,7 @@ def _render_workspace_preview_control_bar(
                         st.session_state[background_adjust_key] = min(200, current_background_adjust + 48)
                     elif action == "fit_toggle" and fit_toggle_key is not None:
                         st.session_state[fit_toggle_key] = not fit_toggle_current
+                    st.session_state["workspace_preview_scroll_target"] = anchor_id
                     _rerun_workspace("Edit")
 
 
@@ -3777,7 +3784,7 @@ def _copy_tabs(
             if st.button("Article link", key=f"workspace_row_slides_cta_article_{row_num}", width="stretch"):
                 _save_slide_three_cta_choice(row_num, slide_three_cta_key, "article")
                 _rerun_workspace("Edit")
-            if st.button("Link for Sub Stack", key=f"workspace_row_slides_cta_substack_{row_num}", width="stretch"):
+            if st.button("Substack link", key=f"workspace_row_slides_cta_substack_{row_num}", width="stretch"):
                 _save_slide_three_cta_choice(row_num, slide_three_cta_key, "substack")
                 _rerun_workspace("Edit")
             if st.button("Update name", key=f"workspace_row_slides_edit_speaker_{row_num}", width="stretch"):
@@ -5617,7 +5624,11 @@ if active_section_tab == "Home":
 
             st.divider()
 
-        _scroll_to_editor_row(str(selected_row["row_number"]))
+        preview_scroll_target = st.session_state.pop("workspace_preview_scroll_target", None)
+        if preview_scroll_target:
+            _scroll_to_element(preview_scroll_target)
+        else:
+            _scroll_to_editor_row(str(selected_row["row_number"]))
 
         queue = st.session_state.get("workspace_action_queue", [])
         if queue:
