@@ -27,6 +27,7 @@ from article_source import fetch_article_source
 from caption import transcribe_video
 from config import GOOGLE_DRIVE_FOLDER_ID, GOOGLE_SHEET_ID
 from drive import (
+    _get_service,
     download_drive_file,
     get_drive_file_metadata,
     get_or_create_subfolder,
@@ -463,6 +464,62 @@ def step3_split(all_rows: list[dict]) -> int:
     return succeeded
 
 
+def step4_cleanup(all_rows: list[dict]) -> int:
+    """Trash Drive preview subfolders that no longer match any active row."""
+    if not GOOGLE_DRIVE_FOLDER_ID:
+        print("Step 4: GOOGLE_DRIVE_FOLDER_ID not configured, skipped.")
+        return 0
+    service = _get_service()
+
+    preview_root_id = get_or_create_subfolder(GOOGLE_DRIVE_FOLDER_ID, PREVIEW_UPLOAD_SUBFOLDER)
+    query = (
+        f"'{preview_root_id}' in parents and "
+        "mimeType = 'application/vnd.google-apps.folder' and "
+        "trashed = false"
+    )
+    result = service.files().list(
+        q=query,
+        fields="files(id,name)",
+        pageSize=1000,
+        supportsAllDrives=True,
+        includeItemsFromAllDrives=True,
+    ).execute()
+    existing_folders: dict[str, str] = {f["name"]: f["id"] for f in result.get("files", [])}
+    if not existing_folders:
+        print("Step 4: No preview folders found.")
+        return 0
+
+    expected_names: set[str] = set()
+    for row in all_rows:
+        media_link = _cell_text(row.get("Media Drive Link") or "").strip().split(",")[0].strip()
+        if not media_link:
+            continue
+        username = _cell_text(row.get("Source Username") or "").strip().lstrip("@")
+        handle_text = _cell_text(row.get("Speaker Name") or "").strip()
+        try:
+            folder_name, _ = _preview_folder_base_name(username or handle_text, media_link, row["row_number"])
+            expected_names.add(folder_name)
+        except Exception:
+            pass
+
+    print(f"Step 4: {len(existing_folders)} preview folder(s) found, {len(expected_names)} active row(s) matched.")
+    trashed = 0
+    for name, folder_id in existing_folders.items():
+        if name not in expected_names:
+            try:
+                service.files().update(
+                    fileId=folder_id,
+                    body={"trashed": True},
+                    supportsAllDrives=True,
+                ).execute()
+                print(f"  Trashed: {name}")
+                trashed += 1
+            except Exception as e:
+                print(f"  Could not trash '{name}': {e}")
+    print(f"Step 4: Trashed {trashed} orphaned preview folder(s).")
+    return trashed
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -485,6 +542,7 @@ def main() -> int:
 
     step2_transcribe(GOOGLE_SHEET_ID, all_rows)
     step3_split(all_rows)
+    step4_cleanup(all_rows)
 
     print("=== Run complete ===")
     return 0

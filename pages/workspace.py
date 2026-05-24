@@ -3929,6 +3929,62 @@ def _transcribe_reel_from_drive(row: dict) -> str | None:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+def _cleanup_orphaned_preview_folders(all_rows: list[dict]) -> int:
+    """Trash Drive preview subfolders that no longer match any active row."""
+    if not GOOGLE_DRIVE_FOLDER_ID:
+        return 0
+    service = _get_service()
+
+    # Find the previews root
+    preview_root_id = get_or_create_subfolder(GOOGLE_DRIVE_FOLDER_ID, PREVIEW_UPLOAD_SUBFOLDER)
+
+    # List all subfolders in the previews root
+    query = (
+        f"'{preview_root_id}' in parents and "
+        "mimeType = 'application/vnd.google-apps.folder' and "
+        "trashed = false"
+    )
+    result = service.files().list(
+        q=query,
+        fields="files(id,name)",
+        pageSize=1000,
+        supportsAllDrives=True,
+        includeItemsFromAllDrives=True,
+    ).execute()
+    existing_folders: dict[str, str] = {f["name"]: f["id"] for f in result.get("files", [])}
+    if not existing_folders:
+        return 0
+
+    # Compute expected folder names from active rows
+    expected_names: set[str] = set()
+    rows_with_media = [r for r in all_rows if _cell_text(r.get("Media Drive Link")).strip()]
+    for row in rows_with_media:
+        media_link = _cell_text(row.get("Media Drive Link")).strip().split(",")[0].strip()
+        username = _cell_text(row.get("Source Username")).strip().lstrip("@")
+        handle_text = _cell_text(row.get("Speaker Name")).strip()
+        try:
+            folder_name, _ = _preview_folder_base_name(username or handle_text, media_link, row["row_number"])
+            expected_names.add(folder_name)
+        except Exception:
+            pass
+
+    # Trash any folder not matched to an active row
+    trashed = 0
+    for name, folder_id in existing_folders.items():
+        if name not in expected_names:
+            try:
+                service.files().update(
+                    fileId=folder_id,
+                    body={"trashed": True},
+                    supportsAllDrives=True,
+                ).execute()
+                st.write(f"Trashed orphaned preview folder: {name}")
+                trashed += 1
+            except Exception as e:
+                st.warning(f"Could not trash preview folder '{name}': {describe_error(e)}")
+    return trashed
+
+
 def _run_all_steps() -> None:
     """Ingest new rows, transcribe untranscribed reels, and split newly ingested reel videos."""
     # Capture pending rows before ingesting so we know which ones are new
@@ -4018,17 +4074,11 @@ def _run_all_steps() -> None:
                     st.warning(f"Row {row_num}: {describe_error(e)}")
             s3.update(label=f"Step 3: Split {split_succeeded}/{len(reels_to_split)} reel(s)", state="complete")
 
-    # Step 4: Archive orphaned local media files and screenshots
-    with st.status("Step 4: Cleaning up orphaned local media…", expanded=True) as s4:
+    # Step 4: Trash orphaned preview folders in Drive
+    with st.status("Step 4: Cleaning up orphaned preview folders…", expanded=True) as s4:
         try:
-            from scripts.local_transcribe_reels import _archive_orphaned_media, _default_media_dir
-            media_root = _default_media_dir()
-            if media_root.exists():
-                service = _get_service()
-                moved = _archive_orphaned_media(media_root, all_rows, service, dry_run=False)
-                s4.update(label=f"Step 4: Archived {moved} orphaned item(s)", state="complete")
-            else:
-                s4.update(label="Step 4: Local media folder not found, skipped", state="complete")
+            trashed = _cleanup_orphaned_preview_folders(all_rows)
+            s4.update(label=f"Step 4: Trashed {trashed} orphaned preview folder(s)", state="complete")
         except Exception as e:
             s4.update(label=f"Step 4 cleanup error: {describe_error(e)}", state="error")
 
