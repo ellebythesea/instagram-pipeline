@@ -524,9 +524,12 @@ def step4_cleanup(all_rows: list[dict]) -> int:
 
     orphan_folders = {n: fid for n, fid in existing_folders.items() if n not in expected_preview_names}
     print(f"Step 4: {len(existing_folders)} preview folder(s), {len(orphan_folders)} orphaned.")
+
+    # Shared safe_for_deletion folder at root level for both phases.
+    safe_root_id = get_or_create_subfolder(GOOGLE_DRIVE_FOLDER_ID, SAFE_DELETE_SUBFOLDER)
+    archive_folder_id = get_or_create_subfolder(safe_root_id, timestamp)
+
     if orphan_folders:
-        safe_root_id = get_or_create_subfolder(preview_root_id, SAFE_DELETE_SUBFOLDER)
-        archive_folder_id = get_or_create_subfolder(safe_root_id, timestamp)
         for name, folder_id in orphan_folders.items():
             try:
                 service.files().update(
@@ -540,7 +543,7 @@ def step4_cleanup(all_rows: list[dict]) -> int:
                 moved += 1
             except Exception as e:
                 print(f"  Could not move '{name}': {e}")
-        print(f"Step 4: Moved {moved} orphaned preview folder(s) to previews/safe_for_deletion/{timestamp}.")
+        print(f"Step 4: Moved {moved} orphaned preview folder(s) to safe_for_deletion/{timestamp}.")
     else:
         print("Step 4: No orphaned preview folders.")
 
@@ -553,9 +556,6 @@ def step4_cleanup(all_rows: list[dict]) -> int:
         includeItemsFromAllDrives=True,
     ).execute()
     root_items = root_result.get("files", [])
-
-    root_safe_id = get_or_create_subfolder(GOOGLE_DRIVE_FOLDER_ID, SAFE_DELETE_SUBFOLDER)
-    root_archive_id = get_or_create_subfolder(root_safe_id, timestamp)
 
     root_moved = 0
     for item in root_items:
@@ -586,7 +586,7 @@ def step4_cleanup(all_rows: list[dict]) -> int:
             try:
                 service.files().update(
                     fileId=file_id,
-                    addParents=root_archive_id,
+                    addParents=archive_folder_id,
                     removeParents=GOOGLE_DRIVE_FOLDER_ID,
                     fields="id,parents",
                     supportsAllDrives=True,
