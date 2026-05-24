@@ -5708,8 +5708,6 @@ if active_section_tab == "Home":
                         slide_cta_options,
                     )
 
-            st.divider()
-
         preview_scroll_target = st.session_state.pop("workspace_preview_scroll_target", None)
         if preview_scroll_target:
             _scroll_to_element(preview_scroll_target)
