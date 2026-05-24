@@ -3929,16 +3929,17 @@ def _transcribe_reel_from_drive(row: dict) -> str | None:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+SAFE_DELETE_SUBFOLDER = "safe_for_deletion"
+
+
 def _cleanup_orphaned_preview_folders(all_rows: list[dict]) -> int:
-    """Trash Drive preview subfolders that no longer match any active row."""
+    """Move Drive preview subfolders that no longer match any active row into safe_for_deletion."""
     if not GOOGLE_DRIVE_FOLDER_ID:
         return 0
     service = _get_service()
 
-    # Find the previews root
     preview_root_id = get_or_create_subfolder(GOOGLE_DRIVE_FOLDER_ID, PREVIEW_UPLOAD_SUBFOLDER)
 
-    # List all subfolders in the previews root
     query = (
         f"'{preview_root_id}' in parents and "
         "mimeType = 'application/vnd.google-apps.folder' and "
@@ -3951,15 +3952,18 @@ def _cleanup_orphaned_preview_folders(all_rows: list[dict]) -> int:
         supportsAllDrives=True,
         includeItemsFromAllDrives=True,
     ).execute()
-    existing_folders: dict[str, str] = {f["name"]: f["id"] for f in result.get("files", [])}
+    existing_folders: dict[str, str] = {
+        f["name"]: f["id"] for f in result.get("files", [])
+        if f["name"] != SAFE_DELETE_SUBFOLDER
+    }
     if not existing_folders:
         return 0
 
-    # Compute expected folder names from active rows
     expected_names: set[str] = set()
-    rows_with_media = [r for r in all_rows if _cell_text(r.get("Media Drive Link")).strip()]
-    for row in rows_with_media:
+    for row in all_rows:
         media_link = _cell_text(row.get("Media Drive Link")).strip().split(",")[0].strip()
+        if not media_link:
+            continue
         username = _cell_text(row.get("Source Username")).strip().lstrip("@")
         handle_text = _cell_text(row.get("Speaker Name")).strip()
         try:
@@ -3968,21 +3972,29 @@ def _cleanup_orphaned_preview_folders(all_rows: list[dict]) -> int:
         except Exception:
             pass
 
-    # Trash any folder not matched to an active row
-    trashed = 0
-    for name, folder_id in existing_folders.items():
-        if name not in expected_names:
-            try:
-                service.files().update(
-                    fileId=folder_id,
-                    body={"trashed": True},
-                    supportsAllDrives=True,
-                ).execute()
-                st.write(f"Trashed orphaned preview folder: {name}")
-                trashed += 1
-            except Exception as e:
-                st.warning(f"Could not trash preview folder '{name}': {describe_error(e)}")
-    return trashed
+    orphans = {name: fid for name, fid in existing_folders.items() if name not in expected_names}
+    if not orphans:
+        return 0
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_root_id = get_or_create_subfolder(preview_root_id, SAFE_DELETE_SUBFOLDER)
+    archive_folder_id = get_or_create_subfolder(safe_root_id, timestamp)
+
+    moved = 0
+    for name, folder_id in orphans.items():
+        try:
+            service.files().update(
+                fileId=folder_id,
+                addParents=archive_folder_id,
+                removeParents=preview_root_id,
+                fields="id,parents",
+                supportsAllDrives=True,
+            ).execute()
+            st.write(f"Moved to safe_for_deletion: {name}")
+            moved += 1
+        except Exception as e:
+            st.warning(f"Could not move preview folder '{name}': {describe_error(e)}")
+    return moved
 
 
 def _run_all_steps() -> None:

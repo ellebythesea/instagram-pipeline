@@ -464,8 +464,11 @@ def step3_split(all_rows: list[dict]) -> int:
     return succeeded
 
 
+SAFE_DELETE_SUBFOLDER = "safe_for_deletion"
+
+
 def step4_cleanup(all_rows: list[dict]) -> int:
-    """Trash Drive preview subfolders that no longer match any active row."""
+    """Move Drive preview subfolders that no longer match any active row into safe_for_deletion."""
     if not GOOGLE_DRIVE_FOLDER_ID:
         print("Step 4: GOOGLE_DRIVE_FOLDER_ID not configured, skipped.")
         return 0
@@ -484,7 +487,10 @@ def step4_cleanup(all_rows: list[dict]) -> int:
         supportsAllDrives=True,
         includeItemsFromAllDrives=True,
     ).execute()
-    existing_folders: dict[str, str] = {f["name"]: f["id"] for f in result.get("files", [])}
+    existing_folders: dict[str, str] = {
+        f["name"]: f["id"] for f in result.get("files", [])
+        if f["name"] != SAFE_DELETE_SUBFOLDER
+    }
     if not existing_folders:
         print("Step 4: No preview folders found.")
         return 0
@@ -502,22 +508,33 @@ def step4_cleanup(all_rows: list[dict]) -> int:
         except Exception:
             pass
 
-    print(f"Step 4: {len(existing_folders)} preview folder(s) found, {len(expected_names)} active row(s) matched.")
-    trashed = 0
-    for name, folder_id in existing_folders.items():
-        if name not in expected_names:
-            try:
-                service.files().update(
-                    fileId=folder_id,
-                    body={"trashed": True},
-                    supportsAllDrives=True,
-                ).execute()
-                print(f"  Trashed: {name}")
-                trashed += 1
-            except Exception as e:
-                print(f"  Could not trash '{name}': {e}")
-    print(f"Step 4: Trashed {trashed} orphaned preview folder(s).")
-    return trashed
+    orphans = {name: fid for name, fid in existing_folders.items() if name not in expected_names}
+    print(f"Step 4: {len(existing_folders)} preview folder(s), {len(orphans)} orphaned.")
+    if not orphans:
+        print("Step 4: Nothing to clean up.")
+        return 0
+
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_root_id = get_or_create_subfolder(preview_root_id, SAFE_DELETE_SUBFOLDER)
+    archive_folder_id = get_or_create_subfolder(safe_root_id, timestamp)
+
+    moved = 0
+    for name, folder_id in orphans.items():
+        try:
+            service.files().update(
+                fileId=folder_id,
+                addParents=archive_folder_id,
+                removeParents=preview_root_id,
+                fields="id,parents",
+                supportsAllDrives=True,
+            ).execute()
+            print(f"  Moved to safe_for_deletion: {name}")
+            moved += 1
+        except Exception as e:
+            print(f"  Could not move '{name}': {e}")
+    print(f"Step 4: Moved {moved} orphaned preview folder(s) to safe_for_deletion/{timestamp}.")
+    return moved
 
 
 # ---------------------------------------------------------------------------
