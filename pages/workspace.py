@@ -4704,9 +4704,11 @@ def _is_workspace_action_complete(row_number: int, action: str) -> bool:
     return bool(completed.get(f"{row_number}:{action}"))
 
 
-def _process_next_workspace_action() -> None:
+def _process_next_workspace_action(for_row_number: int | None = None) -> None:
     queue = st.session_state.setdefault("workspace_action_queue", [])
     if not queue:
+        return
+    if for_row_number is not None and queue[0]["row_number"] != for_row_number:
         return
 
     current = queue.pop(0)
@@ -4719,45 +4721,58 @@ def _process_next_workspace_action() -> None:
     )
     row = next((r for r in rows if r.get("row_number") == row_number), None)
     if not row:
-        st.session_state["workspace_error"] = f"Row {row_number}: row not found in sheet."
+        st.session_state[f"workspace_row_error_{row_number}"] = f"Row {row_number}: row not found in sheet."
         if queue:
             _rerun_workspace("Edit")
         return
 
     try:
         if action == "process_post":
-            with st.spinner(f"Processing row {row_number}..."):
-                row_url = _cell_text(row.get("Instagram URL")).strip()
-                if _is_reel_url(row_url):
+            row_url = _cell_text(row.get("Instagram URL")).strip()
+            is_reel = _is_reel_url(row_url)
+            with st.status(
+                f"Transcribing and generating caption for row {row_number}…" if is_reel
+                else f"Generating caption for row {row_number}…",
+                expanded=True,
+            ) as _s:
+                if is_reel:
+                    st.write("Downloading reel and transcribing with Whisper…")
                     _process_post_online(row)
                     success_message = f"Row {row_number}: processed with transcript, caption, and slide copy."
                 else:
+                    st.write("Extracting post text and generating caption…")
                     _process_photo_post_online(row)
                     success_message = f"Row {row_number}: processed with caption and slide copy."
-            st.session_state["workspace_success"] = success_message
+                _s.update(label=success_message, state="complete")
         elif action == "transcript":
-            with st.spinner(f"Refreshing row {row_number} with transcript..."):
+            with st.status(f"Refreshing transcript for row {row_number}…", expanded=True) as _s:
+                st.write("Fetching transcript from Whisper…")
                 transcript_found = _rerun_with_transcript(row, force_remote=True)
-            if transcript_found:
-                st.session_state["workspace_success"] = f"Row {row_number}: transcript rerun complete."
-            else:
-                st.session_state["workspace_success"] = (
-                    f"Row {row_number}: no transcript was available, so the caption was generated from existing source text."
-                )
+                if transcript_found:
+                    success_message = f"Row {row_number}: transcript rerun complete."
+                else:
+                    success_message = f"Row {row_number}: no transcript found — caption generated from existing text."
+                _s.update(label=success_message, state="complete")
         elif action == "generate_caption":
-            with st.spinner(f"Generating caption for row {row_number}..."):
+            with st.status(f"Generating caption for row {row_number}…", expanded=True) as _s:
+                st.write("Generating caption…")
                 _generate_caption_for_row(row)
-            st.session_state["workspace_success"] = f"Row {row_number}: caption generated."
+                success_message = f"Row {row_number}: caption generated."
+                _s.update(label=success_message, state="complete")
         elif action == "image_text":
-            with st.spinner(f"Extracting image text for row {row_number}..."):
+            with st.status(f"Extracting image text for row {row_number}…", expanded=True) as _s:
+                st.write("Reading image text and regenerating caption…")
                 _redo_caption_from_image_text(row)
-            st.session_state["workspace_success"] = f"Row {row_number}: caption regenerated from image text."
+                success_message = f"Row {row_number}: caption regenerated from image text."
+                _s.update(label=success_message, state="complete")
         elif action == "refresh_thumbnail_5s":
-            with st.spinner(f"Updating screenshot for row {row_number}..."):
+            with st.status(f"Updating screenshot for row {row_number}…", expanded=True) as _s:
+                st.write("Extracting frame at 5 seconds…")
                 _refresh_row_thumbnail_from_video(row, offset_seconds=5.0)
-            st.session_state["workspace_success"] = f"Row {row_number}: screenshot updated from 5 seconds into the video."
+                success_message = f"Row {row_number}: screenshot updated from 5 seconds into the video."
+                _s.update(label=success_message, state="complete")
         elif action == "split_video_fit":
-            with st.spinner(f"Scaling and splitting video for row {row_number}..."):
+            with st.status(f"Splitting video for row {row_number}…", expanded=True) as _s:
                 media_links = [
                     lnk.strip()
                     for lnk in _cell_text(row.get("Media Drive Link")).split(",")
@@ -4768,14 +4783,17 @@ def _process_next_workspace_action() -> None:
                 media_link = media_links[0]
                 username = _cell_text(row.get("Source Username")).strip().lstrip("@")
                 handle_text = _cell_text(row.get("Speaker Name")).strip()
+                st.write("Downloading video and splitting into segments…")
                 preview_folder_id, _, _ = _ensure_preview_folder(row_number, username, handle_text, media_link)
                 _upload_split_videos(media_link, preview_folder_id, mode="fit")
-            st.session_state["workspace_success"] = f"Row {row_number}: video scaled to fit and uploaded to Drive."
+                success_message = f"Row {row_number}: video scaled to fit and uploaded to Drive."
+                _s.update(label=success_message, state="complete")
         else:
             raise ValueError(f"Unknown action: {action}")
         _mark_workspace_action_complete(row_number, action)
+        st.session_state[f"workspace_row_success_{row_number}"] = success_message
     except Exception as e:
-        st.session_state["workspace_error"] = f"Row {row_number}: {describe_error(e)}"
+        st.session_state[f"workspace_row_error_{row_number}"] = f"Row {row_number}: {describe_error(e)}"
 
     _rerun_workspace("Edit")
 
@@ -5243,8 +5261,6 @@ st.title("Workspace")
 if not require_auth():
     st.stop()
 
-_process_next_workspace_action()
-
 pending_tab = st.session_state.pop("_workspace_pending_tab", None)
 if pending_tab:
     if pending_tab in {"Edit", "Grid", "Actions", "Slides"}:
@@ -5662,6 +5678,14 @@ if active_section_tab == "Home":
                             st.session_state.pop(warning_key, None)
                             _queue_workspace_action(row_num, "process_post")
                             _rerun_workspace("Edit")
+
+                    row_success = st.session_state.pop(f"workspace_row_success_{row_num}", "")
+                    row_error = st.session_state.pop(f"workspace_row_error_{row_num}", "")
+                    if row_success:
+                        st.success(row_success)
+                    if row_error:
+                        st.error(row_error)
+                    _process_next_workspace_action(for_row_number=row_num)
 
                     _copy_tabs(
                         row_num,
