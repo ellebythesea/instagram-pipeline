@@ -230,8 +230,17 @@ def _archive_orphaned_media(media_root: Path, rows: list[dict], service, dry_run
             if stem not in active_stems and _canonical_media_key(stem) not in active_keys:
                 orphan_paths.append(("screenshot", path))
 
+    previews_dir = media_root / "previews"
+    if previews_dir.exists():
+        for path in sorted(previews_dir.iterdir()):
+            if not path.is_dir() or path.name == SAFE_DELETE_DIRNAME:
+                continue
+            stem = _stem_without_suffixes(path.name)
+            if stem not in active_stems and _canonical_media_key(path.name) not in active_keys:
+                orphan_paths.append(("preview", path))
+
     if not orphan_paths:
-        print("Archive pass found no orphaned local originals, segment folders, or screenshots.")
+        print("Archive pass found no orphaned local originals, segment folders, previews, or screenshots.")
         return 0
 
     action = "Would move" if dry_run else "Moved"
