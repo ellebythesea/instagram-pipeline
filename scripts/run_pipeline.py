@@ -468,20 +468,37 @@ SAFE_DELETE_SUBFOLDER = "safe_for_deletion"
 
 
 def step4_cleanup(all_rows: list[dict]) -> int:
-    """Move Drive preview subfolders that no longer match any active row into safe_for_deletion."""
+    """Move Drive preview subfolders and orphaned root-level items into safe_for_deletion."""
     if not GOOGLE_DRIVE_FOLDER_ID:
         print("Step 4: GOOGLE_DRIVE_FOLDER_ID not configured, skipped.")
         return 0
     service = _get_service()
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
+    # Build set of active media filename stems from all rows (used by both phases).
+    active_stems: set[str] = set()
+    for row in all_rows:
+        media_link = _cell_text(row.get("Media Drive Link") or "").strip().split(",")[0].strip()
+        if not media_link:
+            continue
+        try:
+            meta = get_drive_file_metadata(media_link)
+            stem = os.path.splitext((meta.get("name") or "").strip())[0]
+            if stem:
+                active_stems.add(stem)
+        except Exception:
+            pass
+
+    # --- Phase 1: orphaned preview subfolders ---
+    moved = 0
     preview_root_id = get_or_create_subfolder(GOOGLE_DRIVE_FOLDER_ID, PREVIEW_UPLOAD_SUBFOLDER)
-    query = (
-        f"'{preview_root_id}' in parents and "
-        "mimeType = 'application/vnd.google-apps.folder' and "
-        "trashed = false"
-    )
     result = service.files().list(
-        q=query,
+        q=(
+            f"'{preview_root_id}' in parents and "
+            "mimeType = 'application/vnd.google-apps.folder' and "
+            "trashed = false"
+        ),
         fields="files(id,name)",
         pageSize=1000,
         supportsAllDrives=True,
@@ -491,11 +508,8 @@ def step4_cleanup(all_rows: list[dict]) -> int:
         f["name"]: f["id"] for f in result.get("files", [])
         if f["name"] != SAFE_DELETE_SUBFOLDER
     }
-    if not existing_folders:
-        print("Step 4: No preview folders found.")
-        return 0
 
-    expected_names: set[str] = set()
+    expected_preview_names: set[str] = set()
     for row in all_rows:
         media_link = _cell_text(row.get("Media Drive Link") or "").strip().split(",")[0].strip()
         if not media_link:
@@ -504,37 +518,86 @@ def step4_cleanup(all_rows: list[dict]) -> int:
         handle_text = _cell_text(row.get("Speaker Name") or "").strip()
         try:
             folder_name, _ = _preview_folder_base_name(username or handle_text, media_link, row["row_number"])
-            expected_names.add(folder_name)
+            expected_preview_names.add(folder_name)
         except Exception:
             pass
 
-    orphans = {name: fid for name, fid in existing_folders.items() if name not in expected_names}
-    print(f"Step 4: {len(existing_folders)} preview folder(s), {len(orphans)} orphaned.")
-    if not orphans:
-        print("Step 4: Nothing to clean up.")
-        return 0
+    orphan_folders = {n: fid for n, fid in existing_folders.items() if n not in expected_preview_names}
+    print(f"Step 4: {len(existing_folders)} preview folder(s), {len(orphan_folders)} orphaned.")
+    if orphan_folders:
+        safe_root_id = get_or_create_subfolder(preview_root_id, SAFE_DELETE_SUBFOLDER)
+        archive_folder_id = get_or_create_subfolder(safe_root_id, timestamp)
+        for name, folder_id in orphan_folders.items():
+            try:
+                service.files().update(
+                    fileId=folder_id,
+                    addParents=archive_folder_id,
+                    removeParents=preview_root_id,
+                    fields="id,parents",
+                    supportsAllDrives=True,
+                ).execute()
+                print(f"  Moved preview folder to safe_for_deletion: {name}")
+                moved += 1
+            except Exception as e:
+                print(f"  Could not move '{name}': {e}")
+        print(f"Step 4: Moved {moved} orphaned preview folder(s) to previews/safe_for_deletion/{timestamp}.")
+    else:
+        print("Step 4: No orphaned preview folders.")
 
-    from datetime import datetime
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    safe_root_id = get_or_create_subfolder(preview_root_id, SAFE_DELETE_SUBFOLDER)
-    archive_folder_id = get_or_create_subfolder(safe_root_id, timestamp)
+    # --- Phase 2: root-level _segments folders and Drive-duplicate (n) files ---
+    root_result = service.files().list(
+        q=f"'{GOOGLE_DRIVE_FOLDER_ID}' in parents and trashed = false",
+        fields="files(id,name,mimeType)",
+        pageSize=1000,
+        supportsAllDrives=True,
+        includeItemsFromAllDrives=True,
+    ).execute()
+    root_items = root_result.get("files", [])
 
-    moved = 0
-    for name, folder_id in orphans.items():
-        try:
-            service.files().update(
-                fileId=folder_id,
-                addParents=archive_folder_id,
-                removeParents=preview_root_id,
-                fields="id,parents",
-                supportsAllDrives=True,
-            ).execute()
-            print(f"  Moved to safe_for_deletion: {name}")
-            moved += 1
-        except Exception as e:
-            print(f"  Could not move '{name}': {e}")
-    print(f"Step 4: Moved {moved} orphaned preview folder(s) to safe_for_deletion/{timestamp}.")
-    return moved
+    root_safe_id = get_or_create_subfolder(GOOGLE_DRIVE_FOLDER_ID, SAFE_DELETE_SUBFOLDER)
+    root_archive_id = get_or_create_subfolder(root_safe_id, timestamp)
+
+    root_moved = 0
+    for item in root_items:
+        name = item["name"]
+        file_id = item["id"]
+        is_folder = item["mimeType"] == "application/vnd.google-apps.folder"
+
+        # Skip managed subfolders.
+        if name in (PREVIEW_UPLOAD_SUBFOLDER, SAFE_DELETE_SUBFOLDER):
+            continue
+
+        should_move = False
+        reason = ""
+
+        # Old-style _segments folder at root (these belong inside previews/).
+        if is_folder and name.endswith("_segments"):
+            base = name[: -len("_segments")]
+            if base not in active_stems:
+                should_move = True
+                reason = "orphaned _segments folder"
+
+        # Drive-created duplicate: filename contains " (n)" before the extension.
+        elif not is_folder and re.search(r" \(\d+\)(\.[^.]+)?$", name):
+            should_move = True
+            reason = "Drive duplicate"
+
+        if should_move:
+            try:
+                service.files().update(
+                    fileId=file_id,
+                    addParents=root_archive_id,
+                    removeParents=GOOGLE_DRIVE_FOLDER_ID,
+                    fields="id,parents",
+                    supportsAllDrives=True,
+                ).execute()
+                print(f"  Moved ({reason}) to safe_for_deletion: {name}")
+                root_moved += 1
+            except Exception as e:
+                print(f"  Could not move '{name}': {e}")
+
+    print(f"Step 4: Moved {root_moved} root-level orphan(s) to safe_for_deletion/{timestamp}.")
+    return moved + root_moved
 
 
 # ---------------------------------------------------------------------------
