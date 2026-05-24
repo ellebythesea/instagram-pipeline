@@ -454,7 +454,7 @@ def step3_split(all_rows: list[dict]) -> int:
             preview_folder_id, _, _ = _ensure_preview_folder(
                 row_num, username_clean, handle_text, media_link
             )
-            _upload_split_videos(media_link, preview_folder_id, mode="fit")
+            _upload_split_videos(media_link, preview_folder_id, mode="fill")
             print(f"  Row {row_num}: done.")
             succeeded += 1
         except Exception as e:

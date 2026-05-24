@@ -4011,7 +4011,7 @@ def _run_all_steps() -> None:
                     username_clean = _cell_text(row.get("Source Username")).strip().lstrip("@")
                     handle_text = _cell_text(row.get("Speaker Name")).strip()
                     preview_folder_id, _, _ = _ensure_preview_folder(row_num, username_clean, handle_text, media_link)
-                    _upload_split_videos(media_link, preview_folder_id, mode="fit")
+                    _upload_split_videos(media_link, preview_folder_id, mode="fill")
                     st.write(f"Row {row_num}: done.")
                     split_succeeded += 1
                 except Exception as e:
