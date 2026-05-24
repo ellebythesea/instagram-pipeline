@@ -250,7 +250,8 @@ def _archive_orphaned_media(media_root: Path, rows: list[dict], service, dry_run
     )
     moved = 0
     for kind, path in orphan_paths:
-        destination = _move_to_archive(path, media_root, archive_root, dry_run)
+        base = previews_dir if kind == "preview" else media_root
+        destination = _move_to_archive(path, base, archive_root, dry_run)
         print(f"{action} {kind}: {path} -> {destination}")
         moved += 1
     return moved
