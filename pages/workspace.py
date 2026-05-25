@@ -2288,9 +2288,8 @@ def _segment_name(index: int) -> str:
 def _ensure_preview_folder(row_num: int, username: str, handle_text: str, media_link: str) -> tuple[str, str, str]:
     if not GOOGLE_DRIVE_FOLDER_ID:
         raise RuntimeError("GOOGLE_DRIVE_FOLDER_ID is not configured.")
-    preview_root_folder_id = get_or_create_subfolder(GOOGLE_DRIVE_FOLDER_ID, PREVIEW_UPLOAD_SUBFOLDER)
     folder_base_name, source_filename = _preview_folder_base_name(username or handle_text, media_link, row_num)
-    preview_folder_id = get_or_create_subfolder(preview_root_folder_id, folder_base_name)
+    preview_folder_id = get_or_create_subfolder(GOOGLE_DRIVE_FOLDER_ID, folder_base_name)
     return preview_folder_id, folder_base_name, source_filename
 
 
@@ -3938,10 +3937,8 @@ def _cleanup_orphaned_preview_folders(all_rows: list[dict]) -> int:
         return 0
     service = _get_service()
 
-    preview_root_id = get_or_create_subfolder(GOOGLE_DRIVE_FOLDER_ID, PREVIEW_UPLOAD_SUBFOLDER)
-
     query = (
-        f"'{preview_root_id}' in parents and "
+        f"'{GOOGLE_DRIVE_FOLDER_ID}' in parents and "
         "mimeType = 'application/vnd.google-apps.folder' and "
         "trashed = false"
     )
@@ -3977,7 +3974,7 @@ def _cleanup_orphaned_preview_folders(all_rows: list[dict]) -> int:
         return 0
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    safe_root_id = get_or_create_subfolder(preview_root_id, SAFE_DELETE_SUBFOLDER)
+    safe_root_id = get_or_create_subfolder(GOOGLE_DRIVE_FOLDER_ID, SAFE_DELETE_SUBFOLDER)
     archive_folder_id = get_or_create_subfolder(safe_root_id, timestamp)
 
     moved = 0
@@ -3986,7 +3983,7 @@ def _cleanup_orphaned_preview_folders(all_rows: list[dict]) -> int:
             service.files().update(
                 fileId=folder_id,
                 addParents=archive_folder_id,
-                removeParents=preview_root_id,
+                removeParents=GOOGLE_DRIVE_FOLDER_ID,
                 fields="id,parents",
                 supportsAllDrives=True,
             ).execute()
