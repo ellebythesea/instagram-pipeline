@@ -4125,13 +4125,17 @@ def _process_pending_rows_from_sheet() -> int:
                     result["status"],
                 )
                 existing_inputs = _current_row_caption_inputs(row)
-                default_top_comment = existing_inputs["Top Comment"]
-                if not default_top_comment and result["status"] == "ingested":
-                    row_url = _cell_text(row.get("Instagram URL")).strip()
+                sheet_top_comment = _cell_text(row.get("Top Comment", "")).strip()
+                row_url = _cell_text(row.get("Instagram URL")).strip()
+                if result["status"] == "ingested" and not sheet_top_comment:
                     if result["media_type"] == "article":
                         default_top_comment = _build_read_cta(row_url)
                     elif _is_instagram_url(row_url):
                         default_top_comment = _build_watch_cta(result["username"], row_url)
+                    else:
+                        default_top_comment = existing_inputs["Top Comment"]
+                else:
+                    default_top_comment = sheet_top_comment or existing_inputs["Top Comment"]
 
                 update_metadata(
                     GOOGLE_SHEET_ID,
