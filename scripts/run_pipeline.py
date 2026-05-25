@@ -355,7 +355,12 @@ def step1_ingest(sheet_id: str) -> int:
                 result["media_link"], result["thumbnail_link"],
                 result["original_caption"], result["transcript"], result["status"],
             )
-            inputs = _row_caption_inputs(row)
+            enriched_row = {
+                **row,
+                "Source Username": result["username"],
+                "Media Type": result["media_type"],
+            }
+            inputs = _row_caption_inputs(enriched_row)
             update_metadata(
                 sheet_id, row_num,
                 inputs["Caption Context"], inputs["Speaker Name"],
@@ -363,9 +368,7 @@ def step1_ingest(sheet_id: str) -> int:
             )
             if result["status"] == "ingested":
                 ingested_row = {
-                    **row,
-                    "Source Username": result["username"],
-                    "Media Type": result["media_type"],
+                    **enriched_row,
                     "Photo Count": result["photo_count"],
                     "Media Drive Link": result["media_link"],
                     "Thumbnail Drive Link": result["thumbnail_link"],

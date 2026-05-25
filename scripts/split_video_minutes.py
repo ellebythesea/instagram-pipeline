@@ -225,7 +225,7 @@ def _run_ffmpeg(input_path: Path, output_dir: Path) -> list[Path]:
 
 
 def output_dir_for_video(folder: Path, video_path: Path) -> Path:
-    return folder / "previews" / video_path.stem
+    return folder / video_path.stem
 
 
 def split_video_file(video_path: Path, base_folder: Path | None = None) -> int:
