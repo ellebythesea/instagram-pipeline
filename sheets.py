@@ -11,7 +11,8 @@ Sheet layout:
   L  Speaker Name       M  Footer             N  Status
   O  Caption Context    P  Scheduled Time     Q  #name
   R  #text1             S  #text2             T  #text3
-  U  Slide CTA
+  U  Slide CTA          V  text4             W  text5
+  X  text6
 """
 
 import json
@@ -52,9 +53,17 @@ _EXPECTED_HEADERS = [
     "text2",
     "text3",
     "Slide CTA",
+    "text4",
+    "text5",
+    "text6",
 ]
 
 _headers_checked: set[tuple[str, str]] = set()
+_client: gspread.Client | None = None
+_workbooks: dict[str, gspread.Spreadsheet] = {}
+_worksheets: dict[tuple[str, str], gspread.Worksheet] = {}
+_rows_cache: dict[tuple[str, str], tuple[float, list[dict]]] = {}
+_ROWS_CACHE_TTL_SECONDS = 20.0
 _METADATA_SHEET_TITLE = "__workspace_meta__"
 _LAST_SCHEDULED_TIMES_KEY = "last_scheduled_times"
 _SLIDE_CTA_OPTIONS_KEY = "slide_cta_options"
@@ -62,6 +71,10 @@ _FUNDRAISING_SHEET_TITLE = "fundraising"
 
 
 def _get_client() -> gspread.Client:
+    global _client
+    if _client is not None:
+        return _client
+
     creds_src = GOOGLE_SERVICE_ACCOUNT_JSON
     if not creds_src:
         raise RuntimeError(
@@ -80,11 +93,21 @@ def _get_client() -> gspread.Client:
                 "JSON object or a path to a service-account JSON file."
             ) from exc
         creds = Credentials.from_service_account_info(creds_info, scopes=_SCOPES)
-    return gspread.authorize(creds)
+    _client = gspread.authorize(creds)
+    return _client
 
 
 def _workbook(sheet_id: str):
-    return _get_client().open_by_key(sheet_id)
+    if sheet_id not in _workbooks:
+        _workbooks[sheet_id] = _with_backoff(_get_client().open_by_key, sheet_id)
+    return _workbooks[sheet_id]
+
+
+def _named_worksheet(sheet_id: str, title: str) -> gspread.Worksheet:
+    cache_key = (sheet_id, title)
+    if cache_key not in _worksheets:
+        _worksheets[cache_key] = _workbook(sheet_id).worksheet(title)
+    return _worksheets[cache_key]
 
 
 def _with_backoff(fn, *args, **kwargs):
@@ -103,12 +126,17 @@ def _with_backoff(fn, *args, **kwargs):
 
 
 def _worksheet(sheet_id: str) -> gspread.Worksheet:
+    cache_key = (sheet_id, "__main__")
+    if cache_key in _worksheets:
+        return _worksheets[cache_key]
+
     workbook = _workbook(sheet_id)
 
     if GOOGLE_WORKSHEET_NAME:
         try:
-            ws = workbook.worksheet(GOOGLE_WORKSHEET_NAME)
+            ws = _named_worksheet(sheet_id, GOOGLE_WORKSHEET_NAME)
             _ensure_headers(sheet_id, ws)
+            _worksheets[cache_key] = ws
             return ws
         except gspread.WorksheetNotFound:
             pass
@@ -118,27 +146,29 @@ def _worksheet(sheet_id: str) -> gspread.Worksheet:
         headers = {h.strip() for h in ws.row_values(1) if h.strip()}
         if expected_headers.issubset(headers):
             _ensure_headers(sheet_id, ws)
+            _worksheets[cache_key] = ws
             return ws
 
     ws = workbook.sheet1
     _ensure_headers(sheet_id, ws)
+    _worksheets[cache_key] = ws
     return ws
 
 
 def _metadata_worksheet(sheet_id: str) -> gspread.Worksheet:
     workbook = _workbook(sheet_id)
     try:
-        ws = workbook.worksheet(_METADATA_SHEET_TITLE)
+        ws = _named_worksheet(sheet_id, _METADATA_SHEET_TITLE)
     except gspread.WorksheetNotFound:
         ws = workbook.add_worksheet(title=_METADATA_SHEET_TITLE, rows=10, cols=2)
+        _worksheets[(sheet_id, _METADATA_SHEET_TITLE)] = ws
         _with_backoff(ws.update, "A1:B1", [["key", "value"]])
     return ws
 
 
 def _optional_worksheet(sheet_id: str, title: str) -> gspread.Worksheet | None:
-    workbook = _workbook(sheet_id)
     try:
-        return workbook.worksheet(title)
+        return _named_worksheet(sheet_id, title)
     except gspread.WorksheetNotFound:
         return None
 
@@ -151,21 +181,42 @@ def _ensure_headers(sheet_id: str, ws: gspread.Worksheet) -> None:
     current = _with_backoff(ws.row_values, 1)
     normalized = current[:len(_EXPECTED_HEADERS)]
     if normalized != _EXPECTED_HEADERS:
-        _with_backoff(ws.update, "A1:U1", [_EXPECTED_HEADERS])
+        _with_backoff(ws.update, "A1:X1", [_EXPECTED_HEADERS])
     _headers_checked.add(cache_key)
 
 
 def _invalidate_rows_cache(sheet_id: str) -> None:
-    return None
+    stale_keys = [key for key in _rows_cache if key[0] == sheet_id]
+    for key in stale_keys:
+        _rows_cache.pop(key, None)
+
+
+def _get_cached_rows(sheet_id: str, tab_name: str) -> list[dict] | None:
+    cached = _rows_cache.get((sheet_id, tab_name))
+    if not cached:
+        return None
+    cached_at, rows = cached
+    if time.monotonic() - cached_at > _ROWS_CACHE_TTL_SECONDS:
+        _rows_cache.pop((sheet_id, tab_name), None)
+        return None
+    return [row.copy() for row in rows]
+
+
+def _set_cached_rows(sheet_id: str, tab_name: str, rows: list[dict]) -> None:
+    _rows_cache[(sheet_id, tab_name)] = (time.monotonic(), [row.copy() for row in rows])
 
 
 def get_all_rows(sheet_id: str) -> list[dict]:
     """Return all data rows as dicts keyed by header name, plus row_number."""
+    cached = _get_cached_rows(sheet_id, "posts")
+    if cached is not None:
+        return cached
     ws = _worksheet(sheet_id)
     records = _with_backoff(ws.get_all_records, default_blank="")
     for i, r in enumerate(records):
         r["row_number"] = i + 2  # header is row 1
-    return records
+    _set_cached_rows(sheet_id, "posts", records)
+    return [row.copy() for row in records]
 
 
 def get_pending_rows(sheet_id: str) -> list[dict]:
@@ -198,6 +249,37 @@ def append_link_rows(sheet_id: str, urls: list[str], required_hashtags: str = ""
         row[1] = required_hashtags.strip()
         rows.append(row)
     _with_backoff(ws.append_rows, rows, value_input_option="USER_ENTERED")
+    _invalidate_rows_cache(sheet_id)
+
+
+def append_generated_post_rows(sheet_id: str, rows: list[dict]) -> None:
+    """Append pre-generated rows to the main posts tab."""
+    cleaned_rows = [row for row in rows if (row.get("url") or "").strip()]
+    if not cleaned_rows:
+        return
+
+    values = []
+    for source in cleaned_rows:
+        row = [""] * len(_EXPECTED_HEADERS)
+        row[0] = source.get("url", "").strip()
+        row[2] = source.get("source_username", "").strip()
+        row[3] = source.get("caption", "").strip()
+        row[4] = source.get("media_type", "").strip()
+        row[8] = source.get("original_caption", "").strip()
+        row[13] = source.get("status", "").strip()
+        row[14] = source.get("caption_context", "").strip()
+        row[16] = source.get("name", "").strip()
+        row[17] = source.get("text1", "").strip()
+        row[18] = source.get("text2", "").strip()
+        row[19] = source.get("text3", "").strip()
+        row[20] = source.get("slide_cta", "").strip()
+        row[21] = source.get("text4", "").strip()
+        row[22] = source.get("text5", "").strip()
+        row[23] = source.get("text6", "").strip()
+        values.append(row)
+
+    ws = _worksheet(sheet_id)
+    _with_backoff(ws.append_rows, values, value_input_option="USER_ENTERED")
     _invalidate_rows_cache(sheet_id)
 
 
@@ -468,7 +550,10 @@ def delete_row(sheet_id: str, row_number: int) -> None:
 
 def get_monitor_rows(sheet_id: str) -> list[dict]:
     """Return all rows from the monitors tab."""
-    ws = _workbook(sheet_id).worksheet("monitors")
+    cached = _get_cached_rows(sheet_id, "monitors")
+    if cached is not None:
+        return cached
+    ws = _named_worksheet(sheet_id, "monitors")
     values = _with_backoff(ws.get_all_values)
     if not values:
         return []
@@ -478,6 +563,7 @@ def get_monitor_rows(sheet_id: str) -> list[dict]:
         record = {headers[j]: (row[j].strip() if j < len(row) else "") for j in range(len(headers))}
         record["row_number"] = i
         rows.append(record)
+    _set_cached_rows(sheet_id, "monitors", rows)
     return rows
 
 
@@ -488,7 +574,7 @@ def get_open_monitor_rows(sheet_id: str) -> list[dict]:
 
 def update_monitor_summary(sheet_id: str, row_number: int, summary: str, last_checked: str) -> None:
     """Write summary and last checked date to the monitors tab by header name."""
-    ws = _workbook(sheet_id).worksheet("monitors")
+    ws = _named_worksheet(sheet_id, "monitors")
     header_row = _with_backoff(ws.row_values, 1)
     normalized = {h.strip().lower(): i for i, h in enumerate(header_row) if h.strip()}
     last_index = normalized.get("last")
@@ -503,6 +589,7 @@ def update_monitor_summary(sheet_id: str, row_number: int, summary: str, last_ch
         {"range": f"{last_col}{row_number}", "values": [[last_checked]]},
         {"range": f"{summary_col}{row_number}", "values": [[summary]]},
     ])
+    _invalidate_rows_cache(sheet_id)
 
 
 # ---------------------------------------------------------------------------
@@ -511,7 +598,10 @@ def update_monitor_summary(sheet_id: str, row_number: int, summary: str, last_ch
 
 def get_substack_rows(sheet_id: str) -> list[dict]:
     """Return all rows from the substack tab."""
-    ws = _workbook(sheet_id).worksheet("substack")
+    cached = _get_cached_rows(sheet_id, "substack")
+    if cached is not None:
+        return cached
+    ws = _named_worksheet(sheet_id, "substack")
     values = _with_backoff(ws.get_all_values)
     if not values:
         return []
@@ -521,7 +611,8 @@ def get_substack_rows(sheet_id: str) -> list[dict]:
         record = {headers[j]: (row[j].strip() if j < len(row) else "") for j in range(len(headers))}
         record["row_number"] = i
         rows.append(record)
-    return rows
+    _set_cached_rows(sheet_id, "substack", rows)
+    return [row.copy() for row in rows]
 
 
 def get_open_substack_rows(sheet_id: str) -> list[dict]:
@@ -530,31 +621,50 @@ def get_open_substack_rows(sheet_id: str) -> list[dict]:
 
 
 def update_substack_status(sheet_id: str, row_number: int, status: str) -> None:
-    """Write status to col D of the substack tab."""
-    ws = _workbook(sheet_id).worksheet("substack")
-    _with_backoff(ws.update, f"D{row_number}", [[status]])
+    """Write status to col C of the substack tab."""
+    ws = _named_worksheet(sheet_id, "substack")
+    _with_backoff(ws.update, f"C{row_number}", [[status]])
+    _invalidate_rows_cache(sheet_id)
 
 
 def update_substack_article(sheet_id: str, row_number: int, article: str) -> None:
-    """Write article body to col C of the substack tab."""
-    ws = _workbook(sheet_id).worksheet("substack")
-    _with_backoff(ws.update, f"C{row_number}", [[article]])
+    """Write article body to col B of the substack tab."""
+    ws = _named_worksheet(sheet_id, "substack")
+    _with_backoff(ws.update, f"B{row_number}", [[article]])
+    _invalidate_rows_cache(sheet_id)
 
 
 def append_substack_row(sheet_id: str, url: str) -> None:
     """Append a new row to the substack tab with the given URL and status open."""
-    ws = _workbook(sheet_id).worksheet("substack")
-    _with_backoff(ws.append_row, [url, "", "", "open", ""], value_input_option="USER_ENTERED")
+    ws = _named_worksheet(sheet_id, "substack")
+    _with_backoff(ws.append_row, [url, "", "open", ""], value_input_option="USER_ENTERED")
+    _invalidate_rows_cache(sheet_id)
+
+
+def _ensure_substack_post_headers(ws) -> None:
+    cache_key = ("substack_posts_headers", ws.id)
+    if cache_key in _headers_checked:
+        return
+    values = _with_backoff(ws.get_all_values)
+    headers = values[0] if values else []
+    expected_suffix = ["slide_prompt", "slide_input", "post_type", "topics", "text4", "text5", "text6"]
+    if len(headers) >= 15 and headers[8:15] == expected_suffix:
+        _headers_checked.add(cache_key)
+        return
+    _with_backoff(ws.update, "I1:O1", [expected_suffix])
+    _headers_checked.add(cache_key)
 
 
 def append_substack_post_rows(sheet_id: str, rows: list[dict]) -> None:
     """Append rows to substack_posts tab.
 
     Each dict must have keys: url, angle, caption, text1, text2, text3, cta, status.
+    Newer sheets may also include slide_prompt, slide_input, post_type, topics, and text4-text6.
     """
     if not rows:
         return
-    ws = _workbook(sheet_id).worksheet("substack_posts")
+    ws = _named_worksheet(sheet_id, "substack_posts")
+    _ensure_substack_post_headers(ws)
     values = [
         [
             r.get("url", ""),
@@ -565,15 +675,27 @@ def append_substack_post_rows(sheet_id: str, rows: list[dict]) -> None:
             r.get("text3", ""),
             r.get("cta", ""),
             r.get("status", ""),
+            r.get("slide_prompt", ""),
+            r.get("slide_input", ""),
+            r.get("post_type", ""),
+            r.get("topics", ""),
+            r.get("text4", ""),
+            r.get("text5", ""),
+            r.get("text6", ""),
         ]
         for r in rows
     ]
     _with_backoff(ws.append_rows, values, value_input_option="USER_ENTERED")
+    _invalidate_rows_cache(sheet_id)
 
 
 def get_substack_post_rows(sheet_id: str) -> list[dict]:
     """Return all rows from the substack_posts tab."""
-    ws = _workbook(sheet_id).worksheet("substack_posts")
+    cached = _get_cached_rows(sheet_id, "substack_posts")
+    if cached is not None:
+        return cached
+    ws = _named_worksheet(sheet_id, "substack_posts")
+    _ensure_substack_post_headers(ws)
     values = _with_backoff(ws.get_all_values)
     if not values:
         return []
@@ -583,10 +705,36 @@ def get_substack_post_rows(sheet_id: str) -> list[dict]:
         record = {headers[j]: (row[j].strip() if j < len(row) else "") for j in range(len(headers))}
         record["row_number"] = i
         rows.append(record)
-    return rows
+    _set_cached_rows(sheet_id, "substack_posts", rows)
+    return [row.copy() for row in rows]
 
 
 def update_substack_post_status(sheet_id: str, row_number: int, status: str) -> None:
     """Write status to col H of the substack_posts tab."""
-    ws = _workbook(sheet_id).worksheet("substack_posts")
+    ws = _named_worksheet(sheet_id, "substack_posts")
     _with_backoff(ws.update, f"H{row_number}", [[status]])
+    _invalidate_rows_cache(sheet_id)
+
+
+def update_substack_post_slides_and_status(
+    sheet_id: str,
+    row_number: int,
+    text1: str,
+    text2: str,
+    text3: str,
+    text4: str,
+    text5: str,
+    text6: str,
+    status: str,
+) -> None:
+    """Write slide text and status to a substack_posts row."""
+    ws = _named_worksheet(sheet_id, "substack_posts")
+    _with_backoff(
+        ws.batch_update,
+        [
+            {"range": f"D{row_number}:F{row_number}", "values": [[text1, text2, text3]]},
+            {"range": f"H{row_number}", "values": [[status]]},
+            {"range": f"M{row_number}:O{row_number}", "values": [[text4, text5, text6]]},
+        ],
+    )
+    _invalidate_rows_cache(sheet_id)

@@ -6,7 +6,7 @@ This documents every tab in the Google Sheet well enough to recreate it from scr
 
 ## Tab: posts
 
-Main Instagram pipeline. 21 columns A–U. **The app restores this header row automatically if it is missing.**
+Main Instagram pipeline. 24 columns A–X. **The app restores this header row automatically if it is missing.**
 
 | Col | Header |
 |-----|--------|
@@ -31,6 +31,9 @@ Main Instagram pipeline. 21 columns A–U. **The app restores this header row au
 | S | text2 |
 | T | text3 |
 | U | Slide CTA |
+| V | text4 |
+| W | text5 |
+| X | text6 |
 
 **Status values:** empty (pending), `ingested`, `done`, `slides`, `error: [reason]`
 
@@ -63,27 +66,26 @@ Instagram posts being monitored for comments on election guide articles. 6 colum
 
 ## Tab: substack
 
-Substack articles to generate Instagram posts from. 5 columns.
+Substack articles to generate Instagram posts from. 4 columns.
 
 | Col | Header |
 |-----|--------|
 | A | url |
-| B | title |
-| C | article |
-| D | status |
-| E | notes |
+| B | article |
+| C | status |
+| D | notes |
 
 **Status values:** `open`, `ingested`, `posts created`
 
 - `url` — full Substack article URL
 - `article` — full article body text (pasted in via the app or manually)
-- `status` — workflow state; the app updates this to `posts created` after generating posts
+- `status` — workflow state; update this manually when you are done with an article
 
 ---
 
 ## Tab: substack_posts
 
-Generated Instagram posts from Substack articles. 8 columns. Rows are appended by the app — do not reorder columns.
+Generated Instagram posts from Substack articles. 15 columns. Rows are appended by the app — do not reorder columns.
 
 | Col | Header |
 |-----|--------|
@@ -95,14 +97,25 @@ Generated Instagram posts from Substack articles. 8 columns. Rows are appended b
 | F | text3 |
 | G | cta |
 | H | status |
+| I | slide_prompt |
+| J | slide_input |
+| K | post_type |
+| L | topics |
+| M | text4 |
+| N | text5 |
+| O | text6 |
 
-**Status values:** `generated`, `posted`
+**Status values:** `slide prompt ready`, `row created`, `posted`
 
 - `url` — the Substack article URL this post came from
 - `angle` — the one-sentence post angle chosen during idea generation
 - `caption` — full Instagram caption
-- `text1/text2/text3` — carousel slide text
+- `text1/text2/text3/text4/text5/text6` — carousel slide text
 - `cta` — call-to-action label (e.g. `Save link for Substack`)
+- `slide_prompt` — reusable ChatGPT prompt for making or remaking carousel slide copy
+- `slide_input` — article-specific input to paste with the slide prompt
+- `post_type` — `high_level_summary` or `article_subset`
+- `topics` — comma-separated topics used for the post concept
 
 ---
 

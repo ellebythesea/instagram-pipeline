@@ -47,7 +47,7 @@ This section has three subtabs:
 
 ### Tab: posts
 
-Main Instagram pipeline. 21 columns A–U:
+Main Instagram pipeline. 24 columns A–X:
 
 | Col | Header |
 |-----|--------|
@@ -72,6 +72,9 @@ Main Instagram pipeline. 21 columns A–U:
 | S | text2 |
 | T | text3 |
 | U | Slide CTA |
+| V | text4 |
+| W | text5 |
+| X | text6 |
 
 Status values: empty (pending), `ingested`, `done`, `slides`, `error: [reason]`
 
@@ -94,21 +97,20 @@ Status values: `open`, `closed`
 
 ### Tab: substack
 
-Substack articles to generate posts from. 5 columns:
+Substack articles to generate posts from. 4 columns:
 
 | Col | Header |
 |-----|--------|
 | A | url |
-| B | title |
-| C | article |
-| D | status |
-| E | notes |
+| B | article |
+| C | status |
+| D | notes |
 
 Status values: `open`, `ingested`, `posts created`
 
 ### Tab: substack_posts
 
-Generated Instagram posts from Substack articles. 8 columns:
+Generated Instagram posts from Substack articles. 15 columns:
 
 | Col | Header |
 |-----|--------|
@@ -120,8 +122,15 @@ Generated Instagram posts from Substack articles. 8 columns:
 | F | text3 |
 | G | cta |
 | H | status |
+| I | slide_prompt |
+| J | slide_input |
+| K | post_type |
+| L | topics |
+| M | text4 |
+| N | text5 |
+| O | text6 |
 
-Status values: `generated`, `posted`
+Status values: `slide prompt ready`, `row created`, `posted`
 
 ### Tab: fundraising
 

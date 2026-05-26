@@ -64,9 +64,16 @@ with articles_tab:
             else:
                 st.warning("Enter a URL first.")
     else:
-        options = {row["url"][:60]: row for row in open_rows}
-        selected_label = st.selectbox("Select article", list(options.keys()))
-        selected_row = options[selected_label]
+        options = sorted(
+            open_rows,
+            key=lambda row: int(row.get("row_number") or 0),
+            reverse=True,
+        )
+        selected_row = st.selectbox(
+            "Select article",
+            options,
+            format_func=lambda row: f"Row {row.get('row_number', '')}: {row.get('url', '')[:80]}",
+        )
         substack_url = selected_row["url"]
         row_number = selected_row["row_number"]
 
@@ -74,7 +81,7 @@ with articles_tab:
         article_body = selected_row.get("article", "").strip()
 
         if article_body:
-            st.text_area("Article body", value=article_body, height=250, disabled=True)
+            st.text_area("Article body", value=article_body, height=120, disabled=True)
         else:
             fetch_key = f"substack_fetched_{substack_url}"
             if fetch_key not in st.session_state:
@@ -90,7 +97,7 @@ with articles_tab:
             edited = st.text_area(
                 "Article body",
                 value=prefill,
-                height=300,
+                height=140,
                 key=f"substack_article_edit_{substack_url}",
             )
             if st.button("Save Article Body"):
