@@ -82,8 +82,8 @@ def _is_article_url(url: str) -> bool:
 def _build_watch_cta(username: str, link: str) -> str:
     cleaned = (username or "").strip().lstrip("@")
     if cleaned:
-        return f"Watch the full video on @{cleaned}'s page — link in bio"
-    return "Watch the full video — link in bio"
+        return f"Watch the full video on @{cleaned}'s page"
+    return ""
 
 
 def _build_read_cta(link: str) -> str:
@@ -104,7 +104,7 @@ def _row_caption_inputs(row: dict) -> dict:
     speaker = (row.get("Speaker Name") or "").strip()
     hashtags = (row.get("Required Hashtags") or "").strip()
     top = (row.get("Top Comment") or "").strip()
-    if not top and _is_instagram_url(url):
+    if _is_instagram_url(url):
         top = _build_watch_cta(username or speaker, url)
     elif not top and _is_article_url(url):
         top = _build_read_cta(url)
