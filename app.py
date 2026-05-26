@@ -1,7 +1,12 @@
 """Streamlit entrypoint for the workspace UI."""
 
-from pathlib import Path
-import runpy
+import streamlit as st
 
-
-runpy.run_path(Path(__file__).parent / "pages" / "workspace.py", run_name="__main__")
+pg = st.navigation([
+    st.Page("pages/workspace.py", title="Workspace", icon="🏠"),
+    st.Page("pages/instagram_pipeline.py", title="Instagram Pipeline", icon="📋"),
+    st.Page("pages/post_editor.py", title="Post Editor", icon="✏️"),
+    st.Page("pages/headlines.py", title="Headlines", icon="🗞️"),
+    st.Page("pages/reel_downloader.py", title="Media Downloader", icon="🎞️"),
+])
+pg.run()

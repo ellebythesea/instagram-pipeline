@@ -35,32 +35,111 @@ Rows that have been processed for editing appear here with:
 - scheduling controls
 - row actions like transcribe, generate caption, skip, add CTA, or delete
 
-### Candidates tab
+### Substack tab
 
-This lets you enter a candidate name, resolve the active race and likely opponent from web search, and generate a copy-ready Vote In Or Out prompt for Substack.
+This section has three subtabs:
 
-## Google Sheet Columns
+- `Promote` generates Instagram posts to drive traffic to Substack articles.
+- `Monitors` watches Instagram comments on election guide posts.
+- `Guides` creates Substack election article prompts from candidate names.
 
-The app expects this order:
+## Google Sheet Structure
 
-1. `Instagram URL`
-2. `Source Username`
-3. `Generated Caption`
-4. `Media Type`
-5. `Photo Count`
-6. `Media Drive Link`
-7. `Thumbnail Drive Link`
-8. `Original Caption`
-9. `Transcript`
-10. `Top Comment`
-11. `Required Hashtags`
-12. `Speaker Name`
-13. `Footer`
-14. `Status`
-15. `Caption Context`
-16. `Scheduled Time`
+### Tab: posts
+
+Main Instagram pipeline. 21 columns A–U:
+
+| Col | Header |
+|-----|--------|
+| A | Instagram URL |
+| B | Required Hashtags |
+| C | Source Username |
+| D | Generated Caption |
+| E | Media Type |
+| F | Photo Count |
+| G | Media Drive Link |
+| H | Thumbnail Drive Link |
+| I | Original Caption |
+| J | Transcript |
+| K | Top Comment |
+| L | Speaker Name |
+| M | Footer |
+| N | Status |
+| O | Caption Context |
+| P | Scheduled Time |
+| Q | name |
+| R | text1 |
+| S | text2 |
+| T | text3 |
+| U | Slide CTA |
+
+Status values: empty (pending), `ingested`, `done`, `slides`, `error: [reason]`
 
 The app restores headers if they are missing.
+
+### Tab: monitors
+
+Instagram posts being monitored for comments on election guide articles. 6 columns:
+
+| Col | Header |
+|-----|--------|
+| A | label |
+| B | url |
+| C | last |
+| D | status |
+| E | substack url |
+| F | summary |
+
+Status values: `open`, `closed`
+
+### Tab: substack
+
+Substack articles to generate posts from. 5 columns:
+
+| Col | Header |
+|-----|--------|
+| A | url |
+| B | title |
+| C | article |
+| D | status |
+| E | notes |
+
+Status values: `open`, `ingested`, `posts created`
+
+### Tab: substack_posts
+
+Generated Instagram posts from Substack articles. 8 columns:
+
+| Col | Header |
+|-----|--------|
+| A | url |
+| B | angle |
+| C | caption |
+| D | text1 |
+| E | text2 |
+| F | text3 |
+| G | cta |
+| H | status |
+
+Status values: `generated`, `posted`
+
+### Tab: fundraising
+
+Referral link presets for top comments. 2 columns:
+
+| Col | Header |
+|-----|--------|
+| A | label |
+| B | link (full top comment text with referral URL) |
+
+### Tab: __workspace_meta__
+
+Internal key/value store used by the app. Do not edit manually.
+
+| Col | Header |
+|-----|--------|
+| A | key |
+| B | value |
 
 ## Drive Media Folder
 

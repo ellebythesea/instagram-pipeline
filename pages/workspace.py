@@ -312,15 +312,11 @@ def _parse_candidate_comment_timestamp(value) -> datetime | None:
 
 def _candidate_comments_worksheet():
     workbook = sheet_ops._workbook(GOOGLE_SHEET_ID)
-    for title in ("Candidates", "candidates"):
-        try:
-            return workbook.worksheet(title)
-        except Exception:
-            pass
-    for worksheet in workbook.worksheets():
-        if (worksheet.title or "").strip().lower() == "candidates":
-            return worksheet
-    raise RuntimeError("Candidates worksheet not found in the configured Google Sheet.")
+    try:
+        return workbook.worksheet("monitors")
+    except Exception:
+        pass
+    raise RuntimeError("monitors worksheet not found in the configured Google Sheet.")
 
 
 def _load_open_candidate_comment_rows() -> list[dict]:
@@ -331,30 +327,32 @@ def _load_open_candidate_comment_rows() -> list[dict]:
 
     header_row = [cell.strip() for cell in values[0]]
     normalized_headers = {header.strip().lower(): index for index, header in enumerate(header_row) if header.strip()}
-    summary_index = normalized_headers.get("summary")
-    url_index = normalized_headers.get("instagram")
-    substack_index = normalized_headers.get("substack")
-    last_checked_index = normalized_headers.get("last checked")
+    label_index = normalized_headers.get("label")
+    url_index = normalized_headers.get("url")
+    last_index = normalized_headers.get("last")
     status_index = normalized_headers.get("status")
+    substack_index = normalized_headers.get("substack url")
+    summary_index = normalized_headers.get("summary")
 
     if url_index is None or status_index is None:
-        raise RuntimeError("Candidates worksheet must include Instagram and Status columns.")
+        raise RuntimeError("monitors worksheet must include url and status columns.")
 
     rows: list[dict] = []
     for row_number, row in enumerate(values[1:], start=2):
         url = row[url_index].strip() if len(row) > url_index else ""
-        last_checked_raw = row[last_checked_index].strip() if last_checked_index is not None and len(row) > last_checked_index else ""
+        last_raw = row[last_index].strip() if last_index is not None and len(row) > last_index else ""
         status = row[status_index].strip() if len(row) > status_index else ""
         if not url or status.lower() != "open":
             continue
         rows.append(
             {
                 "row_number": row_number,
-                "summary": row[summary_index].strip() if summary_index is not None and len(row) > summary_index else "",
+                "label": row[label_index].strip() if label_index is not None and len(row) > label_index else "",
                 "url": url,
+                "last_checked_raw": last_raw,
+                "last_checked_at": _parse_candidate_comment_timestamp(last_raw),
                 "substack": row[substack_index].strip() if substack_index is not None and len(row) > substack_index else "",
-                "last_checked_raw": last_checked_raw,
-                "last_checked_at": _parse_candidate_comment_timestamp(last_checked_raw),
+                "summary": row[summary_index].strip() if summary_index is not None and len(row) > summary_index else "",
             }
         )
     return rows
@@ -615,13 +613,13 @@ def _update_candidate_last_checked(row_number: int, checked_at: datetime) -> Non
     ws = _candidate_comments_worksheet()
     values = sheet_ops._with_backoff(ws.get_all_values)
     if not values:
-        raise RuntimeError("Candidates worksheet is empty.")
+        raise RuntimeError("monitors worksheet is empty.")
     header_row = [cell.strip() for cell in values[0]]
     normalized_headers = {header.strip().lower(): index for index, header in enumerate(header_row) if header.strip()}
-    last_checked_index = normalized_headers.get("last checked")
-    if last_checked_index is None:
-        raise RuntimeError("Candidates worksheet must include a Last checked column.")
-    column_letter = chr(ord("A") + last_checked_index)
+    last_index = normalized_headers.get("last")
+    if last_index is None:
+        raise RuntimeError("monitors worksheet must include a last column.")
+    column_letter = chr(ord("A") + last_index)
     sheet_ops._with_backoff(ws.update, f"{column_letter}{row_number}", [[checked_at.isoformat(timespec="seconds")]])
 
 
@@ -5267,18 +5265,18 @@ if pending_tab:
     if pending_tab in {"Edit", "Grid", "Actions", "Slides"}:
         pending_tab = "Home"
     elif pending_tab == "Data":
-        pending_tab = "Candidates"
+        pending_tab = "Substack"
     st.session_state["workspace_active_tab"] = pending_tab
 elif "workspace_active_tab" not in st.session_state:
     st.session_state["workspace_active_tab"] = "Home"
 elif st.session_state["workspace_active_tab"] in {"Edit", "Grid", "Actions", "Slides"}:
     st.session_state["workspace_active_tab"] = "Home"
 elif st.session_state["workspace_active_tab"] == "Data":
-    st.session_state["workspace_active_tab"] = "Candidates"
+    st.session_state["workspace_active_tab"] = "Substack"
 
 active_section_tab = st.segmented_control(
     "Workspace section",
-    ["Home", "Candidates"],
+    ["Home", "Substack"],
     key="workspace_active_tab",
     label_visibility="collapsed",
     width="stretch",
@@ -5446,7 +5444,7 @@ if active_section_tab == "Home":
             _render_workspace_candidate_article_dialog(candidate_article_dialog_row)
 
     if not editor_rows:
-        st.info("No rows yet. Use the Home actions menu to create work, or use Candidates to build a voter-guide prompt.")
+        st.info("No rows yet. Use the Home actions menu to create work, or use Substack > Guides to build a voter-guide prompt.")
     else:
         query_row = str(st.query_params.get("workspace_row", "") or "")
         if query_row and st.session_state.get("workspace_target_row") != query_row:
@@ -5723,242 +5721,447 @@ if active_section_tab == "Home":
             )
 
 
-if active_section_tab == "Candidates":
-    st.caption("Generate a Substack article prompt for a race by entering the candidates you want compared.")
+if active_section_tab == "Substack":
+    promote_tab, monitors_tab, guides_tab = st.tabs(["Promote", "Monitors", "Guides"])
 
-    fundraising_presets = _fundraising_preset_map()
-    candidate_input_blob = st.text_area(
-        "Candidates",
-        key="workspace_candidate_names_blob",
-        placeholder="Paste candidate names, one per line or comma-separated",
-        height=140,
-    ).strip()
+    # ── Promote ───────────────────────────────────────────────────────────
+    with promote_tab:
+        st.caption("Generate Instagram posts to drive traffic to your Substack articles.")
+        _sb_open_rows = sheet_ops.get_open_substack_rows(GOOGLE_SHEET_ID)
 
-    donation_options = ["No link"] + [option for option in fundraising_presets.keys() if option != "Custom"]
-    donation_source = st.selectbox(
-        "Donation link",
-        options=donation_options,
-        key="workspace_candidate_donation_source",
-    )
-    donation_link = "" if donation_source == "No link" else fundraising_presets.get(donation_source, "").strip()
-
-    action_left, action_right = st.columns(2)
-    with action_left:
-        if st.button(
-            "Process prompt",
-            type="primary",
-            width="stretch",
-            disabled=not candidate_input_blob,
-            key="workspace_candidate_research",
-        ):
-            try:
-                with st.spinner("Resolving shared race..."):
-                    candidate_names = _extract_candidate_names_from_input(candidate_input_blob)
-                    st.session_state["workspace_candidate_names_parsed"] = candidate_names
-                    st.session_state["workspace_candidate_result"] = _resolve_candidate_comparison(
-                        candidate_names
-                    )
-            except Exception as e:
-                st.session_state["workspace_candidate_error"] = describe_error(e)
-                st.session_state.pop("workspace_candidate_result", None)
-                st.session_state.pop("workspace_candidate_names_parsed", None)
-            else:
-                st.session_state.pop("workspace_candidate_error", None)
-                _rerun_workspace("Candidates")
-    with action_right:
-        if st.button("Clear", width="stretch", key="workspace_candidate_clear"):
-            st.session_state.pop("workspace_candidate_result", None)
-            st.session_state.pop("workspace_candidate_error", None)
-            st.session_state.pop("workspace_candidate_names_blob", None)
-            st.session_state.pop("workspace_candidate_names_parsed", None)
-            st.session_state.pop("workspace_candidate_donation_source", None)
-            _rerun_workspace("Candidates")
-
-    candidate_error = st.session_state.get("workspace_candidate_error", "")
-    if candidate_error:
-        st.error(candidate_error)
-
-    parsed_candidate_names = st.session_state.get("workspace_candidate_names_parsed") or []
-    if parsed_candidate_names:
-        st.caption(f"Parsed candidates: {', '.join(parsed_candidate_names)}")
-
-    candidate_result = st.session_state.get("workspace_candidate_result")
-    if candidate_result:
-        if candidate_result.get("could_not_resolve"):
-            st.warning(
-                "I could not resolve a clear set of races for these candidates. "
-                "Verify the names or specify the exact contests."
-            )
-            active_races = candidate_result.get("active_races") or []
-            if active_races:
-                st.caption(f"Active races found: {', '.join(active_races)}")
-            if candidate_result.get("ambiguity_note"):
-                st.caption(candidate_result["ambiguity_note"])
-        else:
-            race_groups = candidate_result.get("race_groups") or []
-            if race_groups:
-                st.markdown("**Resolved races:**")
-                for group in race_groups:
-                    group_names = ", ".join(
-                        _cell_text(name).strip()
-                        for name in (group.get("candidate_names") or [])
-                        if _cell_text(name).strip()
-                    )
-                    race_label_parts = [
-                        _cell_text(group.get("race_name")).strip(),
-                        _cell_text(group.get("election_date")).strip(),
-                    ]
-                    st.markdown(f"- {group_names}: {', '.join(part for part in race_label_parts if part)}")
-            else:
-                resolved_names = [
-                    _cell_text(name).strip()
-                    for name in (candidate_result.get("candidate_names") or [])
-                    if _cell_text(name).strip()
-                ]
-                st.markdown(
-                    (
-                        f"**Resolved race:** {', '.join(resolved_names) or ', '.join(parsed_candidate_names)}, "
-                        f"{candidate_result.get('race_name', '')}, "
-                        f"{candidate_result.get('election_date', '')}"
-                    )
-                )
-            prompt_text = _build_candidate_prompt(candidate_result, donation_link=donation_link)
-            st.subheader("Substack prompt")
-            st.code(prompt_text, language=None)
-
-    st.divider()
-    st.subheader("Latest Comments")
-    commentary_entries = st.session_state.setdefault("workspace_candidate_commentary_entries", [])
-    open_comment_rows: list[dict] = []
-    open_comment_rows_error = ""
-    try:
-        open_comment_rows = _load_open_candidate_comment_rows()
-    except Exception as e:
-        open_comment_rows_error = describe_error(e)
-
-    selected_rows: list[dict] = []
-    if open_comment_rows_error:
-        st.error(open_comment_rows_error)
-    elif not open_comment_rows:
-        st.caption('No rows with Status "open" were found in the Candidates sheet.')
-    else:
-        selector_default_rows = []
-        for row in open_comment_rows:
-            selector_default_rows.append(
-                {
-                    "Check": False,
-                    "Summary": row.get("summary") or "",
-                    "Instagram": row["url"],
-                    "Substack": row.get("substack") or "",
-                    "_row_number": row["row_number"],
-                }
-            )
-        selector_df = pd.DataFrame(selector_default_rows)
-        edited_selector_df = st.data_editor(
-            selector_df,
-            hide_index=True,
-            width="stretch",
-            key="workspace_candidate_comments_selector",
-            column_config={
-                "Check": st.column_config.CheckboxColumn("Check", default=False),
-                "Summary": st.column_config.TextColumn("Summary", disabled=True),
-                "Instagram": st.column_config.LinkColumn("Instagram", disabled=True),
-                "Substack": st.column_config.LinkColumn("Substack", disabled=True),
-                "_row_number": None,
-            },
-            disabled=["Summary", "Instagram", "Substack", "_row_number"],
-        )
-        selected_row_numbers = {
-            int(row["_row_number"])
-            for row in edited_selector_df.to_dict("records")
-            if row.get("Check") and row.get("_row_number") not in (None, "")
-        }
-        selected_rows = [
-            row for row in open_comment_rows
-            if row["row_number"] in selected_row_numbers
-        ]
-
-    comments_action_left, comments_action_right = st.columns(2)
-    with comments_action_left:
-        if st.button(
-            "Check for New Comments",
-            type="primary",
-            width="stretch",
-            key="workspace_candidate_comments_check",
-        ):
-            checked_at = _now_eastern()
-            new_entries: list[dict] = []
-            if open_comment_rows_error:
-                st.error(open_comment_rows_error)
-            elif not open_comment_rows:
-                st.info('No rows with Status "open" were found in the Candidates sheet.')
-            elif not selected_rows:
-                st.warning("Select at least one open row before checking for new comments.")
-            else:
-                with st.spinner("Checking selected candidate posts for new comments..."):
-                    for candidate_row in selected_rows:
-                        url = candidate_row["url"]
-                        checked_label = _format_eastern_timestamp(checked_at)
-                        try:
-                            comments = _fetch_candidate_comments_since(
-                                url,
-                                candidate_row.get("last_checked_at"),
-                            )
-                            summary = _summarize_candidate_comments(comments)
-                            _update_candidate_last_checked(candidate_row["row_number"], checked_at)
-                            new_entries.append(
-                                {
-                                    "label": candidate_row.get("summary") or url,
-                                    "url": url,
-                                    "checked_at": checked_label,
-                                    "summary_groups": summary,
-                                    "error": "",
-                                }
-                            )
-                        except Exception as e:
-                            new_entries.append(
-                                {
-                                    "label": candidate_row.get("summary") or url,
-                                    "url": url,
-                                    "checked_at": checked_label,
-                                    "summary_groups": {},
-                                    "error": describe_error(e),
-                                }
-                            )
-                if new_entries:
-                    st.session_state["workspace_candidate_commentary_entries"] = new_entries + commentary_entries
-                    commentary_entries = st.session_state["workspace_candidate_commentary_entries"]
-    with comments_action_right:
-        if st.button(
-            "Clear Commentary",
-            width="stretch",
-            key="workspace_candidate_comments_clear",
-        ):
-            st.session_state["workspace_candidate_commentary_entries"] = []
-            commentary_entries = []
-
-    if not commentary_entries:
-        st.caption("No comment summaries yet.")
-    else:
-        for entry in commentary_entries:
-            st.markdown(f"**{entry['url']}**")
-            st.caption(f"{entry.get('label') or entry['url']} last checked {entry['checked_at']}")
-            if entry.get("error"):
-                st.error(entry["error"])
-            else:
-                groups = entry.get("summary_groups") or {}
-                if not groups:
-                    st.caption("No missing, biased, wrong, or controversy-comment patterns found.")
+        if not _sb_open_rows:
+            st.info("No open Substack articles. Paste a URL below to add one.")
+            _sb_new_url = st.text_input("Substack article URL", key="ws_sb_new_url")
+            if st.button("Add Article", type="primary", key="ws_sb_add"):
+                if _sb_new_url.strip():
+                    sheet_ops.append_substack_row(GOOGLE_SHEET_ID, _sb_new_url.strip())
+                    st.success("Article added.")
+                    _rerun_workspace("Substack")
                 else:
-                    for heading in ("What About", "Missing", "Biased", "Wrong", "Controversies"):
-                        comments = groups.get(heading) or []
-                        if not comments:
-                            continue
-                        st.markdown(f"**{heading}**")
-                        for comment in comments:
-                            username = (comment.get("username") or "").strip()
-                            text = (comment.get("text") or "").strip()
-                            if not text:
+                    st.warning("Enter a URL first.")
+        else:
+            _sb_options = {row["url"][:60]: row for row in _sb_open_rows}
+            _sb_selected_label = st.selectbox("Select article", list(_sb_options.keys()), key="ws_sb_select")
+            _sb_row = _sb_options[_sb_selected_label]
+            _sb_url = _sb_row["url"]
+            _sb_row_number = _sb_row["row_number"]
+
+            _sb_article_body = _sb_row.get("article", "").strip()
+
+            if _sb_article_body:
+                st.text_area("Article body", value=_sb_article_body, height=250, disabled=True, key="ws_sb_body_ro")
+            else:
+                _sb_fetch_key = f"ws_sb_fetched_{_sb_url}"
+                if _sb_fetch_key not in st.session_state:
+                    try:
+                        with st.spinner("Fetching article body…"):
+                            _sb_fetched = fetch_article_source(_sb_url)
+                            st.session_state[_sb_fetch_key] = _sb_fetched.get("source_text", "")
+                    except Exception as _sb_fetch_err:
+                        st.session_state[_sb_fetch_key] = ""
+                        st.error(f"Could not auto-fetch article: {_sb_fetch_err}. Paste below.")
+
+                _sb_prefill = st.session_state.get(_sb_fetch_key, "")
+                _sb_edited = st.text_area(
+                    "Article body",
+                    value=_sb_prefill,
+                    height=300,
+                    key=f"ws_sb_article_edit_{_sb_url}",
+                )
+                if st.button("Save Article Body", key="ws_sb_save_body"):
+                    if _sb_edited.strip():
+                        sheet_ops.update_substack_article(GOOGLE_SHEET_ID, _sb_row_number, _sb_edited.strip())
+                        st.success("Saved.")
+                        _rerun_workspace("Substack")
+                    else:
+                        st.warning("Article body is empty.")
+                _sb_article_body = _sb_edited.strip()
+
+            _sb_topics = st.text_input("Topics or angles to cover (optional)", key="ws_sb_topics")
+            _sb_ideas_key = f"ws_sb_ideas_{_sb_url}"
+
+            if st.button("Generate Post Ideas", type="primary", key="ws_sb_gen_ideas", disabled=not _sb_article_body):
+                _sb_user_msg = f"Article:\n\n{_sb_article_body}"
+                if _sb_topics.strip():
+                    _sb_user_msg += f"\n\nPrioritize these angles: {_sb_topics.strip()}"
+                try:
+                    _sb_resp = _get_client().chat.completions.create(
+                        model="gpt-4o",
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": (
+                                    "You are a social media strategist for a political news Instagram account called Vote In Or Out.\n\n"
+                                    "Given this Substack article, generate exactly 5 post ideas. Each idea should tease a specific fact, "
+                                    "quote, or angle from the article and feel like clickbait that makes someone want to read the full piece.\n\n"
+                                    "Return ONLY valid JSON as an array of 5 objects. Each must have:\n"
+                                    '- "angle": one sentence describing the post angle\n'
+                                    '- "hook": the strongest opening line for that post, under 100 characters\n\n'
+                                    "No markdown. No commentary outside JSON."
+                                ),
+                            },
+                            {"role": "user", "content": _sb_user_msg},
+                        ],
+                        max_tokens=800,
+                    )
+                    _sb_raw = (_sb_resp.choices[0].message.content or "").strip()
+                    _sb_raw = _sb_raw.lstrip("```json").lstrip("```").rstrip("```").strip()
+                    st.session_state[_sb_ideas_key] = json.loads(_sb_raw)
+                except Exception as _sb_err:
+                    st.error(f"Failed to generate ideas: {_sb_err}")
+
+            _sb_ideas = st.session_state.get(_sb_ideas_key)
+            if _sb_ideas:
+                st.markdown("**Select ideas to turn into posts:**")
+                _sb_selected_ideas = []
+                for _sb_i, _sb_idea in enumerate(_sb_ideas):
+                    _sb_checked = st.checkbox(
+                        _sb_idea.get("hook", f"Idea {_sb_i + 1}"),
+                        key=f"ws_sb_idea_{_sb_url}_{_sb_i}",
+                    )
+                    st.caption(_sb_idea.get("angle", ""))
+                    if _sb_checked:
+                        _sb_selected_ideas.append(_sb_idea)
+
+                if st.button("Create Selected Posts", type="primary", key="ws_sb_create", disabled=not _sb_selected_ideas):
+                    _sb_created = 0
+                    _sb_post_rows = []
+                    _sb_progress = st.progress(0, text="Generating posts…")
+                    for _sb_idx, _sb_idea in enumerate(_sb_selected_ideas):
+                        _sb_angle = _sb_idea.get("angle", "")
+                        try:
+                            _sb_cap_resp = _get_client().chat.completions.create(
+                                model="gpt-4o",
+                                messages=[
+                                    {
+                                        "role": "system",
+                                        "content": (
+                                            "You are writing an Instagram caption for Vote In Or Out, a political news account.\n"
+                                            "This post promotes a Substack article. Write a caption that:\n"
+                                            "- Opens with the specific angle provided\n"
+                                            "- Teases what the full article covers without giving everything away\n"
+                                            f'- Ends with exactly this line: "Comment LINK (on instagram) and we will DM you the link to {_sb_url}"\n'
+                                            "- Appends the footer below the caption on a new line\n"
+                                            "Keep it under 1300 characters. No hashtags unless they appear in the source material."
+                                        ),
+                                    },
+                                    {
+                                        "role": "user",
+                                        "content": (
+                                            f"Angle: {_sb_angle}\n\n"
+                                            f"Article:\n{_sb_article_body}\n\n"
+                                            f"Footer:\n{DEFAULT_POST_FOOTER}"
+                                        ),
+                                    },
+                                ],
+                                max_tokens=600,
+                            )
+                            _sb_caption = (_sb_cap_resp.choices[0].message.content or "").strip()
+
+                            _sb_slide_row = {
+                                "Transcript": "",
+                                "Original Caption": _sb_article_body,
+                                "Caption Context": f"This post is promoting a Substack article. Angle: {_sb_angle}",
+                                "Speaker Name": "",
+                                "Source Username": "voteinorout",
+                                "Required Hashtags": "",
+                            }
+                            _sb_slides = generate_carousel_copy_with_model(_sb_slide_row, model="gpt-4o")
+
+                            _sb_post_rows.append(
+                                {
+                                    "url": _sb_url,
+                                    "angle": _sb_angle,
+                                    "caption": _sb_caption,
+                                    "text1": _sb_slides.get("text1", ""),
+                                    "text2": _sb_slides.get("text2", ""),
+                                    "text3": _sb_slides.get("text3", ""),
+                                    "cta": "Save link for Substack",
+                                    "status": "generated",
+                                }
+                            )
+                            _sb_created += 1
+                        except Exception as _sb_post_err:
+                            st.error(f"Failed for angle '{_sb_angle[:60]}': {_sb_post_err}")
+                        _sb_progress.progress(
+                            (_sb_idx + 1) / len(_sb_selected_ideas),
+                            text=f"Generated {_sb_idx + 1} of {len(_sb_selected_ideas)}…",
+                        )
+
+                    _sb_progress.empty()
+
+                    if _sb_post_rows:
+                        sheet_ops.append_substack_post_rows(GOOGLE_SHEET_ID, _sb_post_rows)
+                        sheet_ops.append_link_rows(GOOGLE_SHEET_ID, [_sb_url] * len(_sb_post_rows))
+                        sheet_ops.update_substack_status(GOOGLE_SHEET_ID, _sb_row_number, "posts created")
+                        st.success(
+                            f"{_sb_created} post{'s' if _sb_created != 1 else ''} created and added to your main Posts sheet."
+                        )
+                        st.session_state.pop(_sb_ideas_key, None)
+                        _rerun_workspace("Substack")
+
+            _sb_all_posts = sheet_ops.get_substack_post_rows(GOOGLE_SHEET_ID)
+            _sb_generated = [r for r in _sb_all_posts if r.get("url", "") == _sb_url]
+            if _sb_generated:
+                st.markdown("---")
+                st.markdown("### Generated Posts")
+                for _sb_post in _sb_generated:
+                    _sb_post_status = _sb_post.get("status", "")
+                    with st.expander(f"{_sb_post.get('angle', '')[:80]} — {_sb_post_status}", expanded=False):
+                        st.markdown(f"**CTA:** {_sb_post.get('cta', '')}")
+                        st.markdown("**Caption**")
+                        st.code(_sb_post.get("caption", ""), language=None)
+                        st.markdown("**Slide 1**")
+                        st.code(_sb_post.get("text1", ""), language=None)
+                        st.markdown("**Slide 2**")
+                        st.code(_sb_post.get("text2", ""), language=None)
+                        st.markdown("**Slide 3**")
+                        st.code(_sb_post.get("text3", ""), language=None)
+                        if _sb_post_status != "posted":
+                            if st.button("Mark as Posted", key=f"ws_sb_posted_{_sb_post['row_number']}"):
+                                sheet_ops.update_substack_post_status(
+                                    GOOGLE_SHEET_ID, _sb_post["row_number"], "posted"
+                                )
+                                _rerun_workspace("Substack")
+
+    # ── Monitors ──────────────────────────────────────────────────────────
+    with monitors_tab:
+        st.caption("Watch Instagram comments on your election guide posts.")
+        commentary_entries = st.session_state.setdefault("workspace_candidate_commentary_entries", [])
+        open_comment_rows: list[dict] = []
+        open_comment_rows_error = ""
+        try:
+            open_comment_rows = _load_open_candidate_comment_rows()
+        except Exception as e:
+            open_comment_rows_error = describe_error(e)
+
+        selected_rows: list[dict] = []
+        if open_comment_rows_error:
+            st.error(open_comment_rows_error)
+        elif not open_comment_rows:
+            st.caption('No rows with status "open" were found in the monitors sheet.')
+        else:
+            selector_default_rows = []
+            for row in open_comment_rows:
+                selector_default_rows.append(
+                    {
+                        "Check": False,
+                        "Summary": row.get("summary") or "",
+                        "Instagram": row["url"],
+                        "Substack": row.get("substack") or "",
+                        "_row_number": row["row_number"],
+                    }
+                )
+            selector_df = pd.DataFrame(selector_default_rows)
+            edited_selector_df = st.data_editor(
+                selector_df,
+                hide_index=True,
+                width="stretch",
+                key="workspace_candidate_comments_selector",
+                column_config={
+                    "Check": st.column_config.CheckboxColumn("Check", default=False),
+                    "Summary": st.column_config.TextColumn("Summary", disabled=True),
+                    "Instagram": st.column_config.LinkColumn("Instagram", disabled=True),
+                    "Substack": st.column_config.LinkColumn("Substack", disabled=True),
+                    "_row_number": None,
+                },
+                disabled=["Summary", "Instagram", "Substack", "_row_number"],
+            )
+            selected_row_numbers = {
+                int(row["_row_number"])
+                for row in edited_selector_df.to_dict("records")
+                if row.get("Check") and row.get("_row_number") not in (None, "")
+            }
+            selected_rows = [
+                row for row in open_comment_rows
+                if row["row_number"] in selected_row_numbers
+            ]
+
+        comments_action_left, comments_action_right = st.columns(2)
+        with comments_action_left:
+            if st.button(
+                "Check for New Comments",
+                type="primary",
+                width="stretch",
+                key="workspace_candidate_comments_check",
+            ):
+                checked_at = _now_eastern()
+                new_entries: list[dict] = []
+                if open_comment_rows_error:
+                    st.error(open_comment_rows_error)
+                elif not open_comment_rows:
+                    st.info('No rows with status "open" were found in the monitors sheet.')
+                elif not selected_rows:
+                    st.warning("Select at least one open row before checking for new comments.")
+                else:
+                    with st.spinner("Checking selected posts for new comments..."):
+                        for candidate_row in selected_rows:
+                            url = candidate_row["url"]
+                            checked_label = _format_eastern_timestamp(checked_at)
+                            try:
+                                comments = _fetch_candidate_comments_since(
+                                    url,
+                                    candidate_row.get("last_checked_at"),
+                                )
+                                summary = _summarize_candidate_comments(comments)
+                                _update_candidate_last_checked(candidate_row["row_number"], checked_at)
+                                new_entries.append(
+                                    {
+                                        "label": candidate_row.get("summary") or url,
+                                        "url": url,
+                                        "checked_at": checked_label,
+                                        "summary_groups": summary,
+                                        "error": "",
+                                    }
+                                )
+                            except Exception as e:
+                                new_entries.append(
+                                    {
+                                        "label": candidate_row.get("summary") or url,
+                                        "url": url,
+                                        "checked_at": checked_label,
+                                        "summary_groups": {},
+                                        "error": describe_error(e),
+                                    }
+                                )
+                    if new_entries:
+                        st.session_state["workspace_candidate_commentary_entries"] = new_entries + commentary_entries
+                        commentary_entries = st.session_state["workspace_candidate_commentary_entries"]
+        with comments_action_right:
+            if st.button(
+                "Clear Commentary",
+                width="stretch",
+                key="workspace_candidate_comments_clear",
+            ):
+                st.session_state["workspace_candidate_commentary_entries"] = []
+                commentary_entries = []
+
+        if not commentary_entries:
+            st.caption("No comment summaries yet.")
+        else:
+            for entry in commentary_entries:
+                st.markdown(f"**{entry['url']}**")
+                st.caption(f"{entry.get('label') or entry['url']} last checked {entry['checked_at']}")
+                if entry.get("error"):
+                    st.error(entry["error"])
+                else:
+                    groups = entry.get("summary_groups") or {}
+                    if not groups:
+                        st.caption("No missing, biased, wrong, or controversy-comment patterns found.")
+                    else:
+                        for heading in ("What About", "Missing", "Biased", "Wrong", "Controversies"):
+                            comments = groups.get(heading) or []
+                            if not comments:
                                 continue
-                            prefix = f"@{username}: " if username else ""
-                            st.markdown(f"- {prefix}{text}")
+                            st.markdown(f"**{heading}**")
+                            for comment in comments:
+                                username = (comment.get("username") or "").strip()
+                                text = (comment.get("text") or "").strip()
+                                if not text:
+                                    continue
+                                prefix = f"@{username}: " if username else ""
+                                st.markdown(f"- {prefix}{text}")
+
+    # ── Guides ────────────────────────────────────────────────────────────
+    with guides_tab:
+        st.caption("Generate a Substack article prompt for a race by entering the candidates you want compared.")
+
+        fundraising_presets = _fundraising_preset_map()
+        candidate_input_blob = st.text_area(
+            "Candidates",
+            key="workspace_candidate_names_blob",
+            placeholder="Paste candidate names, one per line or comma-separated",
+            height=140,
+        ).strip()
+
+        donation_options = ["No link"] + [option for option in fundraising_presets.keys() if option != "Custom"]
+        donation_source = st.selectbox(
+            "Donation link",
+            options=donation_options,
+            key="workspace_candidate_donation_source",
+        )
+        donation_link = "" if donation_source == "No link" else fundraising_presets.get(donation_source, "").strip()
+
+        action_left, action_right = st.columns(2)
+        with action_left:
+            if st.button(
+                "Process prompt",
+                type="primary",
+                width="stretch",
+                disabled=not candidate_input_blob,
+                key="workspace_candidate_research",
+            ):
+                try:
+                    with st.spinner("Resolving shared race..."):
+                        candidate_names = _extract_candidate_names_from_input(candidate_input_blob)
+                        st.session_state["workspace_candidate_names_parsed"] = candidate_names
+                        st.session_state["workspace_candidate_result"] = _resolve_candidate_comparison(
+                            candidate_names
+                        )
+                except Exception as e:
+                    st.session_state["workspace_candidate_error"] = describe_error(e)
+                    st.session_state.pop("workspace_candidate_result", None)
+                    st.session_state.pop("workspace_candidate_names_parsed", None)
+                else:
+                    st.session_state.pop("workspace_candidate_error", None)
+                    _rerun_workspace("Substack")
+        with action_right:
+            if st.button("Clear", width="stretch", key="workspace_candidate_clear"):
+                st.session_state.pop("workspace_candidate_result", None)
+                st.session_state.pop("workspace_candidate_error", None)
+                st.session_state.pop("workspace_candidate_names_blob", None)
+                st.session_state.pop("workspace_candidate_names_parsed", None)
+                st.session_state.pop("workspace_candidate_donation_source", None)
+                _rerun_workspace("Substack")
+
+        candidate_error = st.session_state.get("workspace_candidate_error", "")
+        if candidate_error:
+            st.error(candidate_error)
+
+        parsed_candidate_names = st.session_state.get("workspace_candidate_names_parsed") or []
+        if parsed_candidate_names:
+            st.caption(f"Parsed candidates: {', '.join(parsed_candidate_names)}")
+
+        candidate_result = st.session_state.get("workspace_candidate_result")
+        if candidate_result:
+            if candidate_result.get("could_not_resolve"):
+                st.warning(
+                    "I could not resolve a clear set of races for these candidates. "
+                    "Verify the names or specify the exact contests."
+                )
+                active_races = candidate_result.get("active_races") or []
+                if active_races:
+                    st.caption(f"Active races found: {', '.join(active_races)}")
+                if candidate_result.get("ambiguity_note"):
+                    st.caption(candidate_result["ambiguity_note"])
+            else:
+                race_groups = candidate_result.get("race_groups") or []
+                if race_groups:
+                    st.markdown("**Resolved races:**")
+                    for group in race_groups:
+                        group_names = ", ".join(
+                            _cell_text(name).strip()
+                            for name in (group.get("candidate_names") or [])
+                            if _cell_text(name).strip()
+                        )
+                        race_label_parts = [
+                            _cell_text(group.get("race_name")).strip(),
+                            _cell_text(group.get("election_date")).strip(),
+                        ]
+                        st.markdown(f"- {group_names}: {', '.join(part for part in race_label_parts if part)}")
+                else:
+                    resolved_names = [
+                        _cell_text(name).strip()
+                        for name in (candidate_result.get("candidate_names") or [])
+                        if _cell_text(name).strip()
+                    ]
+                    st.markdown(
+                        (
+                            f"**Resolved race:** {', '.join(resolved_names) or ', '.join(parsed_candidate_names)}, "
+                            f"{candidate_result.get('race_name', '')}, "
+                            f"{candidate_result.get('election_date', '')}"
+                        )
+                    )
+                prompt_text = _build_candidate_prompt(candidate_result, donation_link=donation_link)
+                st.subheader("Substack prompt")
+                st.code(prompt_text, language=None)

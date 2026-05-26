@@ -106,9 +106,12 @@ def _worksheet(sheet_id: str) -> gspread.Worksheet:
     workbook = _workbook(sheet_id)
 
     if GOOGLE_WORKSHEET_NAME:
-        ws = workbook.worksheet(GOOGLE_WORKSHEET_NAME)
-        _ensure_headers(sheet_id, ws)
-        return ws
+        try:
+            ws = workbook.worksheet(GOOGLE_WORKSHEET_NAME)
+            _ensure_headers(sheet_id, ws)
+            return ws
+        except gspread.WorksheetNotFound:
+            pass
 
     expected_headers = {"Instagram URL", "Status"}
     for ws in workbook.worksheets():
@@ -457,3 +460,133 @@ def delete_row(sheet_id: str, row_number: int) -> None:
     ws = _worksheet(sheet_id)
     _with_backoff(ws.delete_rows, row_number)
     _invalidate_rows_cache(sheet_id)
+
+
+# ---------------------------------------------------------------------------
+# monitors tab helpers
+# ---------------------------------------------------------------------------
+
+def get_monitor_rows(sheet_id: str) -> list[dict]:
+    """Return all rows from the monitors tab."""
+    ws = _workbook(sheet_id).worksheet("monitors")
+    values = _with_backoff(ws.get_all_values)
+    if not values:
+        return []
+    headers = [h.strip() for h in values[0]]
+    rows = []
+    for i, row in enumerate(values[1:], start=2):
+        record = {headers[j]: (row[j].strip() if j < len(row) else "") for j in range(len(headers))}
+        record["row_number"] = i
+        rows.append(record)
+    return rows
+
+
+def get_open_monitor_rows(sheet_id: str) -> list[dict]:
+    """Return rows from the monitors tab where status is 'open'."""
+    return [r for r in get_monitor_rows(sheet_id) if r.get("status", "").strip().lower() == "open"]
+
+
+def update_monitor_summary(sheet_id: str, row_number: int, summary: str, last_checked: str) -> None:
+    """Write summary and last checked date to the monitors tab by header name."""
+    ws = _workbook(sheet_id).worksheet("monitors")
+    header_row = _with_backoff(ws.row_values, 1)
+    normalized = {h.strip().lower(): i for i, h in enumerate(header_row) if h.strip()}
+    last_index = normalized.get("last")
+    summary_index = normalized.get("summary")
+    if last_index is None:
+        raise RuntimeError("monitors tab is missing a 'last' column.")
+    if summary_index is None:
+        raise RuntimeError("monitors tab is missing a 'summary' column.")
+    last_col = chr(ord("A") + last_index)
+    summary_col = chr(ord("A") + summary_index)
+    _with_backoff(ws.batch_update, [
+        {"range": f"{last_col}{row_number}", "values": [[last_checked]]},
+        {"range": f"{summary_col}{row_number}", "values": [[summary]]},
+    ])
+
+
+# ---------------------------------------------------------------------------
+# substack tab helpers
+# ---------------------------------------------------------------------------
+
+def get_substack_rows(sheet_id: str) -> list[dict]:
+    """Return all rows from the substack tab."""
+    ws = _workbook(sheet_id).worksheet("substack")
+    values = _with_backoff(ws.get_all_values)
+    if not values:
+        return []
+    headers = [h.strip() for h in values[0]]
+    rows = []
+    for i, row in enumerate(values[1:], start=2):
+        record = {headers[j]: (row[j].strip() if j < len(row) else "") for j in range(len(headers))}
+        record["row_number"] = i
+        rows.append(record)
+    return rows
+
+
+def get_open_substack_rows(sheet_id: str) -> list[dict]:
+    """Return rows from the substack tab where status is 'open'."""
+    return [r for r in get_substack_rows(sheet_id) if r.get("status", "").strip().lower() == "open"]
+
+
+def update_substack_status(sheet_id: str, row_number: int, status: str) -> None:
+    """Write status to col D of the substack tab."""
+    ws = _workbook(sheet_id).worksheet("substack")
+    _with_backoff(ws.update, f"D{row_number}", [[status]])
+
+
+def update_substack_article(sheet_id: str, row_number: int, article: str) -> None:
+    """Write article body to col C of the substack tab."""
+    ws = _workbook(sheet_id).worksheet("substack")
+    _with_backoff(ws.update, f"C{row_number}", [[article]])
+
+
+def append_substack_row(sheet_id: str, url: str) -> None:
+    """Append a new row to the substack tab with the given URL and status open."""
+    ws = _workbook(sheet_id).worksheet("substack")
+    _with_backoff(ws.append_row, [url, "", "", "open", ""], value_input_option="USER_ENTERED")
+
+
+def append_substack_post_rows(sheet_id: str, rows: list[dict]) -> None:
+    """Append rows to substack_posts tab.
+
+    Each dict must have keys: url, angle, caption, text1, text2, text3, cta, status.
+    """
+    if not rows:
+        return
+    ws = _workbook(sheet_id).worksheet("substack_posts")
+    values = [
+        [
+            r.get("url", ""),
+            r.get("angle", ""),
+            r.get("caption", ""),
+            r.get("text1", ""),
+            r.get("text2", ""),
+            r.get("text3", ""),
+            r.get("cta", ""),
+            r.get("status", ""),
+        ]
+        for r in rows
+    ]
+    _with_backoff(ws.append_rows, values, value_input_option="USER_ENTERED")
+
+
+def get_substack_post_rows(sheet_id: str) -> list[dict]:
+    """Return all rows from the substack_posts tab."""
+    ws = _workbook(sheet_id).worksheet("substack_posts")
+    values = _with_backoff(ws.get_all_values)
+    if not values:
+        return []
+    headers = [h.strip() for h in values[0]]
+    rows = []
+    for i, row in enumerate(values[1:], start=2):
+        record = {headers[j]: (row[j].strip() if j < len(row) else "") for j in range(len(headers))}
+        record["row_number"] = i
+        rows.append(record)
+    return rows
+
+
+def update_substack_post_status(sheet_id: str, row_number: int, status: str) -> None:
+    """Write status to col H of the substack_posts tab."""
+    ws = _workbook(sheet_id).worksheet("substack_posts")
+    _with_backoff(ws.update, f"H{row_number}", [[status]])
