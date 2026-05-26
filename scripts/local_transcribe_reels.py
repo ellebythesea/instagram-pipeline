@@ -29,12 +29,15 @@ from urllib.parse import parse_qs, urlparse
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+SCRIPTS_DIR = Path(__file__).resolve().parent
+for _p in (str(REPO_ROOT), str(SCRIPTS_DIR)):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 from config import GOOGLE_SHEET_ID  # noqa: E402
 from drive import _get_service  # noqa: E402
 from pipeline_caption import generate_batch_carousel_copy_with_model, generate_row_caption  # noqa: E402
+from run_pipeline import step1_ingest  # noqa: E402
 from sheets import get_all_rows, update_caption, update_carousel_fields, update_metadata, update_transcript  # noqa: E402
 from utils.error_labels import describe_error  # noqa: E402
 from watch_split_folder import watch_folder  # noqa: E402
@@ -508,7 +511,11 @@ def main() -> int:
     if not media_root.exists():
         raise FileNotFoundError(f"Media directory does not exist: {media_root}")
     print(f"Using media directory: {media_root}")
-    print("Running split watcher until the media folder is idle...")
+
+    print("\n--- Step 1: Ingest ---")
+    step1_ingest(GOOGLE_SHEET_ID)
+
+    print("\nRunning split watcher until the media folder is idle...")
     watch_folder(media_root, stop_when_idle=True)
 
     rows = get_all_rows(GOOGLE_SHEET_ID)
