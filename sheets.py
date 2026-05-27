@@ -684,11 +684,34 @@ def _ensure_substack_post_headers(ws) -> None:
         "post_type",
         "topics",
     ]
-    if headers[:len(expected_headers)] == expected_headers:
+    if not headers:
+        _with_backoff(ws.update, "A1:O1", [expected_headers])
         _headers_checked.add(cache_key)
         return
-    _with_backoff(ws.update, "A1:O1", [expected_headers])
+    missing_headers = [header for header in expected_headers if header not in headers]
+    if missing_headers:
+        raise RuntimeError(
+            "substack_posts is missing required header(s): " + ", ".join(missing_headers)
+        )
     _headers_checked.add(cache_key)
+
+
+def _column_letter(index: int) -> str:
+    result = ""
+    while index > 0:
+        index, remainder = divmod(index - 1, 26)
+        result = chr(65 + remainder) + result
+    return result
+
+
+def _substack_post_header_map(ws) -> dict[str, int]:
+    _ensure_substack_post_headers(ws)
+    headers = [header.strip() for header in _with_backoff(ws.row_values, 1)]
+    return {
+        header: index + 1
+        for index, header in enumerate(headers)
+        if header
+    }
 
 
 def append_substack_post_rows(sheet_id: str, rows: list[dict]) -> None:
@@ -700,25 +723,10 @@ def append_substack_post_rows(sheet_id: str, rows: list[dict]) -> None:
     if not rows:
         return
     ws = _named_worksheet(sheet_id, "substack_posts")
-    _ensure_substack_post_headers(ws)
+    header_map = _substack_post_header_map(ws)
+    ordered_headers = [header for header, _ in sorted(header_map.items(), key=lambda item: item[1])]
     values = [
-        [
-            r.get("url", ""),
-            r.get("angle", ""),
-            r.get("caption", ""),
-            r.get("text1", ""),
-            r.get("text2", ""),
-            r.get("text3", ""),
-            r.get("text4", ""),
-            r.get("text5", ""),
-            r.get("text6", ""),
-            r.get("cta", ""),
-            r.get("status", ""),
-            r.get("slide_prompt", ""),
-            r.get("slide_input", ""),
-            r.get("post_type", ""),
-            r.get("topics", ""),
-        ]
+        [r.get(header, "") for header in ordered_headers]
         for r in rows
     ]
     _with_backoff(ws.append_rows, values, value_input_option="USER_ENTERED")
@@ -746,9 +754,11 @@ def get_substack_post_rows(sheet_id: str) -> list[dict]:
 
 
 def update_substack_post_status(sheet_id: str, row_number: int, status: str) -> None:
-    """Write status to col K of the substack_posts tab."""
+    """Write status to the status column of the substack_posts tab."""
     ws = _named_worksheet(sheet_id, "substack_posts")
-    _with_backoff(ws.update, f"K{row_number}", [[status]])
+    header_map = _substack_post_header_map(ws)
+    status_column = _column_letter(header_map["status"])
+    _with_backoff(ws.update, f"{status_column}{row_number}", [[status]])
     _invalidate_rows_cache(sheet_id)
 
 
@@ -765,11 +775,21 @@ def update_substack_post_slides_and_status(
 ) -> None:
     """Write slide text and status to a substack_posts row."""
     ws = _named_worksheet(sheet_id, "substack_posts")
+    header_map = _substack_post_header_map(ws)
+    updates = []
+    for key, value in {
+        "text1": text1,
+        "text2": text2,
+        "text3": text3,
+        "text4": text4,
+        "text5": text5,
+        "text6": text6,
+        "status": status,
+    }.items():
+        column = _column_letter(header_map[key])
+        updates.append({"range": f"{column}{row_number}", "values": [[value]]})
     _with_backoff(
         ws.batch_update,
-        [
-            {"range": f"D{row_number}:I{row_number}", "values": [[text1, text2, text3, text4, text5, text6]]},
-            {"range": f"K{row_number}", "values": [[status]]},
-        ],
+        updates,
     )
     _invalidate_rows_cache(sheet_id)

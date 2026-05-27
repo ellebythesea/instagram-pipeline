@@ -4822,6 +4822,14 @@ def _format_substack_slide_prompt(slide_prompt: str, slide_input: str, row_numbe
     return f"{slide_prompt.strip()}\n\n{input_block.strip()}"
 
 
+def _format_substack_slide_prompt_preview(slide_prompt: str, slide_input: str, row_number: int) -> str:
+    input_block = (slide_input or "").replace("[ROW_NUMBER]", str(row_number)).strip()
+    article_marker = "\n\nArticle:\n"
+    if article_marker in input_block:
+        input_block = input_block.split(article_marker, 1)[0].rstrip()
+    return f"{slide_prompt.strip()}\n\n{input_block}".strip()
+
+
 def _substack_caption_footer(substack_url: str) -> str:
     return (
         f"Comment LINK (on instagram) and we will DM you the link to {substack_url}\n\n"
@@ -6225,7 +6233,7 @@ if active_section_tab == "Substack":
                         if _sb_post.get("slide_prompt"):
                             st.markdown("**Slide prompt**")
                             st.code(
-                                _format_substack_slide_prompt(
+                                _format_substack_slide_prompt_preview(
                                     _sb_post.get("slide_prompt", ""),
                                     _sb_post.get("slide_input", ""),
                                     _sb_post_row_number,
