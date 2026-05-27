@@ -667,11 +667,27 @@ def _ensure_substack_post_headers(ws) -> None:
         return
     values = _with_backoff(ws.get_all_values)
     headers = values[0] if values else []
-    expected_suffix = ["slide_prompt", "slide_input", "post_type", "topics", "text4", "text5", "text6"]
-    if len(headers) >= 15 and headers[8:15] == expected_suffix:
+    expected_headers = [
+        "url",
+        "angle",
+        "caption",
+        "text1",
+        "text2",
+        "text3",
+        "text4",
+        "text5",
+        "text6",
+        "cta",
+        "status",
+        "slide_prompt",
+        "slide_input",
+        "post_type",
+        "topics",
+    ]
+    if headers[:len(expected_headers)] == expected_headers:
         _headers_checked.add(cache_key)
         return
-    _with_backoff(ws.update, "I1:O1", [expected_suffix])
+    _with_backoff(ws.update, "A1:O1", [expected_headers])
     _headers_checked.add(cache_key)
 
 
@@ -679,7 +695,7 @@ def append_substack_post_rows(sheet_id: str, rows: list[dict]) -> None:
     """Append rows to substack_posts tab.
 
     Each dict must have keys: url, angle, caption, text1, text2, text3, cta, status.
-    Newer sheets may also include slide_prompt, slide_input, post_type, topics, and text4-text6.
+    Newer sheets may also include text4-text6, slide_prompt, slide_input, post_type, and topics.
     """
     if not rows:
         return
@@ -693,15 +709,15 @@ def append_substack_post_rows(sheet_id: str, rows: list[dict]) -> None:
             r.get("text1", ""),
             r.get("text2", ""),
             r.get("text3", ""),
+            r.get("text4", ""),
+            r.get("text5", ""),
+            r.get("text6", ""),
             r.get("cta", ""),
             r.get("status", ""),
             r.get("slide_prompt", ""),
             r.get("slide_input", ""),
             r.get("post_type", ""),
             r.get("topics", ""),
-            r.get("text4", ""),
-            r.get("text5", ""),
-            r.get("text6", ""),
         ]
         for r in rows
     ]
@@ -730,9 +746,9 @@ def get_substack_post_rows(sheet_id: str) -> list[dict]:
 
 
 def update_substack_post_status(sheet_id: str, row_number: int, status: str) -> None:
-    """Write status to col H of the substack_posts tab."""
+    """Write status to col K of the substack_posts tab."""
     ws = _named_worksheet(sheet_id, "substack_posts")
-    _with_backoff(ws.update, f"H{row_number}", [[status]])
+    _with_backoff(ws.update, f"K{row_number}", [[status]])
     _invalidate_rows_cache(sheet_id)
 
 
@@ -752,9 +768,8 @@ def update_substack_post_slides_and_status(
     _with_backoff(
         ws.batch_update,
         [
-            {"range": f"D{row_number}:F{row_number}", "values": [[text1, text2, text3]]},
-            {"range": f"H{row_number}", "values": [[status]]},
-            {"range": f"M{row_number}:O{row_number}", "values": [[text4, text5, text6]]},
+            {"range": f"D{row_number}:I{row_number}", "values": [[text1, text2, text3, text4, text5, text6]]},
+            {"range": f"K{row_number}", "values": [[status]]},
         ],
     )
     _invalidate_rows_cache(sheet_id)

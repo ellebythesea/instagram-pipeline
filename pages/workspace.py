@@ -86,6 +86,7 @@ ORG_HASHTAG_MAP = {
 EDITABLE_STATUSES = {"ingested", "done", "slides"}
 TRANSCRIPT_SIZE_WARNING_BYTES = 100 * 1024 * 1024
 EDITOR_INITIAL_RENDER_LIMIT = 12
+WORKSPACE_SLIDES_BATCH_SIZE = 5
 INSTAGRAM_CANVAS_WIDTH_PX = 1080
 INSTAGRAM_CANVAS_HEIGHT_PX = 1485
 PREVIEW_EXPORT_WIDTH_PX = 1080
@@ -2931,9 +2932,16 @@ def _render_workspace_slides_dialog(workspace_rows: list[dict], workspace_rows_e
         ready_rows = _ready_rows_from_loaded_rows(workspace_rows)
 
     ready_count = len(ready_rows)
+    batched_ready_rows = ready_rows[:WORKSPACE_SLIDES_BATCH_SIZE]
+    remaining_count = max(ready_count - len(batched_ready_rows), 0)
     row_word = "row" if ready_count == 1 else "rows"
     if ready_count:
-        st.caption(f"{ready_count} {row_word} ready for slides.")
+        st.caption(
+            f"{ready_count} {row_word} ready for slides. "
+            f"Showing the next {len(batched_ready_rows)} row(s) in this batch."
+        )
+        if remaining_count:
+            st.caption(f"{remaining_count} more row(s) will be available after you finish this batch.")
     else:
         st.info("No rows are ready for slides yet.")
 
@@ -2964,9 +2972,9 @@ def _render_workspace_slides_dialog(workspace_rows: list[dict], workspace_rows_e
                 )
             _rerun_workspace("Home")
 
-    if ready_rows:
+    if batched_ready_rows:
         st.caption("Slide prompt")
-        st.code(_build_chatgpt_handoff_prompt(ready_rows), language=None)
+        st.code(_build_chatgpt_handoff_prompt(batched_ready_rows), language=None)
 
     if st.button("Close", key="workspace_slides_close", width="stretch"):
         _close_workspace_slides_dialog()

@@ -120,15 +120,15 @@ Generated Instagram posts from Substack articles. 15 columns:
 | D | text1 |
 | E | text2 |
 | F | text3 |
-| G | cta |
-| H | status |
-| I | slide_prompt |
-| J | slide_input |
-| K | post_type |
-| L | topics |
-| M | text4 |
-| N | text5 |
-| O | text6 |
+| G | text4 |
+| H | text5 |
+| I | text6 |
+| J | cta |
+| K | status |
+| L | slide_prompt |
+| M | slide_input |
+| N | post_type |
+| O | topics |
 
 Status values: `slide prompt ready`, `row created`, `posted`
 

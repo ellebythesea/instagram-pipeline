@@ -85,7 +85,7 @@ Substack articles to generate Instagram posts from. 4 columns.
 
 ## Tab: substack_posts
 
-Generated Instagram posts from Substack articles. 15 columns. Rows are appended by the app — do not reorder columns.
+Generated Instagram posts from Substack articles. 15 columns.
 
 | Col | Header |
 |-----|--------|
@@ -95,15 +95,15 @@ Generated Instagram posts from Substack articles. 15 columns. Rows are appended 
 | D | text1 |
 | E | text2 |
 | F | text3 |
-| G | cta |
-| H | status |
-| I | slide_prompt |
-| J | slide_input |
-| K | post_type |
-| L | topics |
-| M | text4 |
-| N | text5 |
-| O | text6 |
+| G | text4 |
+| H | text5 |
+| I | text6 |
+| J | cta |
+| K | status |
+| L | slide_prompt |
+| M | slide_input |
+| N | post_type |
+| O | topics |
 
 **Status values:** `slide prompt ready`, `row created`, `posted`
 
