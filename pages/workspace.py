@@ -19,12 +19,8 @@ from zoneinfo import ZoneInfo
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import openai
-import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
-from apify_client import ApifyClient
-
-from article_source import fetch_article_source
 from config import (
     APIFY_API_TOKEN,
     APIFY_POST_ACTOR_ID,
@@ -111,6 +107,7 @@ PREVIEW_UPLOAD_SUBFOLDER = "previews"
 PINNED_TOP_COMMENT_PREFIX = "[[TOP]] "
 
 _client: openai.OpenAI | None = None
+_pd_module = None
 VOTER_GUIDE_PROMPT_TEMPLATE = textwrap.dedent(
     """\
     You are generating a "living voter guide" article for a Substack series called Vote In Or Out. Each article covers one race or, when appropriate, a small set of clearly related races. Your job is to research the elections using web search and produce a complete article ready to publish.
@@ -280,6 +277,24 @@ def _get_client() -> openai.OpenAI:
     return _client
 
 
+def _get_pandas():
+    global _pd_module
+    if _pd_module is None:
+        import pandas as pd
+        _pd_module = pd
+    return _pd_module
+
+
+def _get_apify_client_class():
+    from apify_client import ApifyClient
+    return ApifyClient
+
+
+def _fetch_article_source_data(url: str) -> dict:
+    from article_source import fetch_article_source
+    return fetch_article_source(url)
+
+
 def _today_eastern_label() -> str:
     now = datetime.now(ZoneInfo("America/New_York"))
     return f"{now.strftime('%B')} {now.day}, {now.year}"
@@ -305,6 +320,7 @@ def _parse_candidate_comment_timestamp(value) -> datetime | None:
             return datetime.fromtimestamp(numeric, tz=ZoneInfo("UTC"))
         except Exception:
             return None
+    pd = _get_pandas()
     parsed = pd.to_datetime(value, errors="coerce", utc=True)
     if pd.isna(parsed):
         return None
@@ -428,7 +444,7 @@ def _fetch_candidate_comments_since(url: str, since: datetime | None) -> list[di
     if not APIFY_API_TOKEN:
         raise RuntimeError("APIFY_API_TOKEN is not configured.")
 
-    apify_client = ApifyClient(APIFY_API_TOKEN)
+    apify_client = _get_apify_client_class()(APIFY_API_TOKEN)
     actor = apify_client.actor(APIFY_POST_ACTOR_ID)
     run = None
     last_error = None
@@ -1685,7 +1701,7 @@ def _fetch_link_data(url: str) -> dict:
             "is_instagram": True,
         }
 
-    article = fetch_article_source(url)
+    article = _fetch_article_source_data(url)
     article_source_text = (
         (article.get("source_text") or "").strip()
         or (article.get("summary_text") or "").strip()
@@ -4290,7 +4306,7 @@ def _ingest_row(row: dict) -> dict:
     tmp_dir = None
     try:
         if _is_article_url(url):
-            article = fetch_article_source(url)
+            article = _fetch_article_source_data(url)
             article_source_text = (
                 (article.get("source_text") or "").strip()
                 or (article.get("summary_text") or "").strip()
@@ -5438,17 +5454,18 @@ active_section_tab = st.segmented_control(
 
 workspace_rows_error = ""
 workspace_rows: list[dict] = []
-try:
-    workspace_rows = _run_with_sheet_quota_countdown(
-        lambda: get_all_rows(GOOGLE_SHEET_ID),
-        "Loading workspace paused:",
-    )
-except Exception as e:
-    workspace_rows_error = describe_error(e)
 home_notice = st.session_state.pop("workspace_home_notice", "")
 slide_cta_options: dict[str, str] = {}
 
 if active_section_tab == "Home":
+    try:
+        workspace_rows = _run_with_sheet_quota_countdown(
+            lambda: get_all_rows(GOOGLE_SHEET_ID),
+            "Loading workspace paused:",
+        )
+    except Exception as e:
+        workspace_rows_error = describe_error(e)
+
     st.markdown('<div class="workspace-action-anchor"></div>', unsafe_allow_html=True)
     if st.session_state.get("workspace_home_action_dialog"):
         _render_workspace_home_action_dialog()
@@ -5878,10 +5895,16 @@ if active_section_tab == "Home":
 
 
 if active_section_tab == "Substack":
-    promote_tab, monitors_tab, guides_tab = st.tabs(["Promote", "Monitors", "Guides"])
+    substack_section = st.segmented_control(
+        "Substack section",
+        ["Promote", "Monitors", "Guides"],
+        key="workspace_substack_section",
+        label_visibility="collapsed",
+        width="stretch",
+    ) or "Promote"
 
     # ── Promote ───────────────────────────────────────────────────────────
-    with promote_tab:
+    if substack_section == "Promote":
         st.caption("Generate Instagram posts to drive traffic to your Substack articles.")
         _sb_open_rows = [
             row for row in sheet_ops.get_substack_rows(GOOGLE_SHEET_ID)
@@ -5919,29 +5942,34 @@ if active_section_tab == "Substack":
                 st.text_area("Article body", value=_sb_article_body, height=120, disabled=True, key="ws_sb_body_ro")
             else:
                 _sb_fetch_key = f"ws_sb_fetched_{_sb_url}"
-                if _sb_fetch_key not in st.session_state:
-                    try:
-                        with st.spinner("Fetching article body…"):
-                            _sb_fetched = fetch_article_source(_sb_url)
-                            st.session_state[_sb_fetch_key] = _sb_fetched.get("source_text", "")
-                    except Exception as _sb_fetch_err:
-                        st.session_state[_sb_fetch_key] = ""
-                        st.error(f"Could not auto-fetch article: {_sb_fetch_err}. Paste below.")
-
                 _sb_prefill = st.session_state.get(_sb_fetch_key, "")
+                fetch_col, save_col = st.columns(2)
+                with fetch_col:
+                    if st.button("Fetch article body", key=f"ws_sb_fetch_body_{_sb_row_number}", width="stretch"):
+                        try:
+                            with st.spinner("Fetching article body…"):
+                                _sb_fetched = _fetch_article_source_data(_sb_url)
+                                st.session_state[_sb_fetch_key] = _sb_fetched.get("source_text", "")
+                        except Exception as _sb_fetch_err:
+                            st.session_state[_sb_fetch_key] = ""
+                            st.error(f"Could not fetch article: {_sb_fetch_err}")
+                        _rerun_workspace("Substack")
+
                 _sb_edited = st.text_area(
                     "Article body",
                     value=_sb_prefill,
                     height=140,
                     key=f"ws_sb_article_edit_{_sb_url}",
+                    placeholder="Paste the article body here, or fetch it first.",
                 )
-                if st.button("Save Article Body", key="ws_sb_save_body"):
-                    if _sb_edited.strip():
-                        sheet_ops.update_substack_article(GOOGLE_SHEET_ID, _sb_row_number, _sb_edited.strip())
-                        st.success("Saved.")
-                        _rerun_workspace("Substack")
-                    else:
-                        st.warning("Article body is empty.")
+                with save_col:
+                    if st.button("Save Article Body", key="ws_sb_save_body", width="stretch"):
+                        if _sb_edited.strip():
+                            sheet_ops.update_substack_article(GOOGLE_SHEET_ID, _sb_row_number, _sb_edited.strip())
+                            st.success("Saved.")
+                            _rerun_workspace("Substack")
+                        else:
+                            st.warning("Article body is empty.")
                 _sb_article_body = _sb_edited.strip()
 
             _sb_post_type_label = st.radio(
@@ -6204,7 +6232,7 @@ if active_section_tab == "Substack":
                                 _rerun_workspace("Substack")
 
     # ── Monitors ──────────────────────────────────────────────────────────
-    with monitors_tab:
+    if substack_section == "Monitors":
         st.caption("Watch Instagram comments on your election guide posts.")
         commentary_entries = st.session_state.setdefault("workspace_candidate_commentary_entries", [])
         open_comment_rows: list[dict] = []
@@ -6231,7 +6259,7 @@ if active_section_tab == "Substack":
                         "_row_number": row["row_number"],
                     }
                 )
-            selector_df = pd.DataFrame(selector_default_rows)
+            selector_df = _get_pandas().DataFrame(selector_default_rows)
             edited_selector_df = st.data_editor(
                 selector_df,
                 hide_index=True,
@@ -6342,7 +6370,7 @@ if active_section_tab == "Substack":
                                 st.markdown(f"- {prefix}{text}")
 
     # ── Guides ────────────────────────────────────────────────────────────
-    with guides_tab:
+    if substack_section == "Guides":
         st.caption("Generate a Substack article prompt for a race by entering the candidates you want compared.")
 
         fundraising_presets = _fundraising_preset_map()
