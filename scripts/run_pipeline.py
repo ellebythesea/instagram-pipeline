@@ -48,6 +48,7 @@ from sheets import (
 )
 
 generate_row_caption = pipeline_caption_ops.generate_row_caption
+row_ready_for_caption = pipeline_caption_ops.row_ready_for_caption
 
 PREVIEW_UPLOAD_SUBFOLDER = "previews"
 
@@ -79,22 +80,24 @@ def _is_article_url(url: str) -> bool:
     return parsed.scheme == "https" and bool(parsed.netloc) and not _is_instagram_url(url)
 
 
+def _clean_public_url(link: str) -> str:
+    from urllib.parse import urlparse
+
+    parsed = urlparse((link or "").strip())
+    if not parsed.scheme or not parsed.netloc:
+        return (link or "").strip()
+    return f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+
+
 def _build_watch_cta(username: str, link: str) -> str:
     cleaned = (username or "").strip().lstrip("@")
-    if cleaned:
-        return f"Watch the full video on @{cleaned}'s page"
-    return ""
+    cleaned_link = _clean_public_url(link)
+    destination = f"@{cleaned} {cleaned_link}" if cleaned else cleaned_link
+    return f"Comment LINK (on instagram) and we will DM you the link to {destination}"
 
 
 def _build_read_cta(link: str) -> str:
-    from urllib.parse import urlparse
-    parsed = urlparse((link or "").strip())
-    clean = (
-        f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
-        if parsed.scheme and parsed.netloc
-        else (link or "").strip()
-    )
-    return f"Comment LINK (on instagram) and we will DM you the link to {clean}"
+    return f"Comment LINK (on instagram) and we will DM you the link to {_clean_public_url(link)}"
 
 
 def _row_caption_inputs(row: dict) -> dict:
@@ -381,13 +384,16 @@ def step1_ingest(sheet_id: str) -> int:
                     "Top Comment": inputs["Top Comment"],
                     "Footer": "",
                 }
-                caption = generate_row_caption(ingested_row)
-                update_caption_and_metadata(
-                    sheet_id, row_num, caption, result["status"],
-                    inputs["Caption Context"], inputs["Speaker Name"],
-                    inputs["Required Hashtags"], inputs["Top Comment"], "",
-                )
-                print(f"  Row {row_num}: ingested + captioned ({result['media_type']})")
+                if row_ready_for_caption(ingested_row):
+                    caption = generate_row_caption(ingested_row)
+                    update_caption_and_metadata(
+                        sheet_id, row_num, caption, result["status"],
+                        inputs["Caption Context"], inputs["Speaker Name"],
+                        inputs["Required Hashtags"], inputs["Top Comment"], "",
+                    )
+                    print(f"  Row {row_num}: ingested + captioned ({result['media_type']})")
+                else:
+                    print(f"  Row {row_num}: ingested ({result['media_type']}); waiting for transcript before captioning")
                 succeeded += 1
             else:
                 print(f"  Row {row_num}: {result['status']}")

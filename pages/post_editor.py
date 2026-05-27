@@ -12,7 +12,7 @@ import streamlit as st
 
 from config import GOOGLE_SHEET_ID, OPENAI_API_KEY
 from ingest_helpers import upload_media_bundle
-from pipeline_caption import generate_row_caption
+from pipeline_caption import generate_row_caption, row_ready_for_caption
 from post_scraper import process_url as process_post_url
 from reel_scraper import process_url as process_reel_url
 from sheets import (
@@ -339,7 +339,10 @@ for row in rows:
                     st.success(f"Row {row_num}: caption regenerated from image text.")
                     st.rerun()
 
-ingested_rows = [r for r in rows if r.get("Status", "").strip().lower() == "ingested"]
+ingested_rows = [
+    r for r in rows
+    if r.get("Status", "").strip().lower() == "ingested" and row_ready_for_caption(r)
+]
 
 sticky_container = st.container()
 with sticky_container:

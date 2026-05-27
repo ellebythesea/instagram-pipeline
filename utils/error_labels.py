@@ -100,6 +100,8 @@ def describe_error(error: Exception) -> str:
     if "google" in exc_name or "gspread" in exc_name or "googleapi" in exc_name:
         if "worksheetnotfound" in exc_name:
             return "Google Sheets worksheet not found. Check GOOGLE_WORKSHEET_NAME."
+        if "does not contain the expected pipeline headers" in lowered and "worksheet '" in lowered:
+            return "Configured Google worksheet is wrong for this app. Check GOOGLE_WORKSHEET_NAME."
         if "malformederror" in exc_name or "service account info was not in the expected format" in lowered:
             return "Google service account credentials are malformed. Check GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_CREDENTIALS_BASE64."
         if any(token in lowered for token in ["invalid_grant", "reauth", "refresh token", "token has been expired", "authorized user"]):

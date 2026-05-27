@@ -126,12 +126,38 @@ def _decode_top_comment(value: str) -> tuple[str, bool]:
     return cleaned, False
 
 
+def _row_media_type(row: dict) -> str:
+    return (row.get("Media Type") or "").strip().lower()
+
+
+def _row_url(row: dict) -> str:
+    return (row.get("Instagram URL") or "").strip().lower()
+
+
+def row_requires_transcript(row: dict) -> bool:
+    media_type = _row_media_type(row)
+    if media_type == "reel":
+        return True
+    url = _row_url(row)
+    return "/reel/" in url or "/reels/" in url
+
+
+def row_ready_for_caption(row: dict) -> bool:
+    transcript = (row.get("Transcript") or "").strip()
+    original_caption = (row.get("Original Caption") or "").strip()
+    caption_context = (row.get("Caption Context") or "").strip()
+    if row_requires_transcript(row):
+        return bool(transcript)
+    return bool(transcript or original_caption or caption_context)
+
+
 def _row_source_text(row: dict) -> tuple[str, str, str]:
     transcript = row.get("Transcript", "").strip()
     original_caption = row.get("Original Caption", "").strip()
     caption_context = row.get("Caption Context", "").strip()
-    content = transcript or original_caption or caption_context
-    if not content:
+    if row_requires_transcript(row) and not transcript:
+        raise ValueError("Reels require a transcript before caption generation.")
+    if not row_ready_for_caption(row):
         raise ValueError("No transcript, original caption, or caption context available")
     return transcript, original_caption, caption_context
 

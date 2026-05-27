@@ -54,6 +54,7 @@ from utils.error_labels import describe_error
 from utils.styles import inject as inject_styles
 
 generate_row_caption = pipeline_caption_ops.generate_row_caption
+row_ready_for_caption = pipeline_caption_ops.row_ready_for_caption
 _strip_top_comment_paragraphs = pipeline_caption_ops._strip_top_comment_paragraphs
 generate_carousel_copy_with_model = getattr(
     pipeline_caption_ops,
@@ -4160,28 +4161,29 @@ def _process_pending_rows_from_sheet() -> int:
                             "Footer": "",
                         }
                     )
-                    generated_caption = generate_row_caption(ingested_row)
-                    if update_caption_and_metadata is not None:
-                        update_caption_and_metadata(
-                            GOOGLE_SHEET_ID,
-                            row_num,
-                            generated_caption,
-                            result["status"],
-                            existing_inputs["Caption Context"],
-                            existing_inputs["Speaker Name"],
-                            existing_inputs["Required Hashtags"],
-                            default_top_comment,
-                            "",
-                        )
-                    else:
-                        update_caption(GOOGLE_SHEET_ID, row_num, generated_caption, result["status"])
+                    if row_ready_for_caption(ingested_row):
+                        generated_caption = generate_row_caption(ingested_row)
+                        if update_caption_and_metadata is not None:
+                            update_caption_and_metadata(
+                                GOOGLE_SHEET_ID,
+                                row_num,
+                                generated_caption,
+                                result["status"],
+                                existing_inputs["Caption Context"],
+                                existing_inputs["Speaker Name"],
+                                existing_inputs["Required Hashtags"],
+                                default_top_comment,
+                                "",
+                            )
+                        else:
+                            update_caption(GOOGLE_SHEET_ID, row_num, generated_caption, result["status"])
             except Exception as e:
                 status_box.update(label=f"Row {row_num}: error writing to sheet - {describe_error(e)}", state="error")
             else:
                 if result["status"].startswith("error"):
                     status_box.update(label=f"Row {row_num}: {result['status']}", state="error")
                 else:
-                    action_word = "ingested + captioned"
+                    action_word = "ingested + captioned" if row_ready_for_caption(ingested_row) else "ingested"
                     display_name = f"@{result['username']}" if result["username"] and result["media_type"] != "article" else result["username"]
                     status_box.update(
                         label=(
@@ -4339,11 +4341,13 @@ def _ingest_row(row: dict) -> dict:
 
 def _rerun_with_transcript(row: dict, force_remote: bool = False) -> bool:
     updated_row = _fetch_row_with_transcript(row, force_remote=force_remote)
+    if not (updated_row.get("Transcript") or "").strip():
+        return False
     row_num = row["row_number"]
     caption = generate_row_caption(updated_row)
     next_status = "skipped" if (row.get("Status", "") or "").strip().lower() == "skipped" else "done"
     update_caption(GOOGLE_SHEET_ID, row_num, caption, next_status)
-    return bool((updated_row.get("Transcript") or "").strip())
+    return True
 
 
 def _fetch_row_with_transcript(row: dict, download_media: bool = False, force_remote: bool = False) -> dict:
@@ -4900,7 +4904,7 @@ def _process_next_workspace_action(for_row_number: int | None = None) -> None:
                 if transcript_found:
                     success_message = f"Row {row_number}: transcript rerun complete."
                 else:
-                    success_message = f"Row {row_number}: no transcript found — caption generated from existing text."
+                    success_message = f"Row {row_number}: no transcript found."
                 _s.update(label=success_message, state="complete")
         elif action == "generate_caption":
             with st.status(f"Generating caption for row {row_number}…", expanded=True) as _s:
@@ -4978,13 +4982,13 @@ def _row_ready_for_chatgpt(row: dict) -> bool:
     status = _cell_text(row.get("Status")).strip().lower()
     if status.startswith("error") or status == "slides":
         return False
-    media_type = _cell_text(row.get("Media Type")).strip().lower()
-    transcript = _cell_text(row.get("Transcript")).strip()
-    original_caption = _cell_text(row.get("Original Caption")).strip()
-    caption_context = _cell_text(row.get("Caption Context")).strip()
-    if media_type == "article":
-        return bool(original_caption or caption_context)
-    return bool(transcript or original_caption or caption_context)
+    normalized_row = dict(row)
+    normalized_row["Instagram URL"] = _cell_text(row.get("Instagram URL")).strip()
+    normalized_row["Media Type"] = _cell_text(row.get("Media Type")).strip()
+    normalized_row["Transcript"] = _cell_text(row.get("Transcript")).strip()
+    normalized_row["Original Caption"] = _cell_text(row.get("Original Caption")).strip()
+    normalized_row["Caption Context"] = _cell_text(row.get("Caption Context")).strip()
+    return row_ready_for_caption(normalized_row)
 
 
 def _chatgpt_ready_rows(sheet_id: str) -> list[dict]:
@@ -5593,7 +5597,9 @@ if active_section_tab == "Home":
         else:
             _render_workspace_candidate_article_dialog(candidate_article_dialog_row)
 
-    if not editor_rows:
+    if workspace_rows_error:
+        pass
+    elif not editor_rows:
         st.info("No rows yet. Use the Home actions menu to create work, or use Substack > Guides to build a voter-guide prompt.")
     else:
         query_row = str(st.query_params.get("workspace_row", "") or "")

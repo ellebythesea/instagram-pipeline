@@ -98,15 +98,20 @@ def _get_client() -> gspread.Client:
 
 
 def _workbook(sheet_id: str):
-    if sheet_id not in _workbooks:
-        _workbooks[sheet_id] = _with_backoff(_get_client().open_by_key, sheet_id)
-    return _workbooks[sheet_id]
+    cleaned_sheet_id = (sheet_id or "").strip()
+    if not cleaned_sheet_id:
+        raise RuntimeError("GOOGLE_SHEET_ID is not configured.")
+    if cleaned_sheet_id not in _workbooks:
+        _workbooks[cleaned_sheet_id] = _with_backoff(_get_client().open_by_key, cleaned_sheet_id)
+    return _workbooks[cleaned_sheet_id]
 
 
 def _named_worksheet(sheet_id: str, title: str) -> gspread.Worksheet:
-    cache_key = (sheet_id, title)
+    cleaned_sheet_id = (sheet_id or "").strip()
+    cleaned_title = (title or "").strip()
+    cache_key = (cleaned_sheet_id, cleaned_title)
     if cache_key not in _worksheets:
-        _worksheets[cache_key] = _workbook(sheet_id).worksheet(title)
+        _worksheets[cache_key] = _workbook(cleaned_sheet_id).worksheet(cleaned_title)
     return _worksheets[cache_key]
 
 
@@ -131,23 +136,31 @@ def _worksheet(sheet_id: str) -> gspread.Worksheet:
         return _worksheets[cache_key]
 
     workbook = _workbook(sheet_id)
+    configured_title = (GOOGLE_WORKSHEET_NAME or "").strip()
+    expected_headers = {"Instagram URL", "Status"}
 
-    if GOOGLE_WORKSHEET_NAME:
+    if configured_title:
         try:
-            ws = _named_worksheet(sheet_id, GOOGLE_WORKSHEET_NAME)
-            _ensure_headers(sheet_id, ws)
-            _worksheets[cache_key] = ws
-            return ws
+            ws = _named_worksheet(sheet_id, configured_title)
+            headers = {h.strip() for h in ws.row_values(1) if h.strip()}
+            if expected_headers.issubset(headers):
+                _ensure_headers(sheet_id, ws)
+                _worksheets[cache_key] = ws
+                return ws
         except gspread.WorksheetNotFound:
             pass
 
-    expected_headers = {"Instagram URL", "Status"}
     for ws in workbook.worksheets():
         headers = {h.strip() for h in ws.row_values(1) if h.strip()}
         if expected_headers.issubset(headers):
             _ensure_headers(sheet_id, ws)
             _worksheets[cache_key] = ws
             return ws
+
+    if configured_title:
+        raise RuntimeError(
+            f"Worksheet '{configured_title}' was not found or does not contain the expected pipeline headers."
+        )
 
     ws = workbook.sheet1
     _ensure_headers(sheet_id, ws)
@@ -295,22 +308,29 @@ def update_ingest_result(
     transcript: str,
     status: str,
 ) -> None:
-    """Write ingest results to cols C and E-J, and status to N."""
+    """Write ingest results to cols C and E-J, default name to Q, and status to N."""
     ws = _worksheet(sheet_id)
-    _with_backoff(ws.update, f"C{row_number}", [[username]])
+    cleaned_username = (username or "").strip()
+    default_name = cleaned_username if not cleaned_username or cleaned_username.startswith("@") else f"@{cleaned_username}"
     _with_backoff(
-        ws.update,
-        f"E{row_number}:J{row_number}",
-        [[
-            media_type,
-            str(photo_count) if photo_count else "",
-            media_link,
-            thumbnail_link,
-            original_caption,
-            transcript,
-        ]],
+        ws.batch_update,
+        [
+            {"range": f"C{row_number}", "values": [[username]]},
+            {
+                "range": f"E{row_number}:J{row_number}",
+                "values": [[
+                    media_type,
+                    str(photo_count) if photo_count else "",
+                    media_link,
+                    thumbnail_link,
+                    original_caption,
+                    transcript,
+                ]],
+            },
+            {"range": f"N{row_number}", "values": [[status]]},
+            {"range": f"Q{row_number}", "values": [[default_name]]},
+        ],
     )
-    _with_backoff(ws.update, f"N{row_number}", [[status]])
     _invalidate_rows_cache(sheet_id)
 
 
