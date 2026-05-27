@@ -80,33 +80,29 @@ Status values: empty (pending), `ingested`, `done`, `slides`, `error: [reason]`
 
 The app restores headers if they are missing.
 
-### Tab: monitors
-
-Instagram posts being monitored for comments on election guide articles. 6 columns:
-
-| Col | Header |
-|-----|--------|
-| A | label |
-| B | url |
-| C | last |
-| D | status |
-| E | substack url |
-| F | summary |
-
-Status values: `open`, `closed`
-
 ### Tab: substack
 
-Substack articles to generate posts from. 4 columns:
+Substack articles to generate posts from and optionally monitor for comments. 7 columns:
 
 | Col | Header |
 |-----|--------|
 | A | url |
 | B | article |
 | C | status |
-| D | notes |
+| D | instagram url |
+| E | monitoring status |
+| F | last comment retrieved |
+| G | summary |
 
 Status values: `open`, `ingested`, `posts created`
+
+Monitoring status values: `open`, `closed`
+
+The app auto-upgrades older 4-column `substack` tabs by adding the monitoring columns.
+
+### Tab: monitors
+
+Legacy fallback tab for Instagram comment monitoring. Existing rows still work, but new monitoring should be tracked on the `substack` tab instead.
 
 ### Tab: substack_posts
 

@@ -41,45 +41,37 @@ Main Instagram pipeline. 24 columns A–X. **The app restores this header row au
 
 ---
 
-## Tab: monitors
-
-Instagram posts being monitored for comments on election guide articles. 6 columns.
-
-| Col | Header |
-|-----|--------|
-| A | label |
-| B | url |
-| C | last |
-| D | status |
-| E | substack url |
-| F | summary |
-
-**Status values:** `open`, `closed`
-
-- `label` — a short human-readable name for the post being monitored
-- `url` — full Instagram post URL
-- `last` — ISO timestamp of the last time comments were checked (written by the app)
-- `substack url` — the Substack article URL this post is promoting (used in comments tab)
-- `summary` — AI-generated comment pattern summary (written by the app)
-
----
-
 ## Tab: substack
 
-Substack articles to generate Instagram posts from. 4 columns.
+Substack articles to generate Instagram posts from and optionally monitor for comments. 7 columns.
 
 | Col | Header |
 |-----|--------|
 | A | url |
 | B | article |
 | C | status |
-| D | notes |
+| D | instagram url |
+| E | monitoring status |
+| F | last comment retrieved |
+| G | summary |
 
 **Status values:** `open`, `ingested`, `posts created`
 
 - `url` — full Substack article URL
 - `article` — full article body text (pasted in via the app or manually)
 - `status` — workflow state; update this manually when you are done with an article
+- `instagram url` — the Instagram post URL tied to this article for comment monitoring
+- `monitoring status` — whether the comments tab should include this row
+- `last comment retrieved` — ISO timestamp of the last comment check
+- `summary` — AI-generated comment pattern summary
+
+The app auto-upgrades older 4-column `substack` tabs by adding the monitoring columns.
+
+---
+
+## Tab: monitors
+
+Legacy fallback tab for Instagram comment monitoring. Existing rows still work, but new monitoring should be tracked on the `substack` tab instead.
 
 ---
 

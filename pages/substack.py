@@ -77,48 +77,38 @@ with articles_tab:
         substack_url = selected_row["url"]
         row_number = selected_row["row_number"]
 
-        # ── Article body ──────────────────────────────────────────────────
-        article_body = selected_row.get("article", "").strip()
-
+        fetch_key = f"substack_fetched_{substack_url}"
+        article_body = selected_row.get("article", "").strip() or st.session_state.get(fetch_key, "").strip()
         if article_body:
-            st.text_area("Article body", value=article_body, height=120, disabled=True)
+            st.caption("The latest article text will be fetched from the Substack link when you generate ideas.")
         else:
-            fetch_key = f"substack_fetched_{substack_url}"
-            if fetch_key not in st.session_state:
-                try:
-                    with st.spinner("Fetching article body…"):
-                        result = fetch_article_source(substack_url)
-                        st.session_state[fetch_key] = result.get("source_text", "")
-                except Exception as e:
-                    st.session_state[fetch_key] = ""
-                    st.error(f"Could not auto-fetch article: {e}. Paste the body below.")
-
-            prefill = st.session_state.get(fetch_key, "")
-            edited = st.text_area(
-                "Article body",
-                value=prefill,
-                height=140,
-                key=f"substack_article_edit_{substack_url}",
-            )
-            if st.button("Save Article Body"):
-                body_to_save = edited.strip()
-                if body_to_save:
-                    sheet_ops.update_substack_article(GOOGLE_SHEET_ID, row_number, body_to_save)
-                    st.success("Saved.")
-                    st.rerun()
-                else:
-                    st.warning("Article body is empty.")
-            article_body = edited.strip()
+            st.caption("Article text will be fetched from the Substack link when you generate ideas.")
 
         # ── Idea generation ───────────────────────────────────────────────
         topics = st.text_input("Topics or angles to cover (optional)", key="substack_topics")
         ideas_key = f"substack_ideas_{substack_url}"
 
-        if st.button("Generate Post Ideas", type="primary", disabled=not article_body):
-            user_msg = f"Article:\n\n{article_body}"
-            if topics.strip():
-                user_msg += f"\n\nPrioritize these angles: {topics.strip()}"
+        if st.button("Generate Post Ideas", type="primary"):
             try:
+                fetched_article_body = ""
+                try:
+                    with st.spinner("Fetching article text…"):
+                        result = fetch_article_source(substack_url)
+                    fetched_article_body = (result.get("source_text") or "").strip()
+                except Exception:
+                    fetched_article_body = ""
+
+                if fetched_article_body:
+                    article_body = fetched_article_body
+                    st.session_state[fetch_key] = article_body
+                    sheet_ops.update_substack_article(GOOGLE_SHEET_ID, row_number, article_body)
+
+                if not article_body:
+                    raise RuntimeError("Could not fetch article text from this Substack link.")
+
+                user_msg = f"Article:\n\n{article_body}"
+                if topics.strip():
+                    user_msg += f"\n\nPrioritize these angles: {topics.strip()}"
                 resp = _get_openai_client().chat.completions.create(
                     model="gpt-4o",
                     messages=[
@@ -229,10 +219,9 @@ with articles_tab:
 
                 if post_rows:
                     sheet_ops.append_substack_post_rows(GOOGLE_SHEET_ID, post_rows)
-                    sheet_ops.append_link_rows(GOOGLE_SHEET_ID, [substack_url] * len(post_rows))
                     sheet_ops.update_substack_status(GOOGLE_SHEET_ID, row_number, "posts created")
                     st.success(
-                        f"{created} post{'s' if created != 1 else ''} created and added to your main Posts sheet."
+                        f"{created} post{'s' if created != 1 else ''} created in the Substack Posts tab."
                     )
                     st.session_state.pop(ideas_key, None)
                     st.rerun()
@@ -267,6 +256,9 @@ with articles_tab:
                             )
                             st.rerun()
 
+        st.markdown("---")
+        st.link_button("Open Substack Link", substack_url)
+
 
 # ---------------------------------------------------------------------------
 # Comments tab
@@ -287,9 +279,9 @@ with comments_tab:
         if not APIFY_API_TOKEN:
             st.error("APIFY_API_TOKEN is not configured.")
         else:
-            monitor_rows = sheet_ops.get_open_monitor_rows(GOOGLE_SHEET_ID)
+            monitor_rows = sheet_ops.get_open_comment_monitor_rows(GOOGLE_SHEET_ID)
             if not monitor_rows:
-                st.info("No open monitor rows found.")
+                st.info("No open monitoring rows found. Set `monitoring status` to `open` and fill in `instagram url` on the Substack sheet.")
             else:
                 new_summaries = []
                 apify_client = ApifyClient(APIFY_API_TOKEN)
@@ -298,7 +290,8 @@ with comments_tab:
 
                 for row in monitor_rows:
                     url = row.get("url", "").strip()
-                    label = row.get("label", "").strip() or url
+                    label = row.get("label", "").strip() or row.get("substack_url", "").strip() or url
+                    source = row.get("source", "substack")
                     row_number = row["row_number"]
 
                     try:
@@ -337,7 +330,13 @@ with comments_tab:
                             )
                             summary_text = (summary_resp.choices[0].message.content or "").strip()
 
-                        sheet_ops.update_monitor_summary(GOOGLE_SHEET_ID, row_number, summary_text, now_str)
+                        sheet_ops.update_comment_monitor_summary(
+                            GOOGLE_SHEET_ID,
+                            source,
+                            row_number,
+                            summary_text,
+                            now_str,
+                        )
                         new_summaries.append({"label": label, "url": url, "summary": summary_text})
 
                     except Exception as e:

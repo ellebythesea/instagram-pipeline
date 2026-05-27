@@ -68,6 +68,16 @@ _METADATA_SHEET_TITLE = "__workspace_meta__"
 _LAST_SCHEDULED_TIMES_KEY = "last_scheduled_times"
 _SLIDE_CTA_OPTIONS_KEY = "slide_cta_options"
 _FUNDRAISING_SHEET_TITLE = "fundraising"
+_SUBSTACK_SHEET_TITLE = "substack"
+_SUBSTACK_HEADERS = [
+    "url",
+    "article",
+    "status",
+    "instagram url",
+    "monitoring status",
+    "last comment retrieved",
+    "summary",
+]
 
 
 def _get_client() -> gspread.Client:
@@ -595,20 +605,7 @@ def get_open_monitor_rows(sheet_id: str) -> list[dict]:
 def update_monitor_summary(sheet_id: str, row_number: int, summary: str, last_checked: str) -> None:
     """Write summary and last checked date to the monitors tab by header name."""
     ws = _named_worksheet(sheet_id, "monitors")
-    header_row = _with_backoff(ws.row_values, 1)
-    normalized = {h.strip().lower(): i for i, h in enumerate(header_row) if h.strip()}
-    last_index = normalized.get("last")
-    summary_index = normalized.get("summary")
-    if last_index is None:
-        raise RuntimeError("monitors tab is missing a 'last' column.")
-    if summary_index is None:
-        raise RuntimeError("monitors tab is missing a 'summary' column.")
-    last_col = chr(ord("A") + last_index)
-    summary_col = chr(ord("A") + summary_index)
-    _with_backoff(ws.batch_update, [
-        {"range": f"{last_col}{row_number}", "values": [[last_checked]]},
-        {"range": f"{summary_col}{row_number}", "values": [[summary]]},
-    ])
+    _update_row_fields_by_headers(ws, row_number, {"last": last_checked, "summary": summary})
     _invalidate_rows_cache(sheet_id)
 
 
@@ -616,12 +613,53 @@ def update_monitor_summary(sheet_id: str, row_number: int, summary: str, last_ch
 # substack tab helpers
 # ---------------------------------------------------------------------------
 
+
+def _ensure_substack_headers(ws) -> None:
+    cache_key = ("substack_headers", ws.id)
+    if cache_key in _headers_checked:
+        return
+    values = _with_backoff(ws.get_all_values)
+    headers = [header.strip() for header in values[0]] if values else []
+    normalized = [header.lower() for header in headers if header]
+    expected = [header.lower() for header in _SUBSTACK_HEADERS]
+    legacy_required = expected[:4]
+
+    if not headers:
+        _with_backoff(ws.update, "A1:G1", [_SUBSTACK_HEADERS])
+        _headers_checked.add(cache_key)
+        return
+
+    if all(header in normalized for header in legacy_required) and not all(
+        header in normalized for header in expected
+    ):
+        _with_backoff(ws.update, "A1:G1", [_SUBSTACK_HEADERS])
+        _headers_checked.add(cache_key)
+        return
+
+    missing_required = [header for header in legacy_required if header not in normalized]
+    if missing_required:
+        raise RuntimeError(
+            "substack tab is missing required header(s): " + ", ".join(missing_required)
+        )
+    _headers_checked.add(cache_key)
+
+
+def _substack_header_map(ws) -> dict[str, int]:
+    _ensure_substack_headers(ws)
+    headers = [header.strip() for header in _with_backoff(ws.row_values, 1)]
+    return {
+        header: index + 1
+        for index, header in enumerate(headers)
+        if header
+    }
+
 def get_substack_rows(sheet_id: str) -> list[dict]:
     """Return all rows from the substack tab."""
     cached = _get_cached_rows(sheet_id, "substack")
     if cached is not None:
         return cached
-    ws = _named_worksheet(sheet_id, "substack")
+    ws = _named_worksheet(sheet_id, _SUBSTACK_SHEET_TITLE)
+    _ensure_substack_headers(ws)
     values = _with_backoff(ws.get_all_values)
     if not values:
         return []
@@ -629,6 +667,10 @@ def get_substack_rows(sheet_id: str) -> list[dict]:
     rows = []
     for i, row in enumerate(values[1:], start=2):
         record = {headers[j]: (row[j].strip() if j < len(row) else "") for j in range(len(headers))}
+        article_value = (record.get("article") or "").strip().lower()
+        status_value = (record.get("status") or "").strip().lower()
+        if article_value in {"open", "closed", "ingested", "posts created"} and status_value in {"", "open", "closed", "ingested", "posts created"}:
+            record["article"] = ""
         record["row_number"] = i
         rows.append(record)
     _set_cached_rows(sheet_id, "substack", rows)
@@ -641,23 +683,124 @@ def get_open_substack_rows(sheet_id: str) -> list[dict]:
 
 
 def update_substack_status(sheet_id: str, row_number: int, status: str) -> None:
-    """Write status to col C of the substack tab."""
-    ws = _named_worksheet(sheet_id, "substack")
-    _with_backoff(ws.update, f"C{row_number}", [[status]])
+    """Write article workflow status to the substack tab."""
+    ws = _named_worksheet(sheet_id, _SUBSTACK_SHEET_TITLE)
+    _update_row_fields_by_headers(ws, row_number, {"status": status})
     _invalidate_rows_cache(sheet_id)
 
 
 def update_substack_article(sheet_id: str, row_number: int, article: str) -> None:
-    """Write article body to col B of the substack tab."""
-    ws = _named_worksheet(sheet_id, "substack")
-    _with_backoff(ws.update, f"B{row_number}", [[article]])
+    """Write article body to the substack tab."""
+    ws = _named_worksheet(sheet_id, _SUBSTACK_SHEET_TITLE)
+    _update_row_fields_by_headers(ws, row_number, {"article": article})
     _invalidate_rows_cache(sheet_id)
 
 
 def append_substack_row(sheet_id: str, url: str) -> None:
-    """Append a new row to the substack tab with the given URL and status open."""
-    ws = _named_worksheet(sheet_id, "substack")
-    _with_backoff(ws.append_row, [url, "", "open", ""], value_input_option="USER_ENTERED")
+    """Append a new row to the substack tab with default article and monitoring states."""
+    ws = _named_worksheet(sheet_id, _SUBSTACK_SHEET_TITLE)
+    header_map = _substack_header_map(ws)
+    ordered_headers = [header for header, _ in sorted(header_map.items(), key=lambda item: item[1])]
+    row = {
+        "url": (url or "").strip(),
+        "article": "",
+        "status": "open",
+        "instagram url": "",
+        "monitoring status": "closed",
+        "last comment retrieved": "",
+        "summary": "",
+    }
+    _with_backoff(
+        ws.append_row,
+        [row.get(header, "") for header in ordered_headers],
+        value_input_option="USER_ENTERED",
+    )
+    _invalidate_rows_cache(sheet_id)
+
+
+def get_open_comment_monitor_rows(sheet_id: str) -> list[dict]:
+    """Return open comment-monitor rows from the merged substack sheet plus legacy monitors rows."""
+    merged_rows: list[dict] = []
+    seen_urls: set[str] = set()
+
+    for row in get_substack_rows(sheet_id):
+        instagram_url = row.get("instagram url", "").strip()
+        monitoring_status = row.get("monitoring status", "").strip().lower()
+        if monitoring_status != "open" or not instagram_url:
+            continue
+        seen_urls.add(instagram_url)
+        substack_url = row.get("url", "").strip()
+        merged_rows.append(
+            {
+                "source": "substack",
+                "row_number": row["row_number"],
+                "label": substack_url or instagram_url,
+                "url": instagram_url,
+                "substack_url": substack_url,
+                "summary": row.get("summary", "").strip(),
+                "last_checked": row.get("last comment retrieved", "").strip(),
+            }
+        )
+
+    legacy_ws = _optional_worksheet(sheet_id, "monitors")
+    if legacy_ws is None:
+        return merged_rows
+
+    for row in get_open_monitor_rows(sheet_id):
+        url = row.get("url", "").strip()
+        if not url or url in seen_urls:
+            continue
+        merged_rows.append(
+            {
+                "source": "monitors",
+                "row_number": row["row_number"],
+                "label": row.get("label", "").strip() or row.get("substack url", "").strip() or url,
+                "url": url,
+                "substack_url": row.get("substack url", "").strip(),
+                "summary": row.get("summary", "").strip(),
+                "last_checked": row.get("last", "").strip(),
+            }
+        )
+
+    return merged_rows
+
+
+def update_comment_monitor_summary(
+    sheet_id: str,
+    source: str,
+    row_number: int,
+    summary: str,
+    last_checked: str,
+) -> None:
+    """Write monitoring summary and last-checked timestamp to the correct sheet."""
+    normalized_source = (source or "").strip().lower()
+    if normalized_source == "substack":
+        ws = _named_worksheet(sheet_id, _SUBSTACK_SHEET_TITLE)
+        _update_row_fields_by_headers(
+            ws,
+            row_number,
+            {"last comment retrieved": last_checked, "summary": summary},
+        )
+        _invalidate_rows_cache(sheet_id)
+        return
+    update_monitor_summary(sheet_id, row_number, summary, last_checked)
+
+
+def update_comment_monitor_last_checked(
+    sheet_id: str,
+    source: str,
+    row_number: int,
+    last_checked: str,
+) -> None:
+    """Write only the last-checked timestamp to the correct monitoring row."""
+    normalized_source = (source or "").strip().lower()
+    if normalized_source == "substack":
+        ws = _named_worksheet(sheet_id, _SUBSTACK_SHEET_TITLE)
+        _update_row_fields_by_headers(ws, row_number, {"last comment retrieved": last_checked})
+        _invalidate_rows_cache(sheet_id)
+        return
+    ws = _named_worksheet(sheet_id, "monitors")
+    _update_row_fields_by_headers(ws, row_number, {"last": last_checked})
     _invalidate_rows_cache(sheet_id)
 
 
@@ -702,6 +845,35 @@ def _column_letter(index: int) -> str:
         index, remainder = divmod(index - 1, 26)
         result = chr(65 + remainder) + result
     return result
+
+
+def _update_row_fields_by_headers(
+    ws: gspread.Worksheet,
+    row_number: int,
+    field_values: dict[str, str],
+) -> None:
+    headers = [header.strip() for header in _with_backoff(ws.row_values, 1)]
+    normalized = {
+        header.lower(): index + 1
+        for index, header in enumerate(headers)
+        if header
+    }
+    missing_headers = [
+        field for field in field_values
+        if field.strip().lower() not in normalized
+    ]
+    if missing_headers:
+        raise RuntimeError(
+            f"{ws.title} tab is missing required header(s): {', '.join(missing_headers)}."
+        )
+    requests = [
+        {
+            "range": f"{_column_letter(normalized[field.strip().lower()])}{row_number}",
+            "values": [[value]],
+        }
+        for field, value in field_values.items()
+    ]
+    _with_backoff(ws.batch_update, requests)
 
 
 def _substack_post_header_map(ws) -> dict[str, int]:

@@ -328,49 +328,20 @@ def _parse_candidate_comment_timestamp(value) -> datetime | None:
     return parsed.to_pydatetime()
 
 
-def _candidate_comments_worksheet():
-    workbook = sheet_ops._workbook(GOOGLE_SHEET_ID)
-    try:
-        return workbook.worksheet("monitors")
-    except Exception:
-        pass
-    raise RuntimeError("monitors worksheet not found in the configured Google Sheet.")
-
-
 def _load_open_candidate_comment_rows() -> list[dict]:
-    ws = _candidate_comments_worksheet()
-    values = sheet_ops._with_backoff(ws.get_all_values)
-    if not values:
-        return []
-
-    header_row = [cell.strip() for cell in values[0]]
-    normalized_headers = {header.strip().lower(): index for index, header in enumerate(header_row) if header.strip()}
-    label_index = normalized_headers.get("label")
-    url_index = normalized_headers.get("url")
-    last_index = normalized_headers.get("last")
-    status_index = normalized_headers.get("status")
-    substack_index = normalized_headers.get("substack url")
-    summary_index = normalized_headers.get("summary")
-
-    if url_index is None or status_index is None:
-        raise RuntimeError("monitors worksheet must include url and status columns.")
-
     rows: list[dict] = []
-    for row_number, row in enumerate(values[1:], start=2):
-        url = row[url_index].strip() if len(row) > url_index else ""
-        last_raw = row[last_index].strip() if last_index is not None and len(row) > last_index else ""
-        status = row[status_index].strip() if len(row) > status_index else ""
-        if not url or status.lower() != "open":
-            continue
+    for row in sheet_ops.get_open_comment_monitor_rows(GOOGLE_SHEET_ID):
+        last_raw = (row.get("last_checked") or "").strip()
         rows.append(
             {
-                "row_number": row_number,
-                "label": row[label_index].strip() if label_index is not None and len(row) > label_index else "",
-                "url": url,
+                "row_number": row["row_number"],
+                "source": row.get("source", "substack"),
+                "label": (row.get("label") or "").strip(),
+                "url": (row.get("url") or "").strip(),
                 "last_checked_raw": last_raw,
                 "last_checked_at": _parse_candidate_comment_timestamp(last_raw),
-                "substack": row[substack_index].strip() if substack_index is not None and len(row) > substack_index else "",
-                "summary": row[summary_index].strip() if summary_index is not None and len(row) > summary_index else "",
+                "substack": (row.get("substack_url") or "").strip(),
+                "summary": (row.get("summary") or "").strip(),
             }
         )
     return rows
@@ -627,18 +598,13 @@ def _summarize_candidate_comments(comments: list[dict]) -> dict[str, list[dict]]
     return grouped_comments or _fallback_issue_comment_examples(candidate_comments)
 
 
-def _update_candidate_last_checked(row_number: int, checked_at: datetime) -> None:
-    ws = _candidate_comments_worksheet()
-    values = sheet_ops._with_backoff(ws.get_all_values)
-    if not values:
-        raise RuntimeError("monitors worksheet is empty.")
-    header_row = [cell.strip() for cell in values[0]]
-    normalized_headers = {header.strip().lower(): index for index, header in enumerate(header_row) if header.strip()}
-    last_index = normalized_headers.get("last")
-    if last_index is None:
-        raise RuntimeError("monitors worksheet must include a last column.")
-    column_letter = chr(ord("A") + last_index)
-    sheet_ops._with_backoff(ws.update, f"{column_letter}{row_number}", [[checked_at.isoformat(timespec="seconds")]])
+def _update_candidate_last_checked(source: str, row_number: int, checked_at: datetime) -> None:
+    sheet_ops.update_comment_monitor_last_checked(
+        GOOGLE_SHEET_ID,
+        source,
+        row_number,
+        checked_at.isoformat(timespec="seconds"),
+    )
 
 
 def _extract_json_object(raw_text: str) -> dict:
@@ -5952,41 +5918,12 @@ if active_section_tab == "Substack":
             _sb_url = _sb_row["url"]
             _sb_row_number = _sb_row["row_number"]
 
-            _sb_article_body = _sb_row.get("article", "").strip()
-
+            _sb_fetch_key = f"ws_sb_fetched_{_sb_url}"
+            _sb_article_body = _sb_row.get("article", "").strip() or st.session_state.get(_sb_fetch_key, "").strip()
             if _sb_article_body:
-                st.text_area("Article body", value=_sb_article_body, height=120, disabled=True, key="ws_sb_body_ro")
+                st.caption("The latest article text will be fetched from the Substack link when you generate ideas.")
             else:
-                _sb_fetch_key = f"ws_sb_fetched_{_sb_url}"
-                _sb_prefill = st.session_state.get(_sb_fetch_key, "")
-                fetch_col, save_col = st.columns(2)
-                with fetch_col:
-                    if st.button("Fetch article body", key=f"ws_sb_fetch_body_{_sb_row_number}", width="stretch"):
-                        try:
-                            with st.spinner("Fetching article body…"):
-                                _sb_fetched = _fetch_article_source_data(_sb_url)
-                                st.session_state[_sb_fetch_key] = _sb_fetched.get("source_text", "")
-                        except Exception as _sb_fetch_err:
-                            st.session_state[_sb_fetch_key] = ""
-                            st.error(f"Could not fetch article: {_sb_fetch_err}")
-                        _rerun_workspace("Substack")
-
-                _sb_edited = st.text_area(
-                    "Article body",
-                    value=_sb_prefill,
-                    height=140,
-                    key=f"ws_sb_article_edit_{_sb_url}",
-                    placeholder="Paste the article body here, or fetch it first.",
-                )
-                with save_col:
-                    if st.button("Save Article Body", key="ws_sb_save_body", width="stretch"):
-                        if _sb_edited.strip():
-                            sheet_ops.update_substack_article(GOOGLE_SHEET_ID, _sb_row_number, _sb_edited.strip())
-                            st.success("Saved.")
-                            _rerun_workspace("Substack")
-                        else:
-                            st.warning("Article body is empty.")
-                _sb_article_body = _sb_edited.strip()
+                st.caption("Article text will be fetched from the Substack link when you generate ideas.")
 
             _sb_post_type_label = st.radio(
                 "Post type",
@@ -5998,11 +5935,26 @@ if active_section_tab == "Substack":
             _sb_topics = st.text_input("Focus or topics to prioritize (optional)", key="ws_sb_topics")
             _sb_ideas_key = f"ws_sb_ideas_{_sb_url}"
 
-            if st.button("Generate Post Ideas", type="primary", key="ws_sb_gen_ideas", disabled=not _sb_article_body):
-                _sb_user_msg = f"Requested post type: {_substack_post_type_label(_sb_post_type)}\n\nArticle:\n\n{_sb_article_body}"
-                if _sb_topics.strip():
-                    _sb_user_msg += f"\n\nPrioritize this request: {_sb_topics.strip()}"
+            if st.button("Generate Post Ideas", type="primary", key="ws_sb_gen_ideas"):
                 try:
+                    _sb_fetched_article_body = ""
+                    try:
+                        with st.spinner("Fetching article text…"):
+                            _sb_fetched = _fetch_article_source_data(_sb_url)
+                        _sb_fetched_article_body = (_sb_fetched.get("source_text") or "").strip()
+                    except Exception:
+                        _sb_fetched_article_body = ""
+
+                    if _sb_fetched_article_body:
+                        _sb_article_body = _sb_fetched_article_body
+                        st.session_state[_sb_fetch_key] = _sb_article_body
+                        sheet_ops.update_substack_article(GOOGLE_SHEET_ID, _sb_row_number, _sb_article_body)
+                    if not _sb_article_body:
+                        raise RuntimeError("Could not fetch article text from this Substack link.")
+
+                    _sb_user_msg = f"Requested post type: {_substack_post_type_label(_sb_post_type)}\n\nArticle:\n\n{_sb_article_body}"
+                    if _sb_topics.strip():
+                        _sb_user_msg += f"\n\nPrioritize this request: {_sb_topics.strip()}"
                     _sb_resp = _get_client().chat.completions.create(
                         model="gpt-4o",
                         messages=[
@@ -6176,7 +6128,7 @@ if active_section_tab == "Substack":
                                 ),
                             )
                             if st.button(
-                                "Create row from slide results",
+                                "Save slide results",
                                 type="primary",
                                 key=f"ws_sb_create_row_{_sb_post_row_number}",
                             ):
@@ -6187,33 +6139,6 @@ if active_section_tab == "Substack":
                                     )
                                     if not all(_sb_slides[f"text{i}"] for i in range(1, 7)):
                                         raise ValueError("Slide result must include text1 through text6.")
-                                    _sb_caption_context = _format_substack_slide_prompt(
-                                        _sb_post.get("slide_prompt", ""),
-                                        _sb_post.get("slide_input", ""),
-                                        _sb_post_row_number,
-                                    )
-                                    sheet_ops.append_generated_post_rows(
-                                        GOOGLE_SHEET_ID,
-                                        [
-                                            {
-                                                "url": _sb_url,
-                                                "source_username": "voteinorout",
-                                                "caption": _sb_post.get("caption", ""),
-                                                "media_type": "article",
-                                                "original_caption": _sb_article_body,
-                                                "status": "done",
-                                                "caption_context": _sb_caption_context,
-                                                "name": _sb_slides["name"],
-                                                "text1": _sb_slides["text1"],
-                                                "text2": _sb_slides["text2"],
-                                                "text3": _sb_slides["text3"],
-                                                "text4": _sb_slides["text4"],
-                                                "text5": _sb_slides["text5"],
-                                                "text6": _sb_slides["text6"],
-                                                "slide_cta": "substack",
-                                            }
-                                        ],
-                                    )
                                     sheet_ops.update_substack_post_slides_and_status(
                                         GOOGLE_SHEET_ID,
                                         _sb_post_row_number,
@@ -6226,9 +6151,9 @@ if active_section_tab == "Substack":
                                         "row created",
                                     )
                                 except Exception as _sb_apply_err:
-                                    st.error(f"Could not create row: {describe_error(_sb_apply_err)}")
+                                    st.error(f"Could not save slide results: {describe_error(_sb_apply_err)}")
                                 else:
-                                    st.success("Row added to the main Posts sheet.")
+                                    st.success("Slide results saved to the Substack Posts tab.")
                                     _rerun_workspace("Substack")
                         if _sb_post.get("slide_prompt"):
                             st.markdown("**Slide prompt**")
@@ -6247,6 +6172,9 @@ if active_section_tab == "Substack":
                                 )
                                 _rerun_workspace("Substack")
 
+            st.markdown("---")
+            st.link_button("Open Substack Link", _sb_url, width="stretch")
+
     # ── Monitors ──────────────────────────────────────────────────────────
     if substack_section == "Monitors":
         st.caption("Watch Instagram comments on your election guide posts.")
@@ -6262,7 +6190,7 @@ if active_section_tab == "Substack":
         if open_comment_rows_error:
             st.error(open_comment_rows_error)
         elif not open_comment_rows:
-            st.caption('No rows with status "open" were found in the monitors sheet.')
+            st.caption('No rows with monitoring status "open" and an `instagram url` were found in the Substack sheet.')
         else:
             selector_default_rows = []
             for row in open_comment_rows:
@@ -6313,7 +6241,7 @@ if active_section_tab == "Substack":
                 if open_comment_rows_error:
                     st.error(open_comment_rows_error)
                 elif not open_comment_rows:
-                    st.info('No rows with status "open" were found in the monitors sheet.')
+                    st.info('No rows with monitoring status "open" and an `instagram url` were found in the Substack sheet.')
                 elif not selected_rows:
                     st.warning("Select at least one open row before checking for new comments.")
                 else:
@@ -6327,10 +6255,14 @@ if active_section_tab == "Substack":
                                     candidate_row.get("last_checked_at"),
                                 )
                                 summary = _summarize_candidate_comments(comments)
-                                _update_candidate_last_checked(candidate_row["row_number"], checked_at)
+                                _update_candidate_last_checked(
+                                    candidate_row.get("source", "substack"),
+                                    candidate_row["row_number"],
+                                    checked_at,
+                                )
                                 new_entries.append(
                                     {
-                                        "label": candidate_row.get("summary") or url,
+                                        "label": candidate_row.get("label") or candidate_row.get("substack") or url,
                                         "url": url,
                                         "checked_at": checked_label,
                                         "summary_groups": summary,
@@ -6340,7 +6272,7 @@ if active_section_tab == "Substack":
                             except Exception as e:
                                 new_entries.append(
                                     {
-                                        "label": candidate_row.get("summary") or url,
+                                        "label": candidate_row.get("label") or candidate_row.get("substack") or url,
                                         "url": url,
                                         "checked_at": checked_label,
                                         "summary_groups": {},
