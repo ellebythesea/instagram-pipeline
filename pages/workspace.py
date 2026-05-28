@@ -2959,27 +2959,20 @@ def _render_workspace_post_slides_dialog(row: dict) -> None:
         placeholder='[{"row_number":2,"name":"...","text1":"...","text2":"...","text3":"..."}]',
     )
     if st.button(
-        "Generate slides now",
-        key=f"workspace_post_slides_generate_{row_num}",
+        "Apply to this post",
+        key=f"workspace_post_slides_apply_{row_num}",
         type="primary",
         width="stretch",
+        disabled=not pasted_results.strip(),
     ):
         try:
-            _write_carousel_fields(row_num, row)
-        except Exception as e:
-            st.error(f"Could not generate slide result: {describe_error(e)}")
-        else:
-            st.session_state["workspace_success"] = f"Row {row_num}: slides generated."
-            _close_workspace_post_slides_dialog(clear_inputs=True)
-            _rerun_workspace("Edit")
-    if st.button("Apply to this post", key=f"workspace_post_slides_apply_{row_num}", type="primary", width="stretch"):
-        try:
             updated_count, issues = _apply_slide_result_to_specific_row(row_num, pasted_results)
+            success_message = f"Row {row_num}: slide result applied."
         except Exception as e:
             st.error(f"Could not apply slide result: {describe_error(e)}")
         else:
             if updated_count:
-                message = f"Row {row_num}: slide result applied."
+                message = success_message
                 if issues:
                     message += f" {' | '.join(issues[:3])}"
                 st.session_state["workspace_success"] = message
@@ -2988,6 +2981,7 @@ def _render_workspace_post_slides_dialog(row: dict) -> None:
                     f"Row {row_num}: no valid slide result was found."
                     + (f" {' | '.join(issues[:3])}" if issues else "")
                 )
+            st.session_state.pop("workspace_post_slides_results", None)
             _close_workspace_post_slides_dialog(clear_inputs=True)
             _rerun_workspace("Edit")
 
