@@ -2958,10 +2958,23 @@ def _render_workspace_post_slides_dialog(row: dict) -> None:
         height=100,
         placeholder='[{"row_number":2,"name":"...","text1":"...","text2":"...","text3":"..."}]',
     )
+    if st.button(
+        "Generate slides now",
+        key=f"workspace_post_slides_generate_{row_num}",
+        type="primary",
+        width="stretch",
+    ):
+        try:
+            _write_carousel_fields(row_num, row)
+        except Exception as e:
+            st.error(f"Could not generate slide result: {describe_error(e)}")
+        else:
+            st.session_state["workspace_success"] = f"Row {row_num}: slides generated."
+            _close_workspace_post_slides_dialog(clear_inputs=True)
+            _rerun_workspace("Edit")
     if st.button("Apply to this post", key=f"workspace_post_slides_apply_{row_num}", type="primary", width="stretch"):
         try:
-            single_row_json = _single_row_slide_result_json(pasted_results, row_num)
-            updated_count, issues = _apply_chatgpt_handoff_results(GOOGLE_SHEET_ID, single_row_json)
+            updated_count, issues = _apply_slide_result_to_specific_row(row_num, pasted_results)
         except Exception as e:
             st.error(f"Could not apply slide result: {describe_error(e)}")
         else:
@@ -5283,6 +5296,38 @@ def _single_row_slide_result_json(raw_text: str, row_number: int) -> str:
     selected = dict(selected)
     selected["row_number"] = row_number
     return json.dumps([selected])
+
+
+def _apply_slide_result_to_specific_row(row_number: int, raw_text: str) -> tuple[int, list[str]]:
+    payload = _extract_json_payload(raw_text)
+    items = payload if isinstance(payload, list) else [payload]
+    dict_items = [item for item in items if isinstance(item, dict)]
+    if not dict_items:
+        raise ValueError("Paste one JSON object or an array containing one slide result.")
+
+    selected = None
+    for item in dict_items:
+        try:
+            if int(item.get("row_number")) == int(row_number):
+                selected = item
+                break
+        except Exception:
+            continue
+    if selected is None:
+        selected = dict_items[0]
+
+    raw_name = _cell_text(selected.get("name")).strip()
+    carousel = {
+        "name": ("@" + raw_name if raw_name and not raw_name.startswith("@") and " " not in raw_name else raw_name),
+        "text1": _single_paragraph_slide_text(selected.get("text1")),
+        "text2": _single_paragraph_slide_text(selected.get("text2")),
+        "text3": _single_paragraph_slide_text(selected.get("text3")),
+    }
+    if not (carousel["name"] or carousel["text1"] or carousel["text2"] or carousel["text3"]):
+        return 0, [f"Row {row_number}: no name, text1, text2, or text3 values were provided."]
+
+    _write_specific_carousel_fields(row_number, carousel)
+    return 1, []
 
 
 def _single_paragraph_slide_text(value: str) -> str:
