@@ -412,6 +412,8 @@ def _eligible_rows(rows: list[dict]) -> list[dict]:
         media_link = (row.get("Media Drive Link") or "").strip()
         generated_caption = (row.get("Generated Caption") or "").strip()
         status = (row.get("Status") or "").strip().lower()
+        if status == "skipped":
+            continue
         if status.startswith("error"):
             continue
         if media_type == "reel" and not transcript and media_link:

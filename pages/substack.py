@@ -72,7 +72,11 @@ with articles_tab:
         selected_row = st.selectbox(
             "Select article",
             options,
-            format_func=lambda row: f"Row {row.get('row_number', '')}: {row.get('url', '')[:80]}",
+            format_func=lambda row: (
+                (row.get("name") or "").strip()
+                or (row.get("url") or "").strip()[:80]
+                or f"Row {row.get('row_number', '')}"
+            ),
         )
         substack_url = selected_row["url"]
         row_number = selected_row["row_number"]

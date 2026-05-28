@@ -4987,6 +4987,17 @@ def _row_ready_for_chatgpt(row: dict) -> bool:
     status = _cell_text(row.get("Status")).strip().lower()
     if status.startswith("error") or status == "slides":
         return False
+    slide_fields = (
+        "name",
+        "text1",
+        "text2",
+        "text3",
+        "text4",
+        "text5",
+        "text6",
+    )
+    if any(_cell_text(row.get(field)).strip() for field in slide_fields):
+        return False
     normalized_row = dict(row)
     normalized_row["Instagram URL"] = _cell_text(row.get("Instagram URL")).strip()
     normalized_row["Media Type"] = _cell_text(row.get("Media Type")).strip()
@@ -5952,7 +5963,11 @@ if active_section_tab == "Substack":
                 "Select article",
                 _sb_options,
                 key="ws_sb_select_row",
-                format_func=lambda row: f"Row {row.get('row_number', '')}: {row.get('url', '')[:80]}",
+                format_func=lambda row: (
+                    (row.get("name") or "").strip()
+                    or (row.get("url") or "").strip()[:80]
+                    or f"Row {row.get('row_number', '')}"
+                ),
             )
             _sb_url = _sb_row["url"]
             _sb_row_number = _sb_row["row_number"]
