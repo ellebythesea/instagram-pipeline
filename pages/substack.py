@@ -165,6 +165,8 @@ with articles_tab:
                                         "This post promotes a Substack article. Write a caption that:\n"
                                         "- Opens with the specific angle provided\n"
                                         "- Teases what the full article covers without giving everything away\n"
+                                        "- Never uses first-person narration outside of a short direct quote from the source\n"
+                                        "- Describes people and events in third person rather than as if the account is speaking for them\n"
                                         f'- Ends with exactly this line: "Comment LINK (on instagram) and we will DM you the link to {substack_url}"\n'
                                         "- Appends the footer below the caption on a new line\n"
                                         "Keep it under 1300 characters. No hashtags unless they appear in the source material."

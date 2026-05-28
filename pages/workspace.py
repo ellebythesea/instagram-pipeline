@@ -6027,6 +6027,9 @@ if active_section_tab == "Substack":
                                         "content": (
                                             "You are a sharp political analyst. Rewrite the article concept into a short, clear social post "
                                             "using exactly two simple paragraphs before the required CTA/footer.\n\n"
+                                            "Never write the caption in first person outside of a short direct quote from the article. "
+                                            "Do not use I, me, my, we, us, our, or ours in the narration of the caption. "
+                                            "Describe people and events in third person.\n\n"
                                             "The first paragraph must be 250 characters or fewer and serve as the most important summary. "
                                             "It must include all hashtags. Use 3 to 5 relevant hashtags total. Prioritize the main people the post is about, "
                                             "then include one single word subject hashtag that helps with trending news discovery, followed by any remaining relevant tags. "

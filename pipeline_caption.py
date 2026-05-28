@@ -17,6 +17,9 @@ SLIDE_BODY_FONT_MAX_REM = 2.7
 SYS_PROMPT = (
     "You are a sharp political analyst. Rewrite the source material into a short, clear social post "
     "under 1300 characters using exactly two simple paragraphs.\n\n"
+    "Never write the caption in first person. Do not use I, me, my, mine, we, us, our, or ours "
+    "unless they appear inside a short direct quote from the source. The narration of the caption "
+    "must stay in third person and describe the person or event from the outside.\n\n"
     "The first paragraph must be 250 characters or fewer and serve as the most important summary. "
     "You may naturally weave in a few important hashtags when they improve the post, especially "
     "for major names or core subjects. Keep those woven hashtags focused and preferably in the "
