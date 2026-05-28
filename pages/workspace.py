@@ -2559,6 +2559,8 @@ def _current_row_caption_inputs(row: dict) -> dict:
         _workspace_key(row, "context"),
         row.get("Caption Context", ""),
     ).strip()
+    if not current_context and _is_article_url((row.get("Instagram URL") or "").strip()):
+        current_context = _cell_text(row.get("Original Caption")).strip()
     current_speaker = st.session_state.get(
         _workspace_speaker_key(row),
         row.get("Speaker Name", ""),
@@ -4121,6 +4123,8 @@ def _process_pending_rows_from_sheet() -> int:
                 sheet_top_comment = _cell_text(row.get("Top Comment", "")).strip()
                 row_url = _cell_text(row.get("Instagram URL")).strip()
                 if result["status"] == "ingested":
+                    if result["media_type"] == "article" and not existing_inputs["Caption Context"].strip():
+                        existing_inputs["Caption Context"] = result["original_caption"]
                     if result["media_type"] == "article":
                         default_top_comment = _build_read_cta(row_url) if not sheet_top_comment else sheet_top_comment
                     elif _is_instagram_url(row_url):
@@ -5440,8 +5444,8 @@ def _run_home_mode(mode: str, urls: list[str], org_hashtag: str) -> tuple[str, l
                 ),
                 "Media Type": "" if source.get("is_instagram", False) else "article",
                 "Original Caption": source.get("source_text", "").strip(),
-                "Transcript": "",
-                "Caption Context": "",
+                "Transcript": "" if source.get("is_instagram", False) else source.get("source_text", "").strip(),
+                "Caption Context": "" if source.get("is_instagram", False) else source.get("source_text", "").strip(),
                 "Speaker Name": "",
                 "Required Hashtags": tag_value,
                 "Top Comment": (

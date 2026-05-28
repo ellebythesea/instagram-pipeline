@@ -104,6 +104,8 @@ def _row_caption_inputs(row: dict) -> dict:
     url = (row.get("Instagram URL") or "").strip()
     username = (row.get("Source Username") or "").strip()
     context = (row.get("Caption Context") or "").strip()
+    if not context and _is_article_url(url):
+        context = (row.get("Original Caption") or "").strip()
     speaker = (row.get("Speaker Name") or "").strip()
     hashtags = (row.get("Required Hashtags") or "").strip()
     top = (row.get("Top Comment") or "").strip()
@@ -257,7 +259,7 @@ def _ingest_row(row: dict) -> dict:
                 "media_link": "",
                 "thumbnail_link": article.get("image_url", ""),
                 "original_caption": article_source_text,
-                "transcript": "",
+                "transcript": article_source_text,
                 "status": "ingested",
             }
         if _is_reel_url(url):
