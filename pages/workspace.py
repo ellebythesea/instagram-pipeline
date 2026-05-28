@@ -4158,6 +4158,8 @@ def _process_pending_rows_from_sheet() -> int:
                             "Footer": "",
                         }
                     )
+                    if result["media_type"] == "photo":
+                        ingested_row = _ensure_photo_post_source_text(ingested_row)
                     if row_ready_for_caption(ingested_row):
                         generated_caption = generate_row_caption(ingested_row)
                         if update_caption_and_metadata is not None:
@@ -4490,6 +4492,26 @@ def _extract_image_text(row: dict) -> str:
     return text
 
 
+def _ensure_photo_post_source_text(row: dict) -> dict:
+    working_row = dict(row)
+    if not _row_is_photo_post(working_row):
+        return working_row
+    if _cell_text(working_row.get("Transcript")).strip() or _cell_text(working_row.get("Caption Context")).strip():
+        return working_row
+
+    row_num = working_row["row_number"]
+    if not _cell_text(working_row.get("Media Drive Link")).strip():
+        _download_media_to_drive(working_row)
+        working_row = _reload_row_from_sheet(row_num)
+
+    extracted_text = _extract_image_text(working_row)
+    update_caption_context(GOOGLE_SHEET_ID, row_num, extracted_text)
+    update_transcript(GOOGLE_SHEET_ID, row_num, extracted_text)
+    working_row["Caption Context"] = extracted_text
+    working_row["Transcript"] = extracted_text
+    return working_row
+
+
 def _redo_caption_from_image_text(row: dict) -> None:
     extracted_text = _extract_image_text(row)
     row_num = row["row_number"]
@@ -4511,8 +4533,9 @@ def _row_is_photo_post(row: dict) -> bool:
 
 
 def _generate_caption_for_row(row: dict) -> None:
-    row_num = row["row_number"]
-    current_inputs = _current_row_caption_inputs(row)
+    working_row = _ensure_photo_post_source_text(row)
+    row_num = working_row["row_number"]
+    current_inputs = _current_row_caption_inputs(working_row)
     update_metadata(
         GOOGLE_SHEET_ID,
         row_num,
@@ -4522,7 +4545,7 @@ def _generate_caption_for_row(row: dict) -> None:
         current_inputs["Top Comment"],
         "",
     )
-    updated_row = dict(row)
+    updated_row = dict(working_row)
     updated_row.update(current_inputs)
     caption = generate_row_caption(updated_row)
     next_status = "skipped" if (row.get("Status", "") or "").strip().lower() == "skipped" else "done"
@@ -4634,11 +4657,8 @@ def _process_post_online(row: dict) -> None:
 
 
 def _process_photo_post_online(row: dict) -> None:
-    row_num = row["row_number"]
-    working_row = dict(row)
-    if not _cell_text(working_row.get("Media Drive Link")).strip():
-        _download_media_to_drive(working_row)
-        working_row = _reload_row_from_sheet(row_num)
+    working_row = _ensure_photo_post_source_text(row)
+    row_num = working_row["row_number"]
 
     current_inputs = _current_row_caption_inputs(working_row)
     update_metadata(
@@ -4651,13 +4671,6 @@ def _process_photo_post_online(row: dict) -> None:
         "",
     )
     working_row.update(current_inputs)
-
-    if not _cell_text(working_row.get("Transcript")).strip() and not _cell_text(working_row.get("Caption Context")).strip():
-        extracted_text = _extract_image_text(working_row)
-        update_caption_context(GOOGLE_SHEET_ID, row_num, extracted_text)
-        update_transcript(GOOGLE_SHEET_ID, row_num, extracted_text)
-        working_row["Caption Context"] = extracted_text
-        working_row["Transcript"] = extracted_text
 
     existing_caption = _cell_text(working_row.get("Generated Caption")).strip()
     caption = existing_caption or generate_row_caption(working_row)
@@ -5018,13 +5031,14 @@ def _ready_rows_from_loaded_rows(rows: list[dict]) -> list[dict]:
 def _build_chatgpt_handoff_prompt(rows: list[dict]) -> str:
     blocks: list[str] = []
     for row in rows:
-        row_num = row["row_number"]
-        username = _cell_text(row.get("Source Username")).strip() or "unknown"
-        media_type = _cell_text(row.get("Media Type")).strip().lower() or "post"
-        transcript = _cell_text(row.get("Transcript")).strip()
-        original_caption = _cell_text(row.get("Original Caption")).strip()
-        caption_context = _cell_text(row.get("Caption Context")).strip()
-        speaker_name = _cell_text(row.get("Speaker Name")).strip()
+        working_row = _ensure_photo_post_source_text(row)
+        row_num = working_row["row_number"]
+        username = _cell_text(working_row.get("Source Username")).strip() or "unknown"
+        media_type = _cell_text(working_row.get("Media Type")).strip().lower() or "post"
+        transcript = _cell_text(working_row.get("Transcript")).strip()
+        original_caption = _cell_text(working_row.get("Original Caption")).strip()
+        caption_context = _cell_text(working_row.get("Caption Context")).strip()
+        speaker_name = _cell_text(working_row.get("Speaker Name")).strip()
         blocks.append(
             "\n".join(
                 [
