@@ -20,7 +20,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import openai
 import streamlit as st
-import streamlit.components.v1 as components
 from config import (
     APIFY_API_TOKEN,
     APIFY_POST_ACTOR_ID,
@@ -1563,7 +1562,7 @@ def _scroll_to_element(element_id: str, block: str = "center") -> None:
     window.setTimeout(() => scrollToTarget(0), 100);
     </script>
     """
-    components.html(script, height=0, width=0)
+    st.html(script)
 
 
 def _scroll_to_editor_row(row_number: str) -> None:
@@ -2936,6 +2935,7 @@ def _render_workspace_slides_dialog(workspace_rows: list[dict], workspace_rows_e
                     "No valid slide results were found to apply."
                     + (f" {' | '.join(issues[:3])}" if issues else "")
                 )
+            st.session_state.pop("workspace_slides_results", None)
             _rerun_workspace("Home")
 
     if batched_ready_rows:
