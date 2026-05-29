@@ -5005,7 +5005,6 @@ def _row_ready_for_chatgpt(row: dict) -> bool:
     if status.startswith("error") or status == "slides":
         return False
     slide_fields = (
-        "name",
         "text1",
         "text2",
         "text3",
