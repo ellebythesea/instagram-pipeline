@@ -1815,7 +1815,25 @@ def _upload_article_thumbnail(image_url: str, row_number: int | str | None, user
         filename_prefix = build_filename_prefix(row_number, username)
         filename = f"{filename_prefix}article_{row_number or 'thumb'}_thumb{ext}"
         local_path = os.path.join(tmp_dir, filename)
-        _download_binary_file(image_url, local_path)
+        response = requests.get(
+            image_url,
+            allow_redirects=True,
+            timeout=60,
+            stream=True,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0 Safari/537.36"
+                ),
+                "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+                "Referer": "https://www.google.com/",
+            },
+        )
+        response.raise_for_status()
+        with open(local_path, "wb") as handle:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    handle.write(chunk)
         return upload_to_drive(local_path, filename, screenshots_folder_id)
     except Exception:
         return image_url
