@@ -18,6 +18,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from urllib.parse import urlparse
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -25,7 +26,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from article_source import fetch_article_source
 from caption import transcribe_video
-from config import GOOGLE_DRIVE_FOLDER_ID, GOOGLE_SHEET_ID
+from config import GOOGLE_DRIVE_FOLDER_ID, GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER, GOOGLE_SHEET_ID
 from drive import (
     _get_service,
     download_drive_file,
@@ -33,7 +34,7 @@ from drive import (
     get_or_create_subfolder,
     upload_to_drive,
 )
-from ingest_helpers import build_filename_prefix, upload_media_bundle
+from ingest_helpers import build_filename_prefix, download_file, upload_media_bundle
 import pipeline_caption as pipeline_caption_ops
 from post_scraper import process_url as process_post_url
 from reel_scraper import process_url as process_reel_url
@@ -78,6 +79,32 @@ def _is_article_url(url: str) -> bool:
     from urllib.parse import urlparse
     parsed = urlparse((url or "").strip())
     return parsed.scheme == "https" and bool(parsed.netloc) and not _is_instagram_url(url)
+
+
+def _article_thumbnail_link(image_url: str, row_number: int | str | None, username: str) -> str:
+    image_url = (image_url or "").strip()
+    if not image_url:
+        return ""
+
+    tmp_dir = tempfile.mkdtemp(prefix="article_thumb_")
+    try:
+        screenshots_folder_id = get_or_create_subfolder(
+            GOOGLE_DRIVE_FOLDER_ID,
+            GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER,
+        )
+        parsed = urlparse(image_url)
+        ext = os.path.splitext(parsed.path or "")[1].lower() or ".jpg"
+        if ext not in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
+            ext = ".jpg"
+        filename_prefix = build_filename_prefix(row_number, username)
+        filename = f"{filename_prefix}article_{row_number or 'thumb'}_thumb{ext}"
+        local_path = os.path.join(tmp_dir, filename)
+        download_file(image_url, local_path)
+        return upload_to_drive(local_path, filename, screenshots_folder_id)
+    except Exception:
+        return image_url
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 def _clean_public_url(link: str) -> str:
@@ -252,12 +279,13 @@ def _ingest_row(row: dict) -> dict:
                 (article.get("source_text") or "").strip()
                 or (article.get("summary_text") or "").strip()
             )
+            article_username = article.get("domain", "")
             return {
-                "username": article.get("domain", ""),
+                "username": article_username,
                 "media_type": "article",
                 "photo_count": "",
                 "media_link": "",
-                "thumbnail_link": article.get("image_url", ""),
+                "thumbnail_link": _article_thumbnail_link(article.get("image_url", ""), row.get("row_number"), article_username),
                 "original_caption": article_source_text,
                 "transcript": article_source_text,
                 "status": "ingested",

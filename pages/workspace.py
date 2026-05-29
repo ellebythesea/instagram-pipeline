@@ -1797,6 +1797,32 @@ def _drive_image_url(drive_link: str) -> str:
     return ""
 
 
+def _upload_article_thumbnail(image_url: str, row_number: int | str | None, username: str) -> str:
+    image_url = _cell_text(image_url).strip()
+    if not image_url:
+        return ""
+
+    tmp_dir = tempfile.mkdtemp(prefix="article_thumb_")
+    try:
+        screenshots_folder_id = get_or_create_subfolder(
+            GOOGLE_DRIVE_FOLDER_ID,
+            GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER,
+        )
+        parsed = urlparse(image_url)
+        ext = os.path.splitext(parsed.path or "")[1].lower() or ".jpg"
+        if ext not in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
+            ext = ".jpg"
+        filename_prefix = build_filename_prefix(row_number, username)
+        filename = f"{filename_prefix}article_{row_number or 'thumb'}_thumb{ext}"
+        local_path = os.path.join(tmp_dir, filename)
+        _download_binary_file(image_url, local_path)
+        return upload_to_drive(local_path, filename, screenshots_folder_id)
+    except Exception:
+        return image_url
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
 def _safe_image_url(raw_value: str) -> str:
     candidate = _drive_view_url(raw_value) or _drive_image_url(raw_value) or _cell_text(raw_value).strip()
     return candidate if _is_https_url(candidate) else ""
@@ -4298,14 +4324,15 @@ def _ingest_row(row: dict) -> dict:
                 (article.get("source_text") or "").strip()
                 or (article.get("summary_text") or "").strip()
             )
+            article_username = article.get("domain", "")
             return {
-                "username": article.get("domain", ""),
+                "username": article_username,
                 "media_type": "article",
                 "photo_count": "",
                 "media_link": "",
-                "thumbnail_link": article.get("image_url", ""),
+                "thumbnail_link": _upload_article_thumbnail(article.get("image_url", ""), row.get("row_number"), article_username),
                 "original_caption": article_source_text,
-                "transcript": "",
+                "transcript": article_source_text,
                 "status": "ingested",
             }
         if _is_reel_url(url):
