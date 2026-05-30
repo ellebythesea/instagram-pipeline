@@ -43,21 +43,23 @@ Main Instagram pipeline. 24 columns A–X. **The app restores this header row au
 
 ## Tab: substack
 
-Substack articles to generate Instagram posts from and optionally monitor for comments. 7 columns.
+Substack articles to generate Instagram posts from and optionally monitor for comments. 8 columns.
 
 | Col | Header |
 |-----|--------|
 | A | url |
-| B | article |
-| C | status |
-| D | instagram url |
-| E | monitoring status |
-| F | last comment retrieved |
-| G | summary |
+| B | name |
+| C | article |
+| D | status |
+| E | instagram url |
+| F | monitoring status |
+| G | last comment retrieved |
+| H | summary |
 
 **Status values:** `open`, `ingested`, `posts created`
 
 - `url` — full Substack article URL
+- `name` — short label used in the article selector instead of showing the full URL
 - `article` — full article body text (pasted in via the app or manually)
 - `status` — workflow state; update this manually when you are done with an article
 - `instagram url` — the Instagram post URL tied to this article for comment monitoring

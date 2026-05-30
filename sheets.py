@@ -71,6 +71,7 @@ _FUNDRAISING_SHEET_TITLE = "fundraising"
 _SUBSTACK_SHEET_TITLE = "substack"
 _SUBSTACK_HEADERS = [
     "url",
+    "name",
     "article",
     "status",
     "instagram url",
@@ -663,14 +664,14 @@ def _ensure_substack_headers(ws) -> None:
     legacy_required = expected[:4]
 
     if not headers:
-        _with_backoff(ws.update, "A1:G1", [_SUBSTACK_HEADERS])
+        _with_backoff(ws.update, "A1:H1", [_SUBSTACK_HEADERS])
         _headers_checked.add(cache_key)
         return
 
     if all(header in normalized for header in legacy_required) and not all(
         header in normalized for header in expected
     ):
-        _with_backoff(ws.update, "A1:G1", [_SUBSTACK_HEADERS])
+        _with_backoff(ws.update, "A1:H1", [_SUBSTACK_HEADERS])
         _headers_checked.add(cache_key)
         return
 
@@ -741,6 +742,7 @@ def append_substack_row(sheet_id: str, url: str) -> None:
     ordered_headers = [header for header, _ in sorted(header_map.items(), key=lambda item: item[1])]
     row = {
         "url": (url or "").strip(),
+        "name": "",
         "article": "",
         "status": "open",
         "instagram url": "",

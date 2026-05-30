@@ -82,17 +82,18 @@ The app restores headers if they are missing.
 
 ### Tab: substack
 
-Substack articles to generate posts from and optionally monitor for comments. 7 columns:
+Substack articles to generate posts from and optionally monitor for comments. 8 columns:
 
 | Col | Header |
 |-----|--------|
 | A | url |
-| B | article |
-| C | status |
-| D | instagram url |
-| E | monitoring status |
-| F | last comment retrieved |
-| G | summary |
+| B | name |
+| C | article |
+| D | status |
+| E | instagram url |
+| F | monitoring status |
+| G | last comment retrieved |
+| H | summary |
 
 Status values: `open`, `ingested`, `posts created`
 

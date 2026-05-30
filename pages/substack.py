@@ -271,7 +271,6 @@ with articles_tab:
             if new_url.strip():
                 sheet_ops.append_substack_row(GOOGLE_SHEET_ID, new_url.strip())
                 st.success("Article added.")
-                st.rerun()
             else:
                 st.warning("Enter a URL first.")
     else:
@@ -390,7 +389,6 @@ with articles_tab:
                 else:
                     sheet_ops.update_substack_status(GOOGLE_SHEET_ID, row_number, "posts created")
                     st.success("Promote draft created in the posts tab.")
-                    st.rerun()
 
         # ── Generated Posts view ──────────────────────────────────────────
         all_post_rows = sheet_ops.get_all_rows(GOOGLE_SHEET_ID)
@@ -470,7 +468,6 @@ with articles_tab:
                                 st.error(f"Could not save slide results: {e}")
                             else:
                                 st.success("Slide results and caption saved to the posts tab.")
-                                st.rerun()
                         st.markdown("**Slide prompt**")
                         st.code(
                             _substack_slide_handoff(
@@ -487,7 +484,6 @@ with articles_tab:
                             key=f"substack_mark_posted_{row['row_number']}",
                         ):
                             sheet_ops.update_status(GOOGLE_SHEET_ID, row["row_number"], "posted")
-                            st.rerun()
 
         st.markdown("---")
         st.link_button("Open Substack Link", substack_url)
@@ -504,7 +500,6 @@ with comments_tab:
     with col2:
         if st.button("Clear"):
             st.session_state.pop("monitor_summaries", None)
-            st.rerun()
 
     summaries: list[dict] = st.session_state.get("monitor_summaries", [])
 
@@ -577,7 +572,6 @@ with comments_tab:
                         new_summaries.append({"label": label, "url": url, "summary": f"Error: {e}"})
 
                 st.session_state["monitor_summaries"] = new_summaries + summaries
-                st.rerun()
 
     for entry in st.session_state.get("monitor_summaries", []):
         st.markdown(f"**{entry['label']}**")
