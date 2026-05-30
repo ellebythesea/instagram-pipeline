@@ -888,16 +888,16 @@ def _save_candidate_article_assets(row: dict, generated_payload: dict) -> str:
     _write_specific_carousel_fields(
         row_num,
         {
-            "name": "Vote In Or Out",
+            "name": "vote in or out substack",
             "text1": _cell_text(generated_payload.get("text1")).strip(),
             "text2": _cell_text(generated_payload.get("text2")).strip(),
             "text3": _cell_text(generated_payload.get("text3")).strip(),
         },
     )
     if update_speaker_names_batch is not None:
-        update_speaker_names_batch(GOOGLE_SHEET_ID, {row_num: "Vote In Or Out"})
+        update_speaker_names_batch(GOOGLE_SHEET_ID, {row_num: "vote in or out substack"})
         speaker_key = _workspace_speaker_key(row)
-        st.session_state[speaker_key] = "Vote In Or Out"
+        st.session_state[speaker_key] = "vote in or out substack"
     _verify_carousel_fields_saved(row_num)
     st.session_state.pop(f"workspace_preview_upload_links_{row_num}", None)
     return caption_text
@@ -5076,7 +5076,7 @@ def _build_substack_slide_handoff(
         "Focus the carousel on the selected article topic.\n"
         "Use the extra user context only as direction, not as a source of new facts.\n"
         'On the final slide, say the full article covers this topic and more, and name at least two other article topics when possible.\n'
-        'Set the "name" field to "Vote In Or Out".\n'
+        'Set the "name" field to "vote in or out substack".\n'
     )
 
     slide_input = (
@@ -5191,7 +5191,7 @@ def _substack_slide_result(raw_text: str, fallback_row_number: int) -> dict:
         selected = dict_items[0]
 
     return {
-        "name": "Vote In Or Out",
+        "name": "vote in or out substack",
         "text1": _single_paragraph_slide_text(selected.get("text1")),
         "text2": _single_paragraph_slide_text(selected.get("text2")),
         "text3": _single_paragraph_slide_text(selected.get("text3")),
@@ -6416,7 +6416,7 @@ if active_section_tab == "Substack":
                                         _sb_context_request,
                                         _sb_article_topics,
                                     ),
-                                    "name": "Vote In Or Out",
+                                    "name": "vote in or out substack",
                                     "text1": "",
                                     "text2": "",
                                     "text3": "",
