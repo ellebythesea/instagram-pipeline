@@ -207,6 +207,7 @@ def _archive_orphaned_media(media_root: Path, rows: list[dict], service, dry_run
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     archive_root = media_root / SAFE_DELETE_DIRNAME / timestamp
     screenshots_dir = media_root / "screenshots"
+    root_image_suffixes = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 
     orphan_paths: list[tuple[str, Path]] = []
     for path in sorted(media_root.iterdir()):
@@ -217,6 +218,11 @@ def _archive_orphaned_media(media_root: Path, rows: list[dict], service, dry_run
         if path.is_file() and path.suffix.lower() in {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm"}:
             if path.name not in active_filenames:
                 orphan_paths.append(("original", path))
+            continue
+        if path.is_file() and path.suffix.lower() in root_image_suffixes:
+            stem = _stem_without_suffixes(path.name)
+            if stem not in active_stems and _canonical_media_key(stem) not in active_keys:
+                orphan_paths.append(("image", path))
             continue
         if path.is_dir():
             stem = (
@@ -238,7 +244,7 @@ def _archive_orphaned_media(media_root: Path, rows: list[dict], service, dry_run
                 orphan_paths.append(("screenshot", path))
 
     if not orphan_paths:
-        print("Archive pass found no orphaned local originals, segment folders, or screenshots.")
+        print("Archive pass found no orphaned local originals, root images, segment folders, or screenshots.")
         return 0
 
     action = "Would move" if dry_run else "Moved"
@@ -500,7 +506,7 @@ def main() -> int:
     parser.add_argument(
         "--no-archive-orphans",
         action="store_true",
-        help="Skip moving local originals, segment folders, and screenshots with no matching current sheet row into a safe archive folder.",
+        help="Skip moving local originals, root images, segment folders, and screenshots with no matching current sheet row into a safe archive folder.",
     )
     parser.add_argument(
         "--archive-dry-run",
