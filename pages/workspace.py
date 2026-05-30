@@ -2230,6 +2230,9 @@ def _upload_preview_pngs(
     slide_text1: str,
     slide_text2: str,
     slide_text3: str,
+    slide_text4: str,
+    slide_text5: str,
+    slide_text6: str,
     background_url: str,
     media_link: str = "",
     preview_folder_id: str = "",
@@ -2261,6 +2264,16 @@ def _upload_preview_pngs(
 
     try:
         slides_to_render: list[tuple[str, callable, dict]] = []
+        last_cta_slide_number = 3
+        for candidate_slide_number, candidate_text in (
+            (6, slide_text6),
+            (5, slide_text5),
+            (4, slide_text4),
+            (3, slide_text3),
+        ):
+            if (candidate_text or "").strip():
+                last_cta_slide_number = candidate_slide_number
+                break
         if (slide_text1 or "").strip():
             slides_to_render.append(
                 (
@@ -2295,7 +2308,49 @@ def _upload_preview_pngs(
                     {
                         "body_text": slide_text3,
                         "font_adjust_px": slide_three_font_adjust,
-                        "include_link_cta": True,
+                        "include_link_cta": last_cta_slide_number == 3,
+                        "link_cta_target": slide_three_cta_target,
+                        "link_cta_text": slide_three_cta_text,
+                    },
+                )
+            )
+        if (slide_text4 or "").strip():
+            slides_to_render.append(
+                (
+                    "slide4",
+                    _render_text_slide_png,
+                    {
+                        "body_text": slide_text4,
+                        "font_adjust_px": slide_three_font_adjust,
+                        "include_link_cta": last_cta_slide_number == 4,
+                        "link_cta_target": slide_three_cta_target,
+                        "link_cta_text": slide_three_cta_text,
+                    },
+                )
+            )
+        if (slide_text5 or "").strip():
+            slides_to_render.append(
+                (
+                    "slide5",
+                    _render_text_slide_png,
+                    {
+                        "body_text": slide_text5,
+                        "font_adjust_px": slide_three_font_adjust,
+                        "include_link_cta": last_cta_slide_number == 5,
+                        "link_cta_target": slide_three_cta_target,
+                        "link_cta_text": slide_three_cta_text,
+                    },
+                )
+            )
+        if (slide_text6 or "").strip():
+            slides_to_render.append(
+                (
+                    "slide6",
+                    _render_text_slide_png,
+                    {
+                        "body_text": slide_text6,
+                        "font_adjust_px": slide_three_font_adjust,
+                        "include_link_cta": last_cta_slide_number == 6,
                         "link_cta_target": slide_three_cta_target,
                         "link_cta_text": slide_three_cta_text,
                     },
@@ -3771,6 +3826,16 @@ def _copy_tabs(
         slide_handle = current_speaker_name or username.strip()
         if slide_handle and slide_handle == username.strip() and not slide_handle.startswith("@"):
             slide_handle = f"@{slide_handle}"
+        last_cta_slide_number = 3
+        for candidate_slide_number, candidate_text in (
+            (6, slide_text6),
+            (5, slide_text5),
+            (4, slide_text4),
+            (3, slide_text3),
+        ):
+            if (candidate_text or "").strip():
+                last_cta_slide_number = candidate_slide_number
+                break
         st.markdown('<div class="workspace-row-slides-anchor"></div>', unsafe_allow_html=True)
         if (slide_text1 or "").strip():
             _render_slide_one_preview(
@@ -3829,7 +3894,7 @@ def _copy_tabs(
                 3,
                 slide_text3,
                 current_slide_three_font_adjust,
-                include_link_cta=current_slide_three_cta != "hidden",
+                include_link_cta=last_cta_slide_number == 3 and current_slide_three_cta != "hidden",
                 link_cta_target=current_slide_three_cta,
                 link_cta_text=_slide_three_cta_text(current_slide_three_cta, top_comment),
             )
@@ -3843,6 +3908,9 @@ def _copy_tabs(
                 4,
                 slide_text4,
                 current_slide_four_font_adjust,
+                include_link_cta=last_cta_slide_number == 4 and current_slide_three_cta != "hidden",
+                link_cta_target=current_slide_three_cta,
+                link_cta_text=_slide_three_cta_text(current_slide_three_cta, top_comment),
             )
             _render_workspace_preview_control_bar(
                 f"{row_num}_slide4",
@@ -3854,6 +3922,9 @@ def _copy_tabs(
                 5,
                 slide_text5,
                 current_slide_five_font_adjust,
+                include_link_cta=last_cta_slide_number == 5 and current_slide_three_cta != "hidden",
+                link_cta_target=current_slide_three_cta,
+                link_cta_text=_slide_three_cta_text(current_slide_three_cta, top_comment),
             )
             _render_workspace_preview_control_bar(
                 f"{row_num}_slide5",
@@ -3865,6 +3936,9 @@ def _copy_tabs(
                 6,
                 slide_text6,
                 current_slide_six_font_adjust,
+                include_link_cta=last_cta_slide_number == 6 and current_slide_three_cta != "hidden",
+                link_cta_target=current_slide_three_cta,
+                link_cta_text=_slide_three_cta_text(current_slide_three_cta, top_comment),
             )
             _render_workspace_preview_control_bar(
                 f"{row_num}_slide6",
