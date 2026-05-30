@@ -3666,6 +3666,9 @@ def _copy_tabs(
     slide_text1: str = "",
     slide_text2: str = "",
     slide_text3: str = "",
+    slide_text4: str = "",
+    slide_text5: str = "",
+    slide_text6: str = "",
     prompt_row: dict | None = None,
     thumbnail_link: str = "",
     slide_cta_options: dict[str, str] | None = None,
@@ -3730,6 +3733,9 @@ def _copy_tabs(
         slide_two_cta_key = f"workspace_slide_two_cta_row_{row_num}"
         slide_three_font_adjust_key = f"workspace_slide_three_preview_font_adjust_{row_num}"
         slide_three_cta_key = f"workspace_slide_three_cta_row_{row_num}"
+        slide_four_font_adjust_key = f"workspace_slide_four_preview_font_adjust_{row_num}"
+        slide_five_font_adjust_key = f"workspace_slide_five_preview_font_adjust_{row_num}"
+        slide_six_font_adjust_key = f"workspace_slide_six_preview_font_adjust_{row_num}"
         preview_links_key = f"workspace_preview_upload_links_{row_num}"
         default_slide_one_fit_mode = _is_candidate_article_row(prompt_row or {})
         current_slide_one_font_adjust = int(st.session_state.get(slide_one_font_adjust_key, 0) or 0)
@@ -3745,6 +3751,9 @@ def _copy_tabs(
             current_slide_two_cta = "hidden"
             st.session_state[slide_two_cta_key] = current_slide_two_cta
         current_slide_three_font_adjust = int(st.session_state.get(slide_three_font_adjust_key, 0) or 0)
+        current_slide_four_font_adjust = int(st.session_state.get(slide_four_font_adjust_key, 0) or 0)
+        current_slide_five_font_adjust = int(st.session_state.get(slide_five_font_adjust_key, 0) or 0)
+        current_slide_six_font_adjust = int(st.session_state.get(slide_six_font_adjust_key, 0) or 0)
         default_slide_three_cta_option = "article" if _is_candidate_article_row(prompt_row or {}) else "hidden"
         default_slide_three_cta = (
             _cell_text((prompt_row or {}).get("Slide CTA")).strip().lower()
@@ -3828,6 +3837,39 @@ def _copy_tabs(
                 f"{row_num}_slide3",
                 slide_three_font_adjust_key,
                 current_slide_three_font_adjust,
+            )
+        if (slide_text4 or "").strip():
+            _render_text_slide_preview(
+                4,
+                slide_text4,
+                current_slide_four_font_adjust,
+            )
+            _render_workspace_preview_control_bar(
+                f"{row_num}_slide4",
+                slide_four_font_adjust_key,
+                current_slide_four_font_adjust,
+            )
+        if (slide_text5 or "").strip():
+            _render_text_slide_preview(
+                5,
+                slide_text5,
+                current_slide_five_font_adjust,
+            )
+            _render_workspace_preview_control_bar(
+                f"{row_num}_slide5",
+                slide_five_font_adjust_key,
+                current_slide_five_font_adjust,
+            )
+        if (slide_text6 or "").strip():
+            _render_text_slide_preview(
+                6,
+                slide_text6,
+                current_slide_six_font_adjust,
+            )
+            _render_workspace_preview_control_bar(
+                f"{row_num}_slide6",
+                slide_six_font_adjust_key,
+                current_slide_six_font_adjust,
             )
         with st.popover("Slide actions", use_container_width=True):
             if st.button("Generate prompt", key=f"workspace_row_slides_build_{row_num}", width="stretch"):
@@ -6035,6 +6077,9 @@ if active_section_tab == "Home":
                         _cell_text(row.get("text1")).strip(),
                         _cell_text(row.get("text2")).strip(),
                         _cell_text(row.get("text3")).strip(),
+                        _cell_text(row.get("text4")).strip(),
+                        _cell_text(row.get("text5")).strip(),
+                        _cell_text(row.get("text6")).strip(),
                         row,
                         _cell_text(row.get("Thumbnail Drive Link")).strip(),
                         slide_cta_options,
