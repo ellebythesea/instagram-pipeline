@@ -73,6 +73,26 @@ _SUBSTACK_HEADERS = [
     "url",
     "name",
     "article",
+    "topic breakdown",
+    "status",
+    "instagram url",
+    "monitoring status",
+    "last comment retrieved",
+    "summary",
+]
+_SUBSTACK_LEGACY_HEADERS_WITH_NAME = [
+    "url",
+    "name",
+    "article",
+    "status",
+    "instagram url",
+    "monitoring status",
+    "last comment retrieved",
+    "summary",
+]
+_SUBSTACK_LEGACY_HEADERS_NO_NAME = [
+    "url",
+    "article",
     "status",
     "instagram url",
     "monitoring status",
@@ -661,21 +681,118 @@ def _ensure_substack_headers(ws) -> None:
     headers = [header.strip() for header in values[0]] if values else []
     normalized = [header.lower() for header in headers if header]
     expected = [header.lower() for header in _SUBSTACK_HEADERS]
-    legacy_required = expected[:4]
+    base_required = ["url", "article", "status"]
+    if "name" in normalized:
+        upgradeable_required = ["url", "name", "article", "status"]
+    else:
+        upgradeable_required = base_required
 
     if not headers:
-        _with_backoff(ws.update, "A1:H1", [_SUBSTACK_HEADERS])
+        _with_backoff(ws.update, "A1:I1", [_SUBSTACK_HEADERS])
         _headers_checked.add(cache_key)
         return
 
-    if all(header in normalized for header in legacy_required) and not all(
+    def _rewrite_substack_rows(rows: list[list[str]]) -> None:
+        _with_backoff(ws.clear)
+        _with_backoff(ws.update, f"A1:I{len(rows)}", rows)
+
+    def _looks_like_shifted_expected_layout(data_rows: list[list[str]]) -> bool:
+        checked = 0
+        shifted_matches = 0
+        status_values = {"open", "closed", "ingested", "posts created"}
+        for row in data_rows:
+            if not any((cell or "").strip() for cell in row):
+                continue
+            padded = row + [""] * (len(_SUBSTACK_HEADERS) - len(row))
+            topic_breakdown_value = padded[3].strip().lower()
+            status_value = padded[4].strip()
+            instagram_url_value = padded[5].strip().lower()
+            monitoring_status_value = padded[6].strip()
+            if not any([topic_breakdown_value, status_value, instagram_url_value, monitoring_status_value]):
+                continue
+            checked += 1
+            if (
+                topic_breakdown_value in status_values
+                and (not status_value or status_value.startswith("http"))
+                and instagram_url_value in {"", "open", "closed"}
+                and (not monitoring_status_value or monitoring_status_value.startswith("20"))
+            ):
+                shifted_matches += 1
+        return checked > 0 and shifted_matches >= max(1, checked // 2)
+
+    if normalized == [header.lower() for header in _SUBSTACK_LEGACY_HEADERS_WITH_NAME]:
+        migrated_rows = [_SUBSTACK_HEADERS]
+        for row in values[1:]:
+            padded = row + [""] * (len(_SUBSTACK_LEGACY_HEADERS_WITH_NAME) - len(row))
+            migrated_rows.append([
+                padded[0].strip(),
+                padded[1].strip(),
+                padded[2].strip(),
+                "",
+                padded[3].strip(),
+                padded[4].strip(),
+                padded[5].strip(),
+                padded[6].strip(),
+                padded[7].strip(),
+            ])
+        _rewrite_substack_rows(migrated_rows)
+        _headers_checked.add(cache_key)
+        return
+
+    if normalized == [header.lower() for header in _SUBSTACK_LEGACY_HEADERS_NO_NAME]:
+        migrated_rows = [_SUBSTACK_HEADERS]
+        for row in values[1:]:
+            padded = row + [""] * (len(_SUBSTACK_LEGACY_HEADERS_NO_NAME) - len(row))
+            migrated_rows.append([
+                padded[0].strip(),
+                "",
+                padded[1].strip(),
+                "",
+                padded[2].strip(),
+                padded[3].strip(),
+                padded[4].strip(),
+                padded[5].strip(),
+                padded[6].strip(),
+            ])
+        _rewrite_substack_rows(migrated_rows)
+        _headers_checked.add(cache_key)
+        return
+
+    if normalized == expected and _looks_like_shifted_expected_layout(values[1:]):
+        migrated_rows = [_SUBSTACK_HEADERS]
+        for row in values[1:]:
+            padded = row + [""] * (len(_SUBSTACK_HEADERS) - len(row))
+            migrated_rows.append([
+                padded[0].strip(),
+                padded[1].strip(),
+                padded[2].strip(),
+                "",
+                padded[3].strip(),
+                padded[4].strip(),
+                padded[5].strip(),
+                padded[6].strip(),
+                padded[7].strip(),
+            ])
+        _rewrite_substack_rows(migrated_rows)
+        _headers_checked.add(cache_key)
+        return
+
+    if all(header in normalized for header in upgradeable_required) and not all(
         header in normalized for header in expected
     ):
-        _with_backoff(ws.update, "A1:H1", [_SUBSTACK_HEADERS])
+        header_index = {header.lower(): idx for idx, header in enumerate(headers)}
+        migrated_rows = [_SUBSTACK_HEADERS]
+        for row in values[1:]:
+            migrated_record = {header: "" for header in _SUBSTACK_HEADERS}
+            for source_header, idx in header_index.items():
+                if source_header in migrated_record and idx < len(row):
+                    migrated_record[source_header] = row[idx].strip()
+            migrated_rows.append([migrated_record.get(header, "") for header in _SUBSTACK_HEADERS])
+        _rewrite_substack_rows(migrated_rows)
         _headers_checked.add(cache_key)
         return
 
-    missing_required = [header for header in legacy_required if header not in normalized]
+    missing_required = [header for header in base_required if header not in normalized]
     if missing_required:
         raise RuntimeError(
             "substack tab is missing required header(s): " + ", ".join(missing_required)
@@ -735,6 +852,13 @@ def update_substack_article(sheet_id: str, row_number: int, article: str) -> Non
     _invalidate_rows_cache(sheet_id)
 
 
+def update_substack_topic_breakdown(sheet_id: str, row_number: int, topic_breakdown: str) -> None:
+    """Write persisted topic breakdown JSON/text to the substack tab."""
+    ws = _named_worksheet(sheet_id, _SUBSTACK_SHEET_TITLE)
+    _update_row_fields_by_headers(ws, row_number, {"topic breakdown": topic_breakdown})
+    _invalidate_rows_cache(sheet_id)
+
+
 def append_substack_row(sheet_id: str, url: str) -> None:
     """Append a new row to the substack tab with default article and monitoring states."""
     ws = _named_worksheet(sheet_id, _SUBSTACK_SHEET_TITLE)
@@ -744,6 +868,7 @@ def append_substack_row(sheet_id: str, url: str) -> None:
         "url": (url or "").strip(),
         "name": "",
         "article": "",
+        "topic breakdown": "",
         "status": "open",
         "instagram url": "",
         "monitoring status": "closed",

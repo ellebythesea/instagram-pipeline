@@ -4945,28 +4945,30 @@ def _parse_substack_promote_context(value: str) -> dict:
 def _substack_topic_breakdown_prompt() -> str:
     return (
         "You are preparing a reusable topic breakdown for Vote In Or Out.\n\n"
-        "Read the full article all the way through and identify the most interesting larger themes it covers.\n"
+        "Read the full article all the way through and identify the 10 most salacious, clickbait-worthy, interesting topics a reader would care about.\n"
         "Do not just copy the first few nouns or phrases from the opening lines.\n"
-        "Look for what actually matters in the piece: major events, conflicts, notable people, elections, voting, democracy, women's rights, policy fights, court decisions, campaign dynamics, and other political topics of interest that are genuinely present in the article.\n"
-        "Prioritize themes a reader could realistically choose as the focus of a promotional post.\n"
-        "Return EXACTLY 15 topic strings in rank order from most interesting/useful to least.\n"
-        "Each string must be 1 to 3 words.\n"
+        "Look for conflict, scandal, stakes, named people, named events, named policies, surprising claims, sharp contrasts, legal fights, election drama, campaign weaknesses, controversies, money, corruption, rights, power, and anything else in the article that would genuinely make someone want to click.\n"
+        "Prefer proper names, named events, named institutions, named offices, named policies, accusations, fights, rulings, scandals, and concrete controversies over abstract summaries.\n"
+        "Return EXACTLY 10 topic strings in rank order from most interesting/clickable to least.\n"
+        "Each string must be 1 to 5 words.\n"
         "Use concrete article topics, not vague labels.\n"
-        "Prefer themes over generic summary words.\n"
-        "Good examples: \"tariffs\", \"swing voters\", \"polling gap\", \"abortion rights\", \"ballot access\", \"housing costs\", \"court ruling\", \"union vote\".\n"
-        "Bad examples: \"introduction\", \"article overview\", \"politics\", \"news\", \"economy\" unless the article is specifically about the economy as a theme.\n"
+        "Good examples: \"Zohran Mamdani\", \"Project 2025\", \"California governor race\", \"abortion rights\", \"Supreme Court ruling\", \"ICE raids\", \"union vote\", \"candidate flip-flop\", \"donor money\", \"ethics probe\".\n"
+        "Bad examples: \"emergencies\", \"political evolution\", \"cognitive biases\", \"article overview\", \"politics\", \"news\", \"voter information\".\n"
+        "Return valid JSON when possible. Preferred format: an array of strings. Also acceptable: an object with a \"topics\" array.\n"
         "No duplicates. No numbering. No markdown. No commentary outside JSON."
     )
 
 
 def _normalize_substack_topics(raw_topics: object) -> list[str]:
-    seen: set[str] = {"high-level overview"}
-    cleaned: list[str] = ["High-level overview"]
     if not isinstance(raw_topics, list):
-        return cleaned
+        return []
+    seen: set[str] = set()
+    cleaned: list[str] = []
     for raw_topic in raw_topics:
         topic = _single_paragraph_slide_text(raw_topic).strip(" ,.;:-")
         if not topic:
+            continue
+        if len(topic.split()) > 5:
             continue
         topic_key = topic.lower()
         if topic_key in seen:
@@ -4974,6 +4976,47 @@ def _normalize_substack_topics(raw_topics: object) -> list[str]:
         seen.add(topic_key)
         cleaned.append(topic)
     return cleaned[:15]
+
+
+def _substack_topic_options(raw_topics: object) -> list[str]:
+    normalized = _normalize_substack_topics(raw_topics)
+    if not normalized:
+        return []
+    return ["High-level overview", *normalized]
+
+
+def _extract_substack_topics_from_model_output(raw_value: str) -> list[str]:
+    raw = _cell_text(raw_value).strip()
+    if not raw:
+        return []
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        try:
+            payload = _extract_json_payload(raw)
+        except Exception:
+            payload = None
+
+    if isinstance(payload, list):
+        topics = _normalize_substack_topics(payload)
+        if topics:
+            return topics
+    if isinstance(payload, dict):
+        for key in ("topics", "topic_breakdown", "topicBreakdown", "items"):
+            topics = _normalize_substack_topics(payload.get(key))
+            if topics:
+                return topics
+
+    lines = []
+    for part in re.split(r"[\n|,]", raw):
+        cleaned = re.sub(r"^\s*[-*0-9.)]+\s*", "", part).strip()
+        if cleaned:
+            lines.append(cleaned)
+    return _normalize_substack_topics(lines)
+
+
+def _parse_substack_topic_breakdown(raw_value: str) -> list[str]:
+    return _extract_substack_topics_from_model_output(raw_value)
 
 
 def _build_substack_slide_handoff(
@@ -6258,29 +6301,19 @@ if active_section_tab == "Substack":
             _sb_fetch_key = f"ws_sb_fetched_{_sb_url}"
             _sb_fetch_meta_key = f"ws_sb_fetched_meta_{_sb_url}"
             _sb_topics_key = f"ws_sb_article_topics_{_sb_url}"
+            _sb_stored_topics = _parse_substack_topic_breakdown(_sb_row.get("topic breakdown", ""))
+            if _sb_stored_topics and _sb_topics_key not in st.session_state:
+                st.session_state[_sb_topics_key] = _sb_stored_topics
             _sb_article_body = _sb_row.get("article", "").strip() or st.session_state.get(_sb_fetch_key, "").strip()
             if _sb_article_body:
-                st.caption("The latest article text will be fetched from the Substack link when you generate the topic breakdown.")
+                st.caption("Topic generation uses only the article text saved in column C.")
             else:
-                st.caption("Article text will be fetched from the Substack link when you generate the topic breakdown.")
+                st.caption("Column C is blank. Topic generation needs article text in column C.")
 
             if st.button("Generate Topic Breakdown", type="primary", key="ws_sb_gen_topics"):
                 try:
-                    _sb_fetched_article_body = ""
-                    try:
-                        with st.spinner("Fetching article text…"):
-                            _sb_fetched = _fetch_article_source_data(_sb_url)
-                        _sb_fetched_article_body = (_sb_fetched.get("source_text") or "").strip()
-                        st.session_state[_sb_fetch_meta_key] = _sb_fetched
-                    except Exception:
-                        _sb_fetched_article_body = ""
-
-                    if _sb_fetched_article_body:
-                        _sb_article_body = _sb_fetched_article_body
-                        st.session_state[_sb_fetch_key] = _sb_article_body
-                        sheet_ops.update_substack_article(GOOGLE_SHEET_ID, _sb_row_number, _sb_article_body)
                     if not _sb_article_body:
-                        raise RuntimeError("Could not fetch article text from this Substack link.")
+                        raise RuntimeError("Column C is blank for this article. Add article text there first.")
 
                     _sb_resp = _get_client().chat.completions.create(
                         model="gpt-4o",
@@ -6292,14 +6325,19 @@ if active_section_tab == "Substack":
                     )
                     _sb_raw = (_sb_resp.choices[0].message.content or "").strip()
                     _sb_raw = _sb_raw.lstrip("```json").lstrip("```").rstrip("```").strip()
-                    _sb_topics = _normalize_substack_topics(json.loads(_sb_raw))
+                    _sb_topics = _extract_substack_topics_from_model_output(_sb_raw)
                     if not _sb_topics:
                         raise ValueError("No valid topics returned.")
                     st.session_state[_sb_topics_key] = _sb_topics
+                    sheet_ops.update_substack_topic_breakdown(
+                        GOOGLE_SHEET_ID,
+                        _sb_row_number,
+                        json.dumps(_sb_topics, ensure_ascii=True),
+                    )
                 except Exception as _sb_err:
                     st.error(f"Failed to generate topic breakdown: {_sb_err}")
 
-            _sb_article_topics = _normalize_substack_topics(st.session_state.get(_sb_topics_key, []))
+            _sb_article_topics = _substack_topic_options(st.session_state.get(_sb_topics_key, []))
             if _sb_article_topics:
                 st.markdown("**Article topic breakdown**")
                 st.caption("Pick one short topic to focus the promotional post.")
@@ -6352,6 +6390,8 @@ if active_section_tab == "Substack":
                     else:
                         st.success("Promote draft created in the posts tab.")
                         _rerun_workspace("Substack")
+            elif _sb_stored_topics:
+                st.info("Stored topic breakdown found but could not be displayed cleanly. Regenerate it once to refresh the saved format.")
 
             _sb_all_posts = get_all_rows(GOOGLE_SHEET_ID)
             _sb_generated = []
