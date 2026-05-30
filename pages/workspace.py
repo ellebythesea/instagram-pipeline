@@ -2597,6 +2597,7 @@ def _close_workspace_link_dialog(row: dict) -> None:
 def _close_workspace_thumbnail_dialog(row: dict) -> None:
     st.session_state.pop("workspace_thumbnail_dialog_row", None)
     st.session_state.pop(_workspace_key(row, "thumbnail_upload"), None)
+    st.session_state.pop(_workspace_key(row, "thumbnail_upload_token"), None)
 
 
 def _dismiss_workspace_link_dialog() -> None:
@@ -3150,6 +3151,9 @@ def _render_workspace_slide_action_dialog(row: dict) -> None:
         "text1": _cell_text(row.get("text1")).strip(),
         "text2": _cell_text(row.get("text2")).strip(),
         "text3": _cell_text(row.get("text3")).strip(),
+        "text4": _cell_text(row.get("text4")).strip(),
+        "text5": _cell_text(row.get("text5")).strip(),
+        "text6": _cell_text(row.get("text6")).strip(),
         "caption": _cell_text(row.get("Generated Caption")).strip(),
         "custom_link": clean_top_comment,
         "speaker": current_speaker_for_dialog,
@@ -3159,6 +3163,9 @@ def _render_workspace_slide_action_dialog(row: dict) -> None:
         "text1": "Edit text 1",
         "text2": "Edit text 2",
         "text3": "Edit text 3",
+        "text4": "Edit text 4",
+        "text5": "Edit text 5",
+        "text6": "Edit text 6",
         "caption": "Edit caption",
         "custom_link": "Edit custom link",
         "speaker": "Update name",
@@ -3196,14 +3203,17 @@ def _render_workspace_slide_action_dialog(row: dict) -> None:
             if action == "prompt":
                 st.session_state[prompt_key] = edited_value
                 st.session_state["workspace_success"] = f"Row {row_num}: slide prompt saved."
-            elif action in {"text1", "text2", "text3"}:
+            elif action in {"text1", "text2", "text3", "text4", "text5", "text6"}:
                 if update_carousel_fields is None:
                     raise RuntimeError("Carousel field updates are not supported in this build.")
                 name = _cell_text(row.get("name")).strip()
                 text1 = _single_paragraph_slide_text(edited_value if action == "text1" else row.get("text1"))
                 text2 = _single_paragraph_slide_text(edited_value if action == "text2" else row.get("text2"))
                 text3 = _single_paragraph_slide_text(edited_value if action == "text3" else row.get("text3"))
-                update_carousel_fields(GOOGLE_SHEET_ID, row_num, name, text1, text2, text3)
+                text4 = _single_paragraph_slide_text(edited_value if action == "text4" else row.get("text4"))
+                text5 = _single_paragraph_slide_text(edited_value if action == "text5" else row.get("text5"))
+                text6 = _single_paragraph_slide_text(edited_value if action == "text6" else row.get("text6"))
+                update_carousel_fields(GOOGLE_SHEET_ID, row_num, name, text1, text2, text3, text4, text5, text6)
                 st.session_state["workspace_success"] = f"Row {row_num}: {dialog_labels[action].lower()} saved."
             elif action == "caption":
                 current_status = _cell_text(row.get("Status")).strip() or _default_editor_status(row)
@@ -3309,20 +3319,25 @@ def _render_workspace_thumbnail_dialog(row: dict) -> None:
         key=_workspace_key(row, "thumbnail_upload"),
         help="On iPhone this opens your photo library/files chooser. On desktop it opens the file picker.",
     )
-    if uploaded_thumbnail is not None and st.button(
-        "Use uploaded screenshot",
-        key=f"workspace_thumbnail_upload_apply_{row_num}",
-        type="primary",
-        width="stretch",
-    ):
-        try:
-            _replace_row_thumbnail_from_upload(row, uploaded_thumbnail)
-        except Exception as e:
-            st.session_state["workspace_error"] = f"Row {row_num}: could not replace screenshot - {describe_error(e)}"
-        else:
-            st.session_state["workspace_success"] = f"Row {row_num}: screenshot replaced from uploaded image."
-        _close_workspace_thumbnail_dialog(row)
-        _rerun_workspace("Edit")
+    if uploaded_thumbnail is not None:
+        upload_token_key = _workspace_key(row, "thumbnail_upload_token")
+        upload_token = "|".join(
+            [
+                getattr(uploaded_thumbnail, "name", "") or "",
+                str(getattr(uploaded_thumbnail, "size", "") or ""),
+                getattr(uploaded_thumbnail, "type", "") or "",
+            ]
+        )
+        if st.session_state.get(upload_token_key) != upload_token:
+            st.session_state[upload_token_key] = upload_token
+            try:
+                _replace_row_thumbnail_from_upload(row, uploaded_thumbnail)
+            except Exception as e:
+                st.session_state["workspace_error"] = f"Row {row_num}: could not replace screenshot - {describe_error(e)}"
+            else:
+                st.session_state["workspace_success"] = f"Row {row_num}: screenshot replaced from uploaded image."
+            _close_workspace_thumbnail_dialog(row)
+            _rerun_workspace("Edit")
 
     if _is_reel_url(url) and has_media and st.button(
         "Update screenshot (+5s)",
@@ -3738,7 +3753,6 @@ def _copy_tabs(
     selected_content_tab = st.segmented_control(
         "Content",
         tab_labels,
-        default=current_content_tab,
         key=content_tab_key,
         label_visibility="collapsed",
         width="stretch",
@@ -3964,6 +3978,15 @@ def _copy_tabs(
                 _rerun_workspace("Edit")
             if st.button("Edit text 3", key=f"workspace_row_slides_edit_text3_{row_num}", width="stretch"):
                 _open_workspace_slide_action_dialog(row_num, "text3")
+                _rerun_workspace("Edit")
+            if (slide_text4 or "").strip() and st.button("Edit text 4", key=f"workspace_row_slides_edit_text4_{row_num}", width="stretch"):
+                _open_workspace_slide_action_dialog(row_num, "text4")
+                _rerun_workspace("Edit")
+            if (slide_text5 or "").strip() and st.button("Edit text 5", key=f"workspace_row_slides_edit_text5_{row_num}", width="stretch"):
+                _open_workspace_slide_action_dialog(row_num, "text5")
+                _rerun_workspace("Edit")
+            if (slide_text6 or "").strip() and st.button("Edit text 6", key=f"workspace_row_slides_edit_text6_{row_num}", width="stretch"):
+                _open_workspace_slide_action_dialog(row_num, "text6")
                 _rerun_workspace("Edit")
             if st.button("Link", key=f"workspace_row_slides_cta_custom_{row_num}", width="stretch"):
                 _save_slide_three_cta_choice(row_num, slide_three_cta_key, "custom link")
@@ -4766,6 +4789,9 @@ def _write_specific_carousel_fields(row_number: int, carousel: dict[str, str]) -
         _single_paragraph_slide_text(carousel.get("text1")),
         _single_paragraph_slide_text(carousel.get("text2")),
         _single_paragraph_slide_text(carousel.get("text3")),
+        _single_paragraph_slide_text(carousel.get("text4")),
+        _single_paragraph_slide_text(carousel.get("text5")),
+        _single_paragraph_slide_text(carousel.get("text6")),
     )
 
 
@@ -5050,7 +5076,7 @@ def _build_substack_slide_handoff(
         "Focus the carousel on the selected article topic.\n"
         "Use the extra user context only as direction, not as a source of new facts.\n"
         'On the final slide, say the full article covers this topic and more, and name at least two other article topics when possible.\n'
-        'Set the "name" field to "@voteinorout".\n'
+        'Set the "name" field to "Vote In Or Out".\n'
     )
 
     slide_input = (
@@ -5165,7 +5191,7 @@ def _substack_slide_result(raw_text: str, fallback_row_number: int) -> dict:
         selected = dict_items[0]
 
     return {
-        "name": _single_paragraph_slide_text(selected.get("name")),
+        "name": "Vote In Or Out",
         "text1": _single_paragraph_slide_text(selected.get("text1")),
         "text2": _single_paragraph_slide_text(selected.get("text2")),
         "text3": _single_paragraph_slide_text(selected.get("text3")),
@@ -5301,6 +5327,9 @@ def _write_carousel_fields(row_number: int, row: dict) -> None:
         carousel.get("text1", ""),
         carousel.get("text2", ""),
         carousel.get("text3", ""),
+        carousel.get("text4", ""),
+        carousel.get("text5", ""),
+        carousel.get("text6", ""),
     )
 
 
@@ -5650,9 +5679,20 @@ def _apply_slide_result_to_specific_row(row_number: int, raw_text: str) -> tuple
         "text1": _single_paragraph_slide_text(selected.get("text1")),
         "text2": _single_paragraph_slide_text(selected.get("text2")),
         "text3": _single_paragraph_slide_text(selected.get("text3")),
+        "text4": _single_paragraph_slide_text(selected.get("text4")),
+        "text5": _single_paragraph_slide_text(selected.get("text5")),
+        "text6": _single_paragraph_slide_text(selected.get("text6")),
     }
-    if not (carousel["name"] or carousel["text1"] or carousel["text2"] or carousel["text3"]):
-        return 0, [f"Row {row_number}: no name, text1, text2, or text3 values were provided."]
+    if not (
+        carousel["name"]
+        or carousel["text1"]
+        or carousel["text2"]
+        or carousel["text3"]
+        or carousel["text4"]
+        or carousel["text5"]
+        or carousel["text6"]
+    ):
+        return 0, [f"Row {row_number}: no name or slide text values were provided."]
 
     _write_specific_carousel_fields(row_number, carousel)
     return 1, []
@@ -5696,15 +5736,18 @@ def _apply_chatgpt_handoff_results(sheet_id: str, raw_text: str) -> tuple[int, l
         text1 = _single_paragraph_slide_text(item.get("text1"))
         text2 = _single_paragraph_slide_text(item.get("text2"))
         text3 = _single_paragraph_slide_text(item.get("text3"))
+        text4 = _single_paragraph_slide_text(item.get("text4"))
+        text5 = _single_paragraph_slide_text(item.get("text5"))
+        text6 = _single_paragraph_slide_text(item.get("text6"))
 
-        if not (name or text1 or text2 or text3):
+        if not (name or text1 or text2 or text3 or text4 or text5 or text6):
             issues.append(
-                f"Item {index} / row {row_number}: no name, text1, text2, or text3 values were provided."
+                f"Item {index} / row {row_number}: no name or slide text values were provided."
             )
             continue
 
         if update_carousel_fields is not None:
-            update_carousel_fields(sheet_id, row_number, name, text1, text2, text3)
+            update_carousel_fields(sheet_id, row_number, name, text1, text2, text3, text4, text5, text6)
         updated_count += 1
 
     return updated_count, issues
@@ -6373,7 +6416,7 @@ if active_section_tab == "Substack":
                                         _sb_context_request,
                                         _sb_article_topics,
                                     ),
-                                    "name": "@voteinorout",
+                                    "name": "Vote In Or Out",
                                     "text1": "",
                                     "text2": "",
                                     "text3": "",

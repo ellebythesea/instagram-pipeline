@@ -165,7 +165,7 @@ def _substack_slide_handoff(
         "Keep row_number exactly as shown in the input.\n"
         "Use plain language, no hashtags, no citations, no markdown, and no newline characters inside values.\n"
         "Each slide should be self-contained and specific.\n"
-        'Set the "name" field to "@voteinorout".\n'
+        'Set the "name" field to "Vote In Or Out".\n'
         "text1 is the strongest opening slide under 350 characters.\n"
         "text2, text3, text4, and text5 are semi-longer explainer slides, usually 500 to 800 characters each.\n"
         "text6 is the closing slide under 500 characters. It should point people to the full article without adding a URL.\n"
@@ -244,7 +244,7 @@ def _substack_slide_result(raw_text: str, fallback_row_number: int) -> dict:
         selected = dict_items[0]
 
     return {
-        "name": _single_paragraph_slide_text(selected.get("name")),
+        "name": "Vote In Or Out",
         "text1": _single_paragraph_slide_text(selected.get("text1")),
         "text2": _single_paragraph_slide_text(selected.get("text2")),
         "text3": _single_paragraph_slide_text(selected.get("text3")),
@@ -413,7 +413,7 @@ with articles_tab:
                                     context_request,
                                     topic_breakdown,
                                 ),
-                                "name": "@voteinorout",
+                                "name": "Vote In Or Out",
                                 "text1": "",
                                 "text2": "",
                                 "text3": "",
