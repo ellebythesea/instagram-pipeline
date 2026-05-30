@@ -285,12 +285,19 @@ def append_generated_post_rows(sheet_id: str, rows: list[dict]) -> None:
     for source in cleaned_rows:
         row = [""] * len(_EXPECTED_HEADERS)
         row[0] = source.get("url", "").strip()
+        row[1] = source.get("required_hashtags", "").strip()
         row[2] = source.get("source_username", "").strip()
         row[3] = source.get("caption", "").strip()
         row[4] = source.get("media_type", "").strip()
+        row[7] = source.get("thumbnail_link", "").strip()
         row[8] = source.get("original_caption", "").strip()
+        row[9] = source.get("transcript", "").strip()
+        row[10] = source.get("top_comment", "").strip()
+        row[11] = source.get("speaker_name", "").strip()
+        row[12] = source.get("footer", "").strip()
         row[13] = source.get("status", "").strip()
         row[14] = source.get("caption_context", "").strip()
+        row[15] = source.get("scheduled_time", "").strip()
         row[16] = source.get("name", "").strip()
         row[17] = source.get("text1", "").strip()
         row[18] = source.get("text2", "").strip()
@@ -303,6 +310,37 @@ def append_generated_post_rows(sheet_id: str, rows: list[dict]) -> None:
 
     ws = _worksheet(sheet_id)
     _with_backoff(ws.append_rows, values, value_input_option="USER_ENTERED")
+    _invalidate_rows_cache(sheet_id)
+
+
+def update_generated_post_slides_and_status(
+    sheet_id: str,
+    row_number: int,
+    name: str,
+    text1: str,
+    text2: str,
+    text3: str,
+    text4: str,
+    text5: str,
+    text6: str,
+    status: str,
+) -> None:
+    """Write generated post slide fields and status to the main posts tab."""
+    ws = _worksheet(sheet_id)
+    _update_row_fields_by_headers(
+        ws,
+        row_number,
+        {
+            "name": name,
+            "text1": text1,
+            "text2": text2,
+            "text3": text3,
+            "text4": text4,
+            "text5": text5,
+            "text6": text6,
+            "status": status,
+        },
+    )
     _invalidate_rows_cache(sheet_id)
 
 

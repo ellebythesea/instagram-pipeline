@@ -88,6 +88,7 @@ EDITOR_INITIAL_RENDER_LIMIT = 12
 WORKSPACE_SLIDES_BATCH_SIZE = 5
 INSTAGRAM_CANVAS_WIDTH_PX = 1080
 INSTAGRAM_CANVAS_HEIGHT_PX = 1485
+_SUBSTACK_PROMOTE_META_PREFIX = "SUBSTACK_PROMOTE_META:"
 PREVIEW_EXPORT_WIDTH_PX = 1080
 PREVIEW_EXPORT_HEIGHT_PX = 1350
 PREVIEW_EXPORT_SCALE = PREVIEW_EXPORT_HEIGHT_PX / INSTAGRAM_CANVAS_HEIGHT_PX
@@ -1055,6 +1056,42 @@ def update_status(sheet_id: str, row_number: int, status: str) -> None:
     ws = sheet_ops._worksheet(sheet_id)
     sheet_ops._with_backoff(ws.update, f"N{row_number}", [[status]])
     sheet_ops._invalidate_rows_cache(sheet_id)
+
+
+def append_generated_post_rows(sheet_id: str, rows: list[dict]) -> None:
+    if hasattr(sheet_ops, "append_generated_post_rows"):
+        sheet_ops.append_generated_post_rows(sheet_id, rows)
+        return
+    raise RuntimeError("append_generated_post_rows is not available.")
+
+
+def update_generated_post_slides_and_status(
+    sheet_id: str,
+    row_number: int,
+    name: str,
+    text1: str,
+    text2: str,
+    text3: str,
+    text4: str,
+    text5: str,
+    text6: str,
+    status: str,
+) -> None:
+    if hasattr(sheet_ops, "update_generated_post_slides_and_status"):
+        sheet_ops.update_generated_post_slides_and_status(
+            sheet_id,
+            row_number,
+            name,
+            text1,
+            text2,
+            text3,
+            text4,
+            text5,
+            text6,
+            status,
+        )
+        return
+    raise RuntimeError("update_generated_post_slides_and_status is not available.")
 
 
 def _is_reel_url(url: str) -> bool:
@@ -4766,6 +4803,35 @@ def _substack_post_type_label(value: str) -> str:
     return "High-level summary" if value == "high_level_summary" else "Specific subset or angle"
 
 
+def _substack_promote_context(
+    url: str,
+    angle: str,
+    post_type: str,
+    topics: list[str] | None = None,
+    and_more: str = "",
+) -> str:
+    payload = {
+        "source": "substack_promote",
+        "url": _cell_text(url).strip(),
+        "angle": _cell_text(angle).strip(),
+        "post_type": _cell_text(post_type).strip() or "high_level_summary",
+        "topics": [_cell_text(topic).strip() for topic in (topics or []) if _cell_text(topic).strip()],
+        "and_more": _cell_text(and_more).strip(),
+    }
+    return f"{_SUBSTACK_PROMOTE_META_PREFIX}{json.dumps(payload, separators=(',', ':'))}"
+
+
+def _parse_substack_promote_context(value: str) -> dict:
+    raw = _cell_text(value).strip()
+    if not raw.startswith(_SUBSTACK_PROMOTE_META_PREFIX):
+        return {}
+    try:
+        payload = json.loads(raw[len(_SUBSTACK_PROMOTE_META_PREFIX):])
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
 def _substack_idea_prompt(post_type: str) -> str:
     common_schema = (
         "Return ONLY valid JSON as an array of 5 objects. Each object must have:\n"
@@ -6035,6 +6101,7 @@ if active_section_tab == "Substack":
             _sb_row_number = _sb_row["row_number"]
 
             _sb_fetch_key = f"ws_sb_fetched_{_sb_url}"
+            _sb_fetch_meta_key = f"ws_sb_fetched_meta_{_sb_url}"
             _sb_article_body = _sb_row.get("article", "").strip() or st.session_state.get(_sb_fetch_key, "").strip()
             if _sb_article_body:
                 st.caption("The latest article text will be fetched from the Substack link when you generate ideas.")
@@ -6058,6 +6125,7 @@ if active_section_tab == "Substack":
                         with st.spinner("Fetching article text…"):
                             _sb_fetched = _fetch_article_source_data(_sb_url)
                         _sb_fetched_article_body = (_sb_fetched.get("source_text") or "").strip()
+                        st.session_state[_sb_fetch_meta_key] = _sb_fetched
                     except Exception:
                         _sb_fetched_article_body = ""
 
@@ -6183,20 +6251,26 @@ if active_section_tab == "Substack":
                             _sb_post_rows.append(
                                 {
                                     "url": _sb_url,
-                                    "angle": _sb_angle,
+                                    "source_username": "voteinorout",
                                     "caption": _sb_caption,
+                                    "media_type": "article",
+                                    "original_caption": _sb_article_body,
+                                    "transcript": _sb_article_body,
+                                    "caption_context": _substack_promote_context(
+                                        _sb_url,
+                                        _sb_angle,
+                                        _sb_selected_post_type,
+                                        _sb_idea_topics,
+                                        _sb_and_more,
+                                    ),
                                     "text1": "",
                                     "text2": "",
                                     "text3": "",
                                     "text4": "",
                                     "text5": "",
                                     "text6": "",
-                                    "cta": "Save link for Substack",
+                                    "slide_cta": "Save link for Substack",
                                     "status": "slide prompt ready",
-                                    "slide_prompt": _sb_slide_prompt,
-                                    "slide_input": _sb_slide_input,
-                                    "post_type": _sb_selected_post_type,
-                                    "topics": ", ".join(_sb_idea_topics),
                                 }
                             )
                             _sb_created += 1
@@ -6210,27 +6284,38 @@ if active_section_tab == "Substack":
                     _sb_progress.empty()
 
                     if _sb_post_rows:
-                        sheet_ops.append_substack_post_rows(GOOGLE_SHEET_ID, _sb_post_rows)
+                        _sb_fetch_meta = st.session_state.get(_sb_fetch_meta_key) or {}
+                        _sb_thumbnail_link = _cell_text(_sb_fetch_meta.get("image_url")).strip()
+                        for _sb_post_row in _sb_post_rows:
+                            _sb_post_row["thumbnail_link"] = _sb_thumbnail_link
+                        append_generated_post_rows(GOOGLE_SHEET_ID, _sb_post_rows)
                         st.success(
-                            f"{_sb_created} caption and slide prompt draft{'s' if _sb_created != 1 else ''} created. Paste slide results below to add rows."
+                            f"{_sb_created} caption and slide prompt draft{'s' if _sb_created != 1 else ''} created in the posts tab."
                         )
                         st.session_state.pop(_sb_ideas_key, None)
                         _rerun_workspace("Substack")
 
-            _sb_all_posts = sheet_ops.get_substack_post_rows(GOOGLE_SHEET_ID)
-            _sb_generated = [r for r in _sb_all_posts if r.get("url", "") == _sb_url]
+            _sb_all_posts = get_all_rows(GOOGLE_SHEET_ID)
+            _sb_generated = []
+            for _sb_post_row in _sb_all_posts:
+                if _cell_text(_sb_post_row.get("Instagram URL")).strip() != _sb_url:
+                    continue
+                _sb_meta = _parse_substack_promote_context(_sb_post_row.get("Caption Context", ""))
+                if _sb_meta.get("source") != "substack_promote":
+                    continue
+                _sb_generated.append((_sb_post_row, _sb_meta))
             if _sb_generated:
                 st.markdown("---")
                 st.markdown("### Generated Posts")
-                for _sb_post in _sb_generated:
-                    _sb_post_status = _cell_text(_sb_post.get("status")).strip().lower()
+                for _sb_post, _sb_meta in _sb_generated:
+                    _sb_post_status = _cell_text(_sb_post.get("Status")).strip().lower()
                     _sb_post_row_number = int(_sb_post.get("row_number") or 0)
-                    with st.expander(f"{_sb_post.get('angle', '')[:80]} — {_sb_post_status}", expanded=False):
-                        if _sb_post.get("post_type"):
-                            st.markdown(f"**Type:** {_substack_post_type_label(_sb_post.get('post_type', ''))}")
-                        st.markdown(f"**CTA:** {_sb_post.get('cta', '')}")
+                    with st.expander(f"{_cell_text(_sb_meta.get('angle')).strip()[:80]} — {_sb_post_status}", expanded=False):
+                        if _sb_meta.get("post_type"):
+                            st.markdown(f"**Type:** {_substack_post_type_label(_cell_text(_sb_meta.get('post_type')).strip())}")
+                        st.markdown(f"**CTA:** {_sb_post.get('Slide CTA', '')}")
                         st.markdown("**Caption**")
-                        st.code(_sb_post.get("caption", ""), language=None)
+                        st.code(_sb_post.get("Generated Caption", ""), language=None)
                         if any(_sb_post.get(f"text{i}") for i in range(1, 7)):
                             for _sb_slide_num in range(1, 7):
                                 st.markdown(f"**Slide {_sb_slide_num}**")
@@ -6258,9 +6343,10 @@ if active_section_tab == "Substack":
                                     )
                                     if not all(_sb_slides[f"text{i}"] for i in range(1, 7)):
                                         raise ValueError("Slide result must include text1 through text6.")
-                                    sheet_ops.update_substack_post_slides_and_status(
+                                    update_generated_post_slides_and_status(
                                         GOOGLE_SHEET_ID,
                                         _sb_post_row_number,
+                                        _sb_slides["name"],
                                         _sb_slides["text1"],
                                         _sb_slides["text2"],
                                         _sb_slides["text3"],
@@ -6272,23 +6358,32 @@ if active_section_tab == "Substack":
                                 except Exception as _sb_apply_err:
                                     st.error(f"Could not save slide results: {describe_error(_sb_apply_err)}")
                                 else:
-                                    st.success("Slide results saved to the Substack Posts tab.")
+                                    st.success("Slide results saved to the posts tab.")
                                     _rerun_workspace("Substack")
-                        if _sb_post.get("slide_prompt"):
+                        _sb_prompt, _sb_input = _build_substack_slide_handoff(
+                            _cell_text(_sb_meta.get("post_type")).strip() or "high_level_summary",
+                            {
+                                "angle": _cell_text(_sb_meta.get("angle")).strip(),
+                                "hook": "",
+                                "topics": _sb_meta.get("topics") or [],
+                                "and_more": _cell_text(_sb_meta.get("and_more")).strip(),
+                            },
+                            _cell_text(_sb_post.get("Original Caption")).strip() or _sb_article_body,
+                            _sb_url,
+                        )
+                        if _sb_post_status != "posted":
                             st.markdown("**Slide prompt**")
                             st.code(
                                 _format_substack_slide_prompt_preview(
-                                    _sb_post.get("slide_prompt", ""),
-                                    _sb_post.get("slide_input", ""),
+                                    _sb_prompt,
+                                    _sb_input,
                                     _sb_post_row_number,
                                 ),
                                 language=None,
                             )
-                        elif _sb_post_status != "posted":
+                        if _sb_post_status != "posted":
                             if st.button("Mark as Posted", key=f"ws_sb_posted_{_sb_post['row_number']}"):
-                                sheet_ops.update_substack_post_status(
-                                    GOOGLE_SHEET_ID, _sb_post["row_number"], "posted"
-                                )
+                                update_status(GOOGLE_SHEET_ID, _sb_post["row_number"], "posted")
                                 _rerun_workspace("Substack")
 
             st.markdown("---")

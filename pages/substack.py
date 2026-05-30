@@ -32,6 +32,7 @@ if not require_auth():
     st.stop()
 
 _openai_client: openai.OpenAI | None = None
+_SUBSTACK_PROMOTE_META_PREFIX = "SUBSTACK_PROMOTE_META:"
 
 
 def _get_openai_client() -> openai.OpenAI:
@@ -41,6 +42,29 @@ def _get_openai_client() -> openai.OpenAI:
             raise RuntimeError("OPENAI_API_KEY is not configured.")
         _openai_client = openai.OpenAI(api_key=OPENAI_API_KEY, timeout=60.0, max_retries=1)
     return _openai_client
+
+
+def _substack_promote_context(url: str, angle: str, post_type: str = "high_level_summary", topics: list[str] | None = None, and_more: str = "") -> str:
+    payload = {
+        "source": "substack_promote",
+        "url": (url or "").strip(),
+        "angle": (angle or "").strip(),
+        "post_type": (post_type or "").strip() or "high_level_summary",
+        "topics": [topic.strip() for topic in (topics or []) if topic.strip()],
+        "and_more": (and_more or "").strip(),
+    }
+    return f"{_SUBSTACK_PROMOTE_META_PREFIX}{json.dumps(payload, separators=(',', ':'))}"
+
+
+def _parse_substack_promote_context(value: str) -> dict:
+    raw = (value or "").strip()
+    if not raw.startswith(_SUBSTACK_PROMOTE_META_PREFIX):
+        return {}
+    try:
+        payload = json.loads(raw[len(_SUBSTACK_PROMOTE_META_PREFIX):])
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 articles_tab, comments_tab = st.tabs(["Articles", "Comments"])
@@ -82,6 +106,7 @@ with articles_tab:
         row_number = selected_row["row_number"]
 
         fetch_key = f"substack_fetched_{substack_url}"
+        fetch_meta_key = f"substack_fetch_meta_{substack_url}"
         article_body = selected_row.get("article", "").strip() or st.session_state.get(fetch_key, "").strip()
         if article_body:
             st.caption("The latest article text will be fetched from the Substack link when you generate ideas.")
@@ -99,6 +124,7 @@ with articles_tab:
                     with st.spinner("Fetching article text…"):
                         result = fetch_article_source(substack_url)
                     fetched_article_body = (result.get("source_text") or "").strip()
+                    st.session_state[fetch_meta_key] = result
                 except Exception:
                     fetched_article_body = ""
 
@@ -204,13 +230,18 @@ with articles_tab:
                         post_rows.append(
                             {
                                 "url": substack_url,
-                                "angle": angle,
+                                "source_username": "voteinorout",
                                 "caption": caption,
+                                "media_type": "article",
+                                "original_caption": article_body,
+                                "transcript": article_body,
+                                "caption_context": _substack_promote_context(substack_url, angle),
+                                "name": "voteinorout",
                                 "text1": slides.get("text1", ""),
                                 "text2": slides.get("text2", ""),
                                 "text3": slides.get("text3", ""),
-                                "cta": "Save link for Substack",
-                                "status": "generated",
+                                "slide_cta": "Save link for Substack",
+                                "status": "slides",
                             }
                         )
                         created += 1
@@ -224,42 +255,53 @@ with articles_tab:
                 progress.empty()
 
                 if post_rows:
-                    sheet_ops.append_substack_post_rows(GOOGLE_SHEET_ID, post_rows)
+                    _fetch_meta = st.session_state.get(fetch_meta_key) or {}
+                    _thumbnail_link = (_fetch_meta.get("image_url") or "").strip()
+                    for post_row in post_rows:
+                        post_row["thumbnail_link"] = _thumbnail_link
+                    sheet_ops.append_generated_post_rows(GOOGLE_SHEET_ID, post_rows)
                     sheet_ops.update_substack_status(GOOGLE_SHEET_ID, row_number, "posts created")
                     st.success(
-                        f"{created} post{'s' if created != 1 else ''} created in the Substack Posts tab."
+                        f"{created} post{'s' if created != 1 else ''} created in the posts tab."
                     )
                     st.session_state.pop(ideas_key, None)
                     st.rerun()
 
         # ── Generated Posts view ──────────────────────────────────────────
-        all_post_rows = sheet_ops.get_substack_post_rows(GOOGLE_SHEET_ID)
-        generated = [r for r in all_post_rows if r.get("url", "") == substack_url]
+        all_post_rows = sheet_ops.get_all_rows(GOOGLE_SHEET_ID)
+        generated = []
+        for r in all_post_rows:
+            if (r.get("Instagram URL") or "").strip() != substack_url:
+                continue
+            meta = _parse_substack_promote_context(r.get("Caption Context", ""))
+            if meta.get("source") != "substack_promote":
+                continue
+            generated.append({"row_number": r.get("row_number"), "row": r, "meta": meta})
 
         if generated:
             st.markdown("---")
             st.markdown("### Generated Posts")
             for post in generated:
-                status = post.get("status", "")
-                angle_label = post.get("angle", "(no angle)")
+                row = post["row"]
+                meta = post["meta"]
+                status = row.get("Status", "")
+                angle_label = meta.get("angle") or "(no angle)"
                 with st.expander(f"{angle_label[:80]} — {status}", expanded=False):
-                    st.markdown(f"**CTA:** {post.get('cta', '')}")
+                    st.markdown(f"**CTA:** {row.get('Slide CTA', '')}")
                     st.markdown("**Caption**")
-                    st.code(post.get("caption", ""), language=None)
+                    st.code(row.get("Generated Caption", ""), language=None)
                     st.markdown("**Slide 1**")
-                    st.code(post.get("text1", ""), language=None)
+                    st.code(row.get("text1", ""), language=None)
                     st.markdown("**Slide 2**")
-                    st.code(post.get("text2", ""), language=None)
+                    st.code(row.get("text2", ""), language=None)
                     st.markdown("**Slide 3**")
-                    st.code(post.get("text3", ""), language=None)
+                    st.code(row.get("text3", ""), language=None)
                     if status != "posted":
                         if st.button(
                             "Mark as Posted",
-                            key=f"substack_mark_posted_{post['row_number']}",
+                            key=f"substack_mark_posted_{row['row_number']}",
                         ):
-                            sheet_ops.update_substack_post_status(
-                                GOOGLE_SHEET_ID, post["row_number"], "posted"
-                            )
+                            sheet_ops.update_status(GOOGLE_SHEET_ID, row["row_number"], "posted")
                             st.rerun()
 
         st.markdown("---")

@@ -104,27 +104,19 @@ The app auto-upgrades older 4-column `substack` tabs by adding the monitoring co
 
 Legacy fallback tab for Instagram comment monitoring. Existing rows still work, but new monitoring should be tracked on the `substack` tab instead.
 
-### Tab: substack_posts
+### Substack Promote Storage
 
-Generated Instagram posts from Substack articles. 15 columns:
+Generated Instagram posts from Substack articles now write directly into the main `posts` tab.
 
-| Col | Header |
-|-----|--------|
-| A | url |
-| B | angle |
-| C | caption |
-| D | text1 |
-| E | text2 |
-| F | text3 |
-| G | text4 |
-| H | text5 |
-| I | text6 |
-| J | cta |
-| K | status |
-| L | slide_prompt |
-| M | slide_input |
-| N | post_type |
-| O | topics |
+Rows are stored as normal post rows with:
+- `Instagram URL` = the Substack article URL
+- `Media Type` = `article`
+- `Generated Caption` populated
+- `Original Caption` and `Transcript` set to the article body
+- `Caption Context` carrying Substack promote metadata
+- slide fields populated when available
+
+The old `substack_posts` tab is no longer required for new Promote posts.
 
 Status values: `slide prompt ready`, `row created`, `posted`
 

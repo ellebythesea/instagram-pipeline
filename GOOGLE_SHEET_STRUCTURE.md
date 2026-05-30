@@ -75,27 +75,17 @@ Legacy fallback tab for Instagram comment monitoring. Existing rows still work, 
 
 ---
 
-## Tab: substack_posts
+## Substack Promote Storage
 
-Generated Instagram posts from Substack articles. 15 columns.
+Substack Promote posts now write directly into the main `posts` tab instead of a separate `substack_posts` tab.
 
-| Col | Header |
-|-----|--------|
-| A | url |
-| B | angle |
-| C | caption |
-| D | text1 |
-| E | text2 |
-| F | text3 |
-| G | text4 |
-| H | text5 |
-| I | text6 |
-| J | cta |
-| K | status |
-| L | slide_prompt |
-| M | slide_input |
-| N | post_type |
-| O | topics |
+These rows use the standard posts schema with:
+- `Instagram URL` set to the Substack article URL
+- `Media Type` set to `article`
+- `Generated Caption` filled in
+- `Original Caption` and `Transcript` containing the article text
+- `Caption Context` containing Substack promote metadata
+- slide columns filled when generated or after slide results are applied
 
 **Status values:** `slide prompt ready`, `row created`, `posted`
 
