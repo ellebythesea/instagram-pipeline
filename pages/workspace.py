@@ -4909,30 +4909,24 @@ def _rerun_workspace(tab: str | None = None) -> None:
     st.rerun()
 
 
-def _substack_post_type_value(label: str) -> str:
-    if label.startswith("High-level"):
-        return "high_level_summary"
-    return "article_subset"
-
-
-def _substack_post_type_label(value: str) -> str:
-    return "High-level summary" if value == "high_level_summary" else "Specific subset or angle"
-
-
 def _substack_promote_context(
     url: str,
-    angle: str,
-    post_type: str,
-    topics: list[str] | None = None,
-    and_more: str = "",
+    focus_topic: str,
+    context_request: str = "",
+    article_topics: list[str] | None = None,
 ) -> str:
+    cleaned_focus_topic = _cell_text(focus_topic).strip()
     payload = {
         "source": "substack_promote",
         "url": _cell_text(url).strip(),
-        "angle": _cell_text(angle).strip(),
-        "post_type": _cell_text(post_type).strip() or "high_level_summary",
-        "topics": [_cell_text(topic).strip() for topic in (topics or []) if _cell_text(topic).strip()],
-        "and_more": _cell_text(and_more).strip(),
+        "focus_topic": cleaned_focus_topic,
+        "angle": cleaned_focus_topic,
+        "context_request": _cell_text(context_request).strip(),
+        "article_topics": [
+            _cell_text(topic).strip()
+            for topic in (article_topics or [])
+            if _cell_text(topic).strip()
+        ],
     }
     return f"{_SUBSTACK_PROMOTE_META_PREFIX}{json.dumps(payload, separators=(',', ':'))}"
 
@@ -4948,46 +4942,45 @@ def _parse_substack_promote_context(value: str) -> dict:
     return payload if isinstance(payload, dict) else {}
 
 
-def _substack_idea_prompt(post_type: str) -> str:
-    common_schema = (
-        "Return ONLY valid JSON as an array of 5 objects. Each object must have:\n"
-        '- "post_type": "high_level_summary" or "article_subset"\n'
-        '- "angle": one sentence describing the post concept\n'
-        '- "hook": the strongest opening line, under 100 characters\n'
-        '- "topics": an array of 3 to 6 short topic strings from the article\n'
-        '- "and_more": a short phrase naming what else the full article covers\n\n'
-        "No markdown. No commentary outside JSON."
-    )
-    if post_type == "high_level_summary":
-        return (
-            "You are a social media strategist for Vote In Or Out.\n\n"
-            "Given this Substack article, generate high-level Instagram post concepts that make people want to read the full article. "
-            "Do not make the concepts narrow single-fact angles. Each concept should explain the reader payoff: what someone will understand after reading, "
-            "why the race or issue matters, and a few topics the article covers.\n\n"
-            + common_schema
-        )
+def _substack_topic_breakdown_prompt() -> str:
     return (
-        "You are a social media strategist for Vote In Or Out.\n\n"
-        "Given this Substack article, generate specific Instagram post concepts based on a subset of the article. "
-        "Each concept may focus on one sharp fact, conflict, quote, or theme, but it must make clear the full article covers that topic and more. "
-        'Use the "and_more" field to name additional topics that should be referenced as "and more" in captions and slide text.\n\n'
-        + common_schema
+        "You are preparing a reusable topic breakdown for Vote In Or Out.\n\n"
+        "Read the full article and identify the main short topics it covers.\n"
+        "Return ONLY valid JSON as an array of 8 to 15 strings.\n"
+        "Each string must be 1 to 3 words.\n"
+        "Use concrete article topics, not vague labels.\n"
+        "Examples: \"tariffs\", \"swing voters\", \"polling gap\", \"housing costs\".\n"
+        "No duplicates. No numbering. No markdown. No commentary outside JSON."
     )
 
 
-def _build_substack_slide_handoff(post_type: str, idea: dict, article_body: str, substack_url: str) -> tuple[str, str]:
-    post_type_label = _substack_post_type_label(post_type)
-    angle = _cell_text(idea.get("angle")).strip()
-    hook = _cell_text(idea.get("hook")).strip()
-    topics = [
-        _cell_text(topic).strip()
-        for topic in (idea.get("topics") or [])
-        if _cell_text(topic).strip()
-    ]
-    and_more = _cell_text(idea.get("and_more")).strip()
-    if not and_more and topics:
-        and_more = ", ".join(topics[-3:])
+def _normalize_substack_topics(raw_topics: object) -> list[str]:
+    if not isinstance(raw_topics, list):
+        return []
+    seen: set[str] = set()
+    cleaned: list[str] = []
+    for raw_topic in raw_topics:
+        topic = _single_paragraph_slide_text(raw_topic).strip(" ,.;:-")
+        if not topic:
+            continue
+        topic_key = topic.lower()
+        if topic_key in seen:
+            continue
+        seen.add(topic_key)
+        cleaned.append(topic)
+    return cleaned[:15]
 
+
+def _build_substack_slide_handoff(
+    focus_topic: str,
+    context_request: str,
+    article_topics: list[str],
+    article_body: str,
+    substack_url: str,
+) -> tuple[str, str]:
+    focus_topic = _cell_text(focus_topic).strip()
+    context_request = _cell_text(context_request).strip()
+    article_topics = _normalize_substack_topics(article_topics)
     prompt = (
         "Return ONLY valid JSON as an array. No markdown, no commentary outside JSON.\n\n"
         "Each object must include exactly: row_number, name, text1, text2, text3, text4, text5, text6\n\n"
@@ -5005,30 +4998,20 @@ def _build_substack_slide_handoff(post_type: str, idea: dict, article_body: str,
         "No speculation or invented framing.\n"
         "Never repeat the same fact, quote, setup, accusation, or disclaimer across slides.\n\n"
     )
-    if post_type == "high_level_summary":
-        prompt += (
-            "This is a high-level summary post. Do not over-focus on one detail. "
-            "Frame the slides around why someone should read the full article, but still use specific names, dates, numbers, quotes, and topics from the article.\n"
-        )
-    else:
-        prompt += (
-            'This is a subset-of-article post. The slides may focus on the selected angle, but text6 must say the full article covers this "and more" '
-            "and name the extra topics.\n"
-        )
+    prompt += (
+        "Focus the carousel on the selected article topic.\n"
+        "Use the extra user context only as direction, not as a source of new facts.\n"
+        'On the final slide, say the full article covers this topic and more, and name at least two other article topics when possible.\n'
+        'Set the "name" field to "@voteinorout".\n'
+    )
 
     slide_input = (
         "ROW [ROW_NUMBER]\n"
-        f"Post type: {post_type_label}\n"
         f"Substack URL: {substack_url}\n"
-        f"Selected concept: {angle}\n"
-        f"Opening hook: {hook}\n"
-        f"Topics to mention: {', '.join(topics) if topics else '(infer from article)'}\n"
-        f"And more topics: {and_more or '(infer from article)'}\n\n"
-        + (
-            "Slide requirement: explain why someone should read the full article and mention several topics it covers. Use concrete article data points across slides 2 through 5.\n\n"
-            if post_type == "high_level_summary"
-            else 'Slide requirement: focus on the selected concept, use concrete article data points across slides 2 through 5, and explicitly say the full article covers this "and more" on slide 6.\n\n'
-        )
+        f"Focus topic: {focus_topic or '(infer from article)'}\n"
+        f"Article topics: {', '.join(article_topics) if article_topics else '(infer from article)'}\n"
+        f"Extra context from user: {context_request or '(none)'}\n\n"
+        "Slide requirement: focus on the selected topic, use concrete article data points across slides 2 through 5, and explicitly say the full article covers this topic and more on slide 6.\n\n"
         + f"Article:\n{article_body}"
     )
     return prompt.strip(), slide_input.strip()
@@ -5065,6 +5048,54 @@ def _ensure_substack_caption_footer(caption: str, substack_url: str) -> str:
     if len(body_parts) > 2:
         cleaned = "\n\n".join([body_parts[0], " ".join(body_parts[1:])])
     return f"{cleaned}\n\n{footer}".strip()
+
+
+def _generate_substack_caption_from_slides(
+    substack_url: str,
+    article_body: str,
+    focus_topic: str,
+    context_request: str,
+    article_topics: list[str],
+    slides: dict,
+) -> str:
+    slide_lines = []
+    for slide_key in ("text1", "text2", "text3", "text4", "text5", "text6"):
+        slide_text = _cell_text(slides.get(slide_key)).strip()
+        if slide_text:
+            slide_lines.append(f"{slide_key.upper()}: {slide_text}")
+    slide_summary = "\n".join(slide_lines)
+    response = _get_client().chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are writing an Instagram caption for Vote In Or Out that promotes a Substack article after the slide copy is finalized.\n"
+                    "Use the finalized slides as the primary guide for the caption's angle and summary.\n"
+                    "Use the article only to verify facts and add one or two concrete details.\n"
+                    "Write in third person. Do not use I, me, my, we, us, our, or ours outside of a short direct quote from the source.\n"
+                    "Write exactly two short paragraphs before the required CTA/footer.\n"
+                    "The first paragraph should summarize the main point clearly and specifically.\n"
+                    "The second paragraph should add concrete context and make clear the full article covers this topic and more.\n"
+                    "No hashtags, no emojis, no bullet points, no markdown, no links in the body.\n"
+                    "End with the exact required CTA/footer provided by the user."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Focus topic: {focus_topic}\n"
+                    f"Article topics: {', '.join(_normalize_substack_topics(article_topics)) or '(infer from article)'}\n"
+                    f"Extra context from user: {context_request or '(none)'}\n\n"
+                    f"Finalized slides:\n{slide_summary}\n\n"
+                    f"Article:\n{article_body}\n\n"
+                    f"Required CTA/footer:\n{_substack_caption_footer(substack_url)}"
+                ),
+            },
+        ],
+        max_tokens=700,
+    )
+    return _ensure_substack_caption_footer(response.choices[0].message.content or "", substack_url)
 
 
 def _substack_slide_result(raw_text: str, fallback_row_number: int) -> dict:
@@ -6221,23 +6252,14 @@ if active_section_tab == "Substack":
 
             _sb_fetch_key = f"ws_sb_fetched_{_sb_url}"
             _sb_fetch_meta_key = f"ws_sb_fetched_meta_{_sb_url}"
+            _sb_topics_key = f"ws_sb_article_topics_{_sb_url}"
             _sb_article_body = _sb_row.get("article", "").strip() or st.session_state.get(_sb_fetch_key, "").strip()
             if _sb_article_body:
-                st.caption("The latest article text will be fetched from the Substack link when you generate ideas.")
+                st.caption("The latest article text will be fetched from the Substack link when you generate the topic breakdown.")
             else:
-                st.caption("Article text will be fetched from the Substack link when you generate ideas.")
+                st.caption("Article text will be fetched from the Substack link when you generate the topic breakdown.")
 
-            _sb_post_type_label = st.radio(
-                "Post type",
-                ["High-level summary", "Specific subset or angle"],
-                horizontal=True,
-                key="ws_sb_post_type",
-            )
-            _sb_post_type = _substack_post_type_value(_sb_post_type_label)
-            _sb_topics = st.text_input("Focus or topics to prioritize (optional)", key="ws_sb_topics")
-            _sb_ideas_key = f"ws_sb_ideas_{_sb_url}"
-
-            if st.button("Generate Post Ideas", type="primary", key="ws_sb_gen_ideas"):
+            if st.button("Generate Topic Breakdown", type="primary", key="ws_sb_gen_topics"):
                 try:
                     _sb_fetched_article_body = ""
                     try:
@@ -6255,133 +6277,60 @@ if active_section_tab == "Substack":
                     if not _sb_article_body:
                         raise RuntimeError("Could not fetch article text from this Substack link.")
 
-                    _sb_user_msg = f"Requested post type: {_substack_post_type_label(_sb_post_type)}\n\nArticle:\n\n{_sb_article_body}"
-                    if _sb_topics.strip():
-                        _sb_user_msg += f"\n\nPrioritize this request: {_sb_topics.strip()}"
                     _sb_resp = _get_client().chat.completions.create(
                         model="gpt-4o",
                         messages=[
-                            {
-                                "role": "system",
-                                "content": _substack_idea_prompt(_sb_post_type),
-                            },
-                            {"role": "user", "content": _sb_user_msg},
+                            {"role": "system", "content": _substack_topic_breakdown_prompt()},
+                            {"role": "user", "content": f"Article:\n\n{_sb_article_body}"},
                         ],
-                        max_tokens=800,
+                        max_tokens=500,
                     )
                     _sb_raw = (_sb_resp.choices[0].message.content or "").strip()
                     _sb_raw = _sb_raw.lstrip("```json").lstrip("```").rstrip("```").strip()
-                    st.session_state[_sb_ideas_key] = json.loads(_sb_raw)
+                    _sb_topics = _normalize_substack_topics(json.loads(_sb_raw))
+                    if not _sb_topics:
+                        raise ValueError("No valid topics returned.")
+                    st.session_state[_sb_topics_key] = _sb_topics
                 except Exception as _sb_err:
-                    st.error(f"Failed to generate ideas: {_sb_err}")
+                    st.error(f"Failed to generate topic breakdown: {_sb_err}")
 
-            _sb_ideas = st.session_state.get(_sb_ideas_key)
-            if _sb_ideas:
-                st.markdown("**Select ideas to turn into posts:**")
-                _sb_selected_ideas = []
-                for _sb_i, _sb_idea in enumerate(_sb_ideas):
-                    _sb_checked = st.checkbox(
-                        _sb_idea.get("hook", f"Idea {_sb_i + 1}"),
-                        key=f"ws_sb_idea_{_sb_url}_{_sb_i}",
-                    )
-                    st.caption(_sb_idea.get("angle", ""))
-                    _sb_idea_topics = [
-                        _cell_text(topic).strip()
-                        for topic in (_sb_idea.get("topics") or [])
-                        if _cell_text(topic).strip()
-                    ]
-                    if _sb_idea_topics:
-                        st.caption(f"Topics: {', '.join(_sb_idea_topics)}")
-                    if _cell_text(_sb_idea.get("and_more")).strip():
-                        st.caption(f"And more: {_cell_text(_sb_idea.get('and_more')).strip()}")
-                    if _sb_checked:
-                        _sb_selected_ideas.append(_sb_idea)
-
-                if st.button("Create Selected Posts", type="primary", key="ws_sb_create", disabled=not _sb_selected_ideas):
-                    _sb_created = 0
-                    _sb_post_rows = []
-                    _sb_progress = st.progress(0, text="Generating captions and slide prompts…")
-                    for _sb_idx, _sb_idea in enumerate(_sb_selected_ideas):
-                        _sb_angle = _sb_idea.get("angle", "")
-                        _sb_selected_post_type = _sb_idea.get("post_type") or _sb_post_type
-                        _sb_selected_post_type = (
-                            "high_level_summary"
-                            if _sb_selected_post_type == "high_level_summary"
-                            else "article_subset"
-                        )
-                        _sb_idea_topics = [
-                            _cell_text(topic).strip()
-                            for topic in (_sb_idea.get("topics") or [])
-                            if _cell_text(topic).strip()
-                        ]
-                        _sb_and_more = _cell_text(_sb_idea.get("and_more")).strip()
-                        try:
-                            _sb_slide_prompt, _sb_slide_input = _build_substack_slide_handoff(
-                                _sb_selected_post_type,
-                                _sb_idea,
-                                _sb_article_body,
-                                _sb_url,
-                            )
-                            _sb_cap_resp = _get_client().chat.completions.create(
-                                model="gpt-4o",
-                                messages=[
-                                    {
-                                        "role": "system",
-                                        "content": (
-                                            "You are a sharp political analyst. Rewrite the article concept into a short, clear social post "
-                                            "using exactly two simple paragraphs before the required CTA/footer.\n\n"
-                                            "Never write the caption in first person outside of a short direct quote from the article. "
-                                            "Do not use I, me, my, we, us, our, or ours in the narration of the caption. "
-                                            "Describe people and events in third person.\n\n"
-                                            "The first paragraph must be 250 characters or fewer and serve as the most important summary. "
-                                            "It must include all hashtags. Use 3 to 5 relevant hashtags total. Prioritize the main people the post is about, "
-                                            "then include one single word subject hashtag that helps with trending news discovery, followed by any remaining relevant tags. "
-                                            "Replace the normal word or phrase in the sentence with the hashtag version, for example use #DonaldTrump in the sentence instead of writing the name normally. "
-                                            "Do not add a separate hashtag only line at the end.\n\n"
-                                            "The second paragraph should add context using verified facts, dates, and numbers when relevant. "
-                                            "Include direct quotes from the article when available. Verify names and quotes carefully. "
-                                            "Any hashtag used in the caption body counts toward the total of 3 to 5 hashtags. "
-                                            "Avoid speculation, flourish, emojis, links, or references to Trump's current office status.\n\n"
-                                            "This post promotes a Substack article. For a high-level summary, explain why someone would want to read it and mention several topics it covers. "
-                                            'For a subset post, explicitly say the full article covers this topic "and more" and name the additional topics. '
-                                            "End with the exact required CTA/footer provided by the user. Keep the full caption under 1300 characters."
-                                        ),
-                                    },
-                                    {
-                                        "role": "user",
-                                        "content": (
-                                            f"Post type: {_substack_post_type_label(_sb_selected_post_type)}\n"
-                                            f"Angle: {_sb_angle}\n\n"
-                                            f"Hook: {_cell_text(_sb_idea.get('hook')).strip()}\n"
-                                            f"Topics: {', '.join(_sb_idea_topics) if _sb_idea_topics else '(infer from article)'}\n"
-                                            f"And more: {_sb_and_more or '(infer from article)'}\n\n"
-                                            f"Article:\n{_sb_article_body}\n\n"
-                                            f"Required CTA/footer:\n{_substack_caption_footer(_sb_url)}"
-                                        ),
-                                    },
-                                ],
-                                max_tokens=600,
-                            )
-                            _sb_caption = _ensure_substack_caption_footer(
-                                _sb_cap_resp.choices[0].message.content or "",
-                                _sb_url,
-                            )
-
-                            _sb_post_rows.append(
+            _sb_article_topics = _normalize_substack_topics(st.session_state.get(_sb_topics_key, []))
+            if _sb_article_topics:
+                st.markdown("**Article topic breakdown**")
+                st.caption("Pick one short topic to focus the promotional post.")
+                _sb_focus_topic = st.selectbox(
+                    "Focus topic",
+                    _sb_article_topics,
+                    key=f"ws_sb_focus_topic_{_sb_url}",
+                )
+                _sb_context_request = st.text_area(
+                    "Context to emphasize",
+                    key=f"ws_sb_context_{_sb_url}",
+                    height=110,
+                    placeholder="Add what angle or context you want emphasized in the post.",
+                )
+                st.caption("Topics found: " + ", ".join(_sb_article_topics))
+                if st.button("Create Promote Draft", type="primary", key="ws_sb_create"):
+                    try:
+                        _sb_fetch_meta = st.session_state.get(_sb_fetch_meta_key) or {}
+                        append_generated_post_rows(
+                            GOOGLE_SHEET_ID,
+                            [
                                 {
                                     "url": _sb_url,
                                     "source_username": "voteinorout",
-                                    "caption": _sb_caption,
+                                    "caption": "",
                                     "media_type": "article",
+                                    "thumbnail_link": _cell_text(_sb_fetch_meta.get("image_url")).strip(),
                                     "original_caption": _sb_article_body,
                                     "transcript": _sb_article_body,
                                     "caption_context": _substack_promote_context(
                                         _sb_url,
-                                        _sb_angle,
-                                        _sb_selected_post_type,
-                                        _sb_idea_topics,
-                                        _sb_and_more,
+                                        _sb_focus_topic,
+                                        _sb_context_request,
+                                        _sb_article_topics,
                                     ),
+                                    "name": "@voteinorout",
                                     "text1": "",
                                     "text2": "",
                                     "text3": "",
@@ -6391,27 +6340,12 @@ if active_section_tab == "Substack":
                                     "slide_cta": "Save link for Substack",
                                     "status": "slide prompt ready",
                                 }
-                            )
-                            _sb_created += 1
-                        except Exception as _sb_post_err:
-                            st.error(f"Failed for angle '{_sb_angle[:60]}': {_sb_post_err}")
-                        _sb_progress.progress(
-                            (_sb_idx + 1) / len(_sb_selected_ideas),
-                            text=f"Generated {_sb_idx + 1} of {len(_sb_selected_ideas)}…",
+                            ],
                         )
-
-                    _sb_progress.empty()
-
-                    if _sb_post_rows:
-                        _sb_fetch_meta = st.session_state.get(_sb_fetch_meta_key) or {}
-                        _sb_thumbnail_link = _cell_text(_sb_fetch_meta.get("image_url")).strip()
-                        for _sb_post_row in _sb_post_rows:
-                            _sb_post_row["thumbnail_link"] = _sb_thumbnail_link
-                        append_generated_post_rows(GOOGLE_SHEET_ID, _sb_post_rows)
-                        st.success(
-                            f"{_sb_created} caption and slide prompt draft{'s' if _sb_created != 1 else ''} created in the posts tab."
-                        )
-                        st.session_state.pop(_sb_ideas_key, None)
+                    except Exception as _sb_create_err:
+                        st.error(f"Could not create promote draft: {describe_error(_sb_create_err)}")
+                    else:
+                        st.success("Promote draft created in the posts tab.")
                         _rerun_workspace("Substack")
 
             _sb_all_posts = get_all_rows(GOOGLE_SHEET_ID)
@@ -6429,9 +6363,15 @@ if active_section_tab == "Substack":
                 for _sb_post, _sb_meta in _sb_generated:
                     _sb_post_status = _cell_text(_sb_post.get("Status")).strip().lower()
                     _sb_post_row_number = int(_sb_post.get("row_number") or 0)
-                    with st.expander(f"{_cell_text(_sb_meta.get('angle')).strip()[:80]} — {_sb_post_status}", expanded=False):
-                        if _sb_meta.get("post_type"):
-                            st.markdown(f"**Type:** {_substack_post_type_label(_cell_text(_sb_meta.get('post_type')).strip())}")
+                    _sb_focus_topic = _cell_text(_sb_meta.get("focus_topic") or _sb_meta.get("angle")).strip()
+                    with st.expander(f"{(_sb_focus_topic or '(no topic)')[:80]} — {_sb_post_status}", expanded=False):
+                        if _cell_text(_sb_meta.get("context_request")).strip():
+                            st.markdown(f"**Context:** {_cell_text(_sb_meta.get('context_request')).strip()}")
+                        _sb_meta_topics = _normalize_substack_topics(
+                            _sb_meta.get("article_topics") or _sb_meta.get("topics") or []
+                        )
+                        if _sb_meta_topics:
+                            st.markdown(f"**Article topics:** {', '.join(_sb_meta_topics)}")
                         st.markdown(f"**CTA:** {_sb_post.get('Slide CTA', '')}")
                         st.markdown("**Caption**")
                         st.code(_sb_post.get("Generated Caption", ""), language=None)
@@ -6472,21 +6412,27 @@ if active_section_tab == "Substack":
                                         _sb_slides["text4"],
                                         _sb_slides["text5"],
                                         _sb_slides["text6"],
-                                        "row created",
+                                        "slides",
                                     )
+                                    _sb_caption = _generate_substack_caption_from_slides(
+                                        _sb_url,
+                                        _cell_text(_sb_post.get("Original Caption")).strip() or _sb_article_body,
+                                        _sb_focus_topic,
+                                        _cell_text(_sb_meta.get("context_request")).strip(),
+                                        _sb_meta_topics,
+                                        _sb_slides,
+                                    )
+                                    update_caption(GOOGLE_SHEET_ID, _sb_post_row_number, _sb_caption, "slides")
+                                    st.session_state.pop(f"ws_sb_slide_results_{_sb_post_row_number}", None)
                                 except Exception as _sb_apply_err:
                                     st.error(f"Could not save slide results: {describe_error(_sb_apply_err)}")
                                 else:
-                                    st.success("Slide results saved to the posts tab.")
+                                    st.success("Slide results and caption saved to the posts tab.")
                                     _rerun_workspace("Substack")
                         _sb_prompt, _sb_input = _build_substack_slide_handoff(
-                            _cell_text(_sb_meta.get("post_type")).strip() or "high_level_summary",
-                            {
-                                "angle": _cell_text(_sb_meta.get("angle")).strip(),
-                                "hook": "",
-                                "topics": _sb_meta.get("topics") or [],
-                                "and_more": _cell_text(_sb_meta.get("and_more")).strip(),
-                            },
+                            _sb_focus_topic,
+                            _cell_text(_sb_meta.get("context_request")).strip(),
+                            _sb_meta_topics,
                             _cell_text(_sb_post.get("Original Caption")).strip() or _sb_article_body,
                             _sb_url,
                         )
