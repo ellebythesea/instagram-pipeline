@@ -4945,20 +4945,25 @@ def _parse_substack_promote_context(value: str) -> dict:
 def _substack_topic_breakdown_prompt() -> str:
     return (
         "You are preparing a reusable topic breakdown for Vote In Or Out.\n\n"
-        "Read the full article and identify the main short topics it covers.\n"
-        "Return ONLY valid JSON as an array of 8 to 15 strings.\n"
+        "Read the full article all the way through and identify the most interesting larger themes it covers.\n"
+        "Do not just copy the first few nouns or phrases from the opening lines.\n"
+        "Look for what actually matters in the piece: major events, conflicts, notable people, elections, voting, democracy, women's rights, policy fights, court decisions, campaign dynamics, and other political topics of interest that are genuinely present in the article.\n"
+        "Prioritize themes a reader could realistically choose as the focus of a promotional post.\n"
+        "Return EXACTLY 15 topic strings in rank order from most interesting/useful to least.\n"
         "Each string must be 1 to 3 words.\n"
         "Use concrete article topics, not vague labels.\n"
-        "Examples: \"tariffs\", \"swing voters\", \"polling gap\", \"housing costs\".\n"
+        "Prefer themes over generic summary words.\n"
+        "Good examples: \"tariffs\", \"swing voters\", \"polling gap\", \"abortion rights\", \"ballot access\", \"housing costs\", \"court ruling\", \"union vote\".\n"
+        "Bad examples: \"introduction\", \"article overview\", \"politics\", \"news\", \"economy\" unless the article is specifically about the economy as a theme.\n"
         "No duplicates. No numbering. No markdown. No commentary outside JSON."
     )
 
 
 def _normalize_substack_topics(raw_topics: object) -> list[str]:
+    seen: set[str] = {"high-level overview"}
+    cleaned: list[str] = ["High-level overview"]
     if not isinstance(raw_topics, list):
-        return []
-    seen: set[str] = set()
-    cleaned: list[str] = []
+        return cleaned
     for raw_topic in raw_topics:
         topic = _single_paragraph_slide_text(raw_topic).strip(" ,.;:-")
         if not topic:
