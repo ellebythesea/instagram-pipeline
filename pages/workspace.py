@@ -4596,10 +4596,19 @@ def _fetch_row_with_transcript(row: dict, download_media: bool = False, force_re
     try:
         refreshed = process_reel_url(url, include_transcript=True)
         transcript = (refreshed.get("transcript") or "").strip()
+        uploaded = {
+            "media_link": row.get("Media Drive Link", ""),
+            "thumbnail_link": row.get("Thumbnail Drive Link", ""),
+        }
         if download_media:
             filename_prefix = build_filename_prefix(row_num, refreshed.get("username") or row.get("Source Username", ""))
             uploaded = upload_media_bundle(refreshed, filename_prefix=filename_prefix)
             tmp_dir = uploaded["tmp_dir"]
+            media_row_for_whisper = dict(row)
+            media_row_for_whisper["Media Drive Link"] = uploaded.get("media_link", "") or row.get("Media Drive Link", "")
+            media_row_for_whisper["Thumbnail Drive Link"] = uploaded.get("thumbnail_link", "") or row.get("Thumbnail Drive Link", "")
+            if not transcript:
+                transcript = (_transcribe_reel_from_drive(media_row_for_whisper) or "").strip()
             status_value = (row.get("Status") or "").strip() or "ingested"
             update_ingest_result(
                 GOOGLE_SHEET_ID,
@@ -4614,12 +4623,10 @@ def _fetch_row_with_transcript(row: dict, download_media: bool = False, force_re
                 status_value,
             )
         else:
+            if not transcript:
+                transcript = (_transcribe_reel_from_drive(row) or "").strip()
             if transcript:
                 update_transcript(GOOGLE_SHEET_ID, row_num, transcript)
-            uploaded = {
-                "media_link": row.get("Media Drive Link", ""),
-                "thumbnail_link": row.get("Thumbnail Drive Link", ""),
-            }
 
         updated_row = dict(row)
         updated_row["Transcript"] = transcript
