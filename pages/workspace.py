@@ -3224,7 +3224,10 @@ def _render_workspace_slide_action_dialog(row: dict) -> None:
                 current_speaker_name = _cell_text(
                     st.session_state.get(_workspace_speaker_key(row), row.get("Speaker Name", ""))
                 ).strip()
-                _apply_top_comment_to_caption(row, row_num, current_speaker_name, top_comment)
+                current_context = st.session_state.get(_workspace_key(row, "context"), row.get("Caption Context", "")).strip()
+                current_hashtags = st.session_state.get(_workspace_key(row, "hashtags"), row.get("Required Hashtags", "")).strip()
+                update_metadata(GOOGLE_SHEET_ID, row_num, current_context, current_speaker_name, current_hashtags, top_comment, "")
+                st.session_state[_workspace_key(row, "top")] = top_comment
                 st.session_state["workspace_success"] = f"Row {row_num}: custom link saved."
             elif action == "speaker":
                 if update_speaker_names_batch is None:
