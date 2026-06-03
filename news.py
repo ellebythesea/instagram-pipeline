@@ -34,8 +34,8 @@ def get_latest_news_summary(transcript: str, num_results: int = 5) -> str:
 
         query = " ".join(keywords[:5]) + " latest news today"
         resp = requests.post(
-            "https://google.serper.dev/search",
-            json={"q": query, "num": num_results, "tbm": "nws"},
+            "https://google.serper.dev/news",
+            json={"q": query, "num": num_results},
             headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
             timeout=15,
         )

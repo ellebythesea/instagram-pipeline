@@ -265,13 +265,11 @@ def _fetch_serper_fallback(url: str, title: str, description: str, image_url: st
     request_body = {
         "q": query,
         "num": 5,
-        "tbm": "nws",
-        "tbs": "qdr:w",
         "gl": "us",
         "hl": "en",
     }
     response = requests.post(
-        "https://google.serper.dev/search",
+        "https://google.serper.dev/news",
         json=request_body,
         headers=headers,
         timeout=_SERPER_TIMEOUT,

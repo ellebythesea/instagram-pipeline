@@ -10,7 +10,8 @@
       "Bash(git pull *)",
       "Bash(ls /Users/lisamollica/Documents/GitHub/instagram-pipeline/.venv/bin/python 2>/dev/null && echo \"venv exists\" || echo \"no venv\")",
       "Read(//opt/homebrew/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13/bin/**)",
-      "Bash(git rm *)"
+      "Bash(git rm *)",
+      "Bash(gcloud secrets *)"
     ]
   }
 }
