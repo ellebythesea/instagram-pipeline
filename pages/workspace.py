@@ -3478,6 +3478,7 @@ def _render_workspace_slide_action_dialog(row: dict) -> None:
                 st.session_state["workspace_success"] = f"Row {row_num}: caption saved."
             elif action == "custom_link":
                 update_slide_cta_option(GOOGLE_SHEET_ID, row_num, edited_value)
+                st.session_state[f"workspace_slide_three_cta_row_{row_num}"] = edited_value
                 st.session_state["workspace_success"] = f"Row {row_num}: slide button text saved."
             elif action == "speaker":
                 if update_speaker_names_batch is None:
@@ -4076,15 +4077,14 @@ def _copy_tabs(
         current_slide_four_font_adjust = int(st.session_state.get(slide_four_font_adjust_key, 0) or 0)
         current_slide_five_font_adjust = int(st.session_state.get(slide_five_font_adjust_key, 0) or 0)
         current_slide_six_font_adjust = int(st.session_state.get(slide_six_font_adjust_key, 0) or 0)
+        _known_cta_options = {"more", "article", "substack", "petition", "video", "custom link", "hidden"}
         default_slide_three_cta_option = "article" if _is_candidate_article_row(prompt_row or {}) else "hidden"
-        default_slide_three_cta = (
-            _cell_text((prompt_row or {}).get("Slide CTA")).strip().lower()
-            or default_slide_three_cta_option
-        )
+        raw_sheet_cta = _cell_text((prompt_row or {}).get("Slide CTA")).strip()
+        default_slide_three_cta = raw_sheet_cta or default_slide_three_cta_option
         current_slide_three_cta = _cell_text(
             st.session_state.get(slide_three_cta_key, default_slide_three_cta)
-        ).strip().lower() or default_slide_three_cta
-        if current_slide_three_cta not in {"more", "article", "substack", "petition", "video", "custom link", "hidden"}:
+        ).strip() or default_slide_three_cta
+        if current_slide_three_cta.lower() not in _known_cta_options and not current_slide_three_cta:
             current_slide_three_cta = default_slide_three_cta
             st.session_state[slide_three_cta_key] = current_slide_three_cta
         current_speaker_name = _cell_text(
