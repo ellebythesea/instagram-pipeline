@@ -68,6 +68,7 @@ generate_batch_carousel_copy_with_model = getattr(
 )
 
 MODE_OPTIONS = [
+    "Create a Post",
     "Generate headline",
 ]
 
@@ -1064,6 +1065,13 @@ def append_generated_post_rows(sheet_id: str, rows: list[dict]) -> None:
     raise RuntimeError("append_generated_post_rows is not available.")
 
 
+def append_manual_post_row(sheet_id: str, row_data: dict) -> None:
+    if hasattr(sheet_ops, "append_manual_post_row"):
+        sheet_ops.append_manual_post_row(sheet_id, row_data)
+        return
+    raise RuntimeError("append_manual_post_row is not available.")
+
+
 def update_generated_post_slides_and_status(
     sheet_id: str,
     row_number: int,
@@ -1200,6 +1208,8 @@ def _close_workspace_home_action_dialog(clear_inputs: bool = False) -> None:
         st.session_state.pop("workspace_home_candidate_article_error", None)
         st.session_state.pop("workspace_home_candidate_article_result", None)
         st.session_state.pop("workspace_home_candidate_article_generating", None)
+        st.session_state.pop("workspace_home_create_post_prompt", None)
+        st.session_state.pop("workspace_home_create_post_link", None)
 
 
 def _dismiss_workspace_home_action_dialog() -> None:
@@ -2498,6 +2508,66 @@ def _upload_split_videos(media_link: str, preview_folder_id: str, mode: str = "f
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+def _create_post_from_prompt(prompt: str, custom_link: str, uploaded_file) -> int:
+    """Append a new row from a manual prompt, upload media if provided, and generate a caption."""
+    media_link = ""
+    thumbnail_link = ""
+    media_type = ""
+    transcript = ""
+
+    if uploaded_file is not None:
+        name = uploaded_file.name or "upload"
+        ext = os.path.splitext(name)[-1].lower()
+        is_video = ext in {".mp4", ".mov"}
+        media_type = "reel" if is_video else "photo"
+        if not GOOGLE_DRIVE_FOLDER_ID:
+            raise RuntimeError("GOOGLE_DRIVE_FOLDER_ID is not configured.")
+        tmp_dir = tempfile.mkdtemp(prefix="workspace_create_post_")
+        try:
+            local_path = os.path.join(tmp_dir, name)
+            with open(local_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+            media_link = upload_to_drive(local_path, name, GOOGLE_DRIVE_FOLDER_ID)
+            if not is_video:
+                thumbnail_link = media_link
+            else:
+                # Use the prompt as the transcript so caption generation works for reels
+                transcript = prompt
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    append_manual_post_row(GOOGLE_SHEET_ID, {
+        "url": custom_link,
+        "caption_context": prompt,
+        "original_caption": prompt,
+        "transcript": transcript,
+        "media_type": media_type,
+        "media_link": media_link,
+        "thumbnail_link": thumbnail_link,
+        "status": "ingested",
+    })
+
+    all_rows = _run_with_sheet_quota_countdown(
+        lambda: get_all_rows(GOOGLE_SHEET_ID),
+        "Create post paused (sheet quota):",
+    )
+    if not all_rows:
+        raise RuntimeError("Could not retrieve rows after creating post.")
+    new_row = all_rows[-1]
+    row_num = new_row["row_number"]
+
+    try:
+        if row_ready_for_caption(new_row):
+            caption = generate_row_caption(new_row)
+            update_caption(GOOGLE_SHEET_ID, row_num, caption, "done")
+        else:
+            update_status(GOOGLE_SHEET_ID, row_num, "done")
+    except Exception:
+        update_status(GOOGLE_SHEET_ID, row_num, "ingested")
+
+    return row_num
+
+
 def _preview_folder_has_splits(folder_id: str) -> bool:
     """Return True if the preview folder already contains any mp4 files."""
     service = _get_service()
@@ -2786,36 +2856,38 @@ def _render_workspace_home_action_dialog() -> None:
         "Generate headline": "Pull source text from an Instagram post or article link, then return three headline options plus a footered caption.",
         "Caption this": "Generate a caption directly from an Instagram post or article link using the selected hashtag preset.",
         "Process as Candidate Article": "Paste the full article body to generate article-based slides and a caption footer.",
+        "Create a Post": "Write a prompt and optionally attach a link or media file to create a new post row with a generated caption.",
     }
-
-    default_link = _clean_home_links()[0] if _clean_home_links() else ""
-    if "workspace_home_dialog_link" not in st.session_state:
-        st.session_state["workspace_home_dialog_link"] = default_link
-    if "workspace_home_dialog_org_hashtag" not in st.session_state:
-        st.session_state["workspace_home_dialog_org_hashtag"] = st.session_state.get("workspace_org_hashtag", "")
 
     st.caption(mode)
     if mode in mode_help:
         st.caption(mode_help[mode])
 
-    st.text_input(
-        _workspace_home_link_label(mode),
-        key="workspace_home_dialog_link",
-        placeholder=_workspace_home_link_placeholder(mode),
-    )
-
     selected_org_hashtag = ""
-    if _mode_uses_org_hashtag(mode):
-        selected_org_hashtag = st.selectbox(
-            "Apply organization hashtag",
-            ORG_HASHTAG_OPTIONS,
-            index=(
-                ORG_HASHTAG_OPTIONS.index(st.session_state["workspace_home_dialog_org_hashtag"])
-                if st.session_state["workspace_home_dialog_org_hashtag"] in ORG_HASHTAG_OPTIONS
-                else 0
-            ),
-            key="workspace_home_dialog_org_hashtag",
+    if mode != "Create a Post":
+        default_link = _clean_home_links()[0] if _clean_home_links() else ""
+        if "workspace_home_dialog_link" not in st.session_state:
+            st.session_state["workspace_home_dialog_link"] = default_link
+        if "workspace_home_dialog_org_hashtag" not in st.session_state:
+            st.session_state["workspace_home_dialog_org_hashtag"] = st.session_state.get("workspace_org_hashtag", "")
+
+        st.text_input(
+            _workspace_home_link_label(mode),
+            key="workspace_home_dialog_link",
+            placeholder=_workspace_home_link_placeholder(mode),
         )
+
+        if _mode_uses_org_hashtag(mode):
+            selected_org_hashtag = st.selectbox(
+                "Apply organization hashtag",
+                ORG_HASHTAG_OPTIONS,
+                index=(
+                    ORG_HASHTAG_OPTIONS.index(st.session_state["workspace_home_dialog_org_hashtag"])
+                    if st.session_state["workspace_home_dialog_org_hashtag"] in ORG_HASHTAG_OPTIONS
+                    else 0
+                ),
+                key="workspace_home_dialog_org_hashtag",
+            )
 
     if mode == "Process as Candidate Article":
         step = int(st.session_state.get("workspace_home_candidate_article_step", 1) or 1)
@@ -2926,6 +2998,43 @@ def _render_workspace_home_action_dialog() -> None:
                 _render_candidate_output_card("Slide 3", text3, "workspace_home_candidate_article_slide3")
                 _render_candidate_output_card("Generated Caption", caption_text, "workspace_home_candidate_article_caption")
                 st.html(_copy_button_html("Copy All", copy_all_text, "workspace_home_candidate_article_copy_all", primary=True))
+    elif mode == "Create a Post":
+        prompt = st.text_area(
+            "Post prompt",
+            key="workspace_home_create_post_prompt",
+            height=150,
+            placeholder="Write your post content, talking points, or key message…",
+        ).strip()
+        st.text_input(
+            "Link (optional)",
+            key="workspace_home_create_post_link",
+            placeholder="https://…",
+        )
+        uploaded_media = st.file_uploader(
+            "Photo or video (optional)",
+            type=["mp4", "mov", "png", "jpg", "jpeg", "webp", "heic"],
+            accept_multiple_files=False,
+            key="workspace_home_create_post_media",
+        )
+        if st.button(
+            "Create Post",
+            key="workspace_home_create_post_submit",
+            type="primary",
+            width="stretch",
+            disabled=not prompt,
+        ):
+            custom_link = _cell_text(st.session_state.get("workspace_home_create_post_link", "")).strip()
+            try:
+                with st.spinner("Creating post…"):
+                    row_num = _create_post_from_prompt(prompt, custom_link, uploaded_media)
+            except Exception as e:
+                st.error(f"Could not create post: {describe_error(e)}")
+            else:
+                st.session_state["workspace_home_notice"] = f"Post created as row {row_num}."
+                st.session_state["workspace_selected_row_num"] = row_num
+                st.query_params["workspace_row"] = str(row_num)
+                _close_workspace_home_action_dialog(clear_inputs=True)
+                _rerun_workspace("Home")
     elif st.button(_action_label(mode), key=f"workspace_home_dialog_submit_{mode}", type="primary", width="stretch"):
         _run_workspace_home_action(
             mode,

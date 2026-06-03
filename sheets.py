@@ -334,6 +334,25 @@ def append_generated_post_rows(sheet_id: str, rows: list[dict]) -> None:
     _invalidate_rows_cache(sheet_id)
 
 
+def append_manual_post_row(sheet_id: str, row_data: dict) -> None:
+    """Append a manually created row to the posts tab (no URL required)."""
+    row = [""] * len(_EXPECTED_HEADERS)
+    row[0] = (row_data.get("url") or "").strip()
+    row[2] = (row_data.get("source_username") or "").strip()
+    row[3] = (row_data.get("caption") or "").strip()
+    row[4] = (row_data.get("media_type") or "").strip()
+    row[5] = str(row_data.get("photo_count") or "").strip()
+    row[6] = (row_data.get("media_link") or "").strip()
+    row[7] = (row_data.get("thumbnail_link") or "").strip()
+    row[8] = (row_data.get("original_caption") or "").strip()
+    row[9] = (row_data.get("transcript") or "").strip()
+    row[13] = (row_data.get("status") or "").strip()
+    row[14] = (row_data.get("caption_context") or "").strip()
+    ws = _worksheet(sheet_id)
+    _with_backoff(ws.append_row, row, value_input_option="USER_ENTERED")
+    _invalidate_rows_cache(sheet_id)
+
+
 def update_generated_post_slides_and_status(
     sheet_id: str,
     row_number: int,
