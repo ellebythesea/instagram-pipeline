@@ -1209,6 +1209,7 @@ def _close_workspace_home_action_dialog(clear_inputs: bool = False) -> None:
         st.session_state.pop("workspace_home_candidate_article_result", None)
         st.session_state.pop("workspace_home_candidate_article_generating", None)
         st.session_state.pop("workspace_home_create_post_prompt", None)
+        st.session_state.pop("workspace_home_create_post_speaker", None)
         st.session_state.pop("workspace_home_create_post_link", None)
 
 
@@ -2606,7 +2607,7 @@ def _parse_slide_json(prompt: str) -> dict | None:
     return data
 
 
-def _create_post_from_prompt(prompt: str, custom_link: str, uploaded_file) -> int:
+def _create_post_from_prompt(prompt: str, custom_link: str, uploaded_file, speaker_name: str = "") -> int:
     """Append a new row from a manual prompt, upload media if provided, and generate a caption."""
     media_link = ""
     thumbnail_link = ""
@@ -2643,6 +2644,8 @@ def _create_post_from_prompt(prompt: str, custom_link: str, uploaded_file) -> in
             "caption_context": caption_context,
             "original_caption": caption_context,
             "transcript": transcript,
+            "source_username": slide_data.get("name", ""),
+            "speaker_name": speaker_name,
             "media_type": media_type,
             "media_link": media_link,
             "thumbnail_link": thumbnail_link,
@@ -2663,6 +2666,7 @@ def _create_post_from_prompt(prompt: str, custom_link: str, uploaded_file) -> in
             "caption_context": prompt,
             "original_caption": prompt,
             "transcript": transcript,
+            "speaker_name": speaker_name,
             "media_type": media_type,
             "media_link": media_link,
             "thumbnail_link": thumbnail_link,
@@ -3121,6 +3125,11 @@ def _render_workspace_home_action_dialog() -> None:
             placeholder="Write your post content, talking points, or key message…",
         ).strip()
         st.text_input(
+            "Speaker name (optional)",
+            key="workspace_home_create_post_speaker",
+            placeholder="e.g. Bernie Sanders",
+        )
+        st.text_input(
             "Link (optional)",
             key="workspace_home_create_post_link",
             placeholder="https://…",
@@ -3139,9 +3148,10 @@ def _render_workspace_home_action_dialog() -> None:
             disabled=not prompt,
         ):
             custom_link = _cell_text(st.session_state.get("workspace_home_create_post_link", "")).strip()
+            speaker_name = _cell_text(st.session_state.get("workspace_home_create_post_speaker", "")).strip()
             try:
                 with st.spinner("Creating post…"):
-                    row_num = _create_post_from_prompt(prompt, custom_link, uploaded_media)
+                    row_num = _create_post_from_prompt(prompt, custom_link, uploaded_media, speaker_name)
             except Exception as e:
                 st.error(f"Could not create post: {describe_error(e)}")
             else:
