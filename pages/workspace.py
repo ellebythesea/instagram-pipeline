@@ -3353,7 +3353,7 @@ def _render_workspace_slide_action_dialog(row: dict) -> None:
         "text5": _cell_text(row.get("text5")).strip(),
         "text6": _cell_text(row.get("text6")).strip(),
         "caption": _cell_text(row.get("Generated Caption")).strip(),
-        "custom_link": clean_top_comment,
+        "custom_link": clean_top_comment or "Say LINK to watch",
         "speaker": current_speaker_for_dialog,
     }
     dialog_labels = {
@@ -3460,30 +3460,38 @@ def _render_workspace_link_dialog(row: dict) -> None:
     )
     selected_top_comment = fundraising_presets.get(selected_source, "").strip()
 
-    _DEFAULT_CUSTOM_LINK_CTA = "Say LINK to watch"
-
     if selected_source != previous_source:
         if selected_source == "Custom":
-            st.session_state[link_comment_key] = _DEFAULT_CUSTOM_LINK_CTA
+            st.session_state.pop(link_comment_key, None)
         else:
             st.session_state[link_comment_key] = selected_top_comment
 
-    if link_comment_key not in st.session_state:
-        st.session_state[link_comment_key] = (
-            _DEFAULT_CUSTOM_LINK_CTA if selected_source == "Custom" else selected_top_comment
+    if selected_source == "Custom":
+        st.text_input(
+            "Link",
+            key=link_url_key,
+            placeholder="https://example.com",
+        )
+    else:
+        if link_comment_key not in st.session_state:
+            st.session_state[link_comment_key] = selected_top_comment
+        st.text_area(
+            "Top comment",
+            key=link_comment_key,
+            height=180,
         )
 
-    st.text_area(
-        "Top comment",
-        key=link_comment_key,
-        height=180,
-    )
-
     if st.button("Add", key=f"workspace_link_add_{row_num}", type="primary", width="stretch"):
-        addition = st.session_state.get(link_comment_key, "").strip()
-        if not addition:
-            st.session_state["workspace_error"] = f"Row {row_num}: top comment cannot be empty."
+        full_link = st.session_state.get(link_url_key, "").strip()
+        if selected_source == "Custom" and not _is_https_url(full_link):
+            st.session_state["workspace_error"] = f"Row {row_num}: link must start with https://"
             _rerun_workspace("Edit")
+
+        addition = (
+            _build_link_cta(full_link)
+            if selected_source == "Custom"
+            else st.session_state.get(link_comment_key, selected_top_comment).strip()
+        )
         top_comment = _encode_top_comment(addition, pinned=False)
         try:
             _apply_top_comment_to_caption(row, row_num, speaker_name, top_comment)
