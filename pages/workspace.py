@@ -2557,6 +2557,7 @@ def _create_post_from_prompt(prompt: str, custom_link: str, uploaded_file) -> in
     transcript = ""
 
     slide_data = _parse_slide_json(prompt)
+    top_comment = _encode_top_comment(_build_link_cta(custom_link), pinned=False) if custom_link else ""
 
     if uploaded_file is not None:
         file_name = uploaded_file.name or "upload"
@@ -2574,20 +2575,22 @@ def _create_post_from_prompt(prompt: str, custom_link: str, uploaded_file) -> in
             if not is_video:
                 thumbnail_link = media_link
             else:
-                transcript = slide_data.get("caption", "") if slide_data else prompt
+                transcript = prompt
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
     if slide_data:
-        row_caption = slide_data.get("generated_caption") or slide_data.get("caption", "")
+        caption_context = slide_data.get("generated_caption") or slide_data.get("caption") or ""
         append_manual_post_row(GOOGLE_SHEET_ID, {
             "url": custom_link,
-            "caption": row_caption,
-            "caption_context": row_caption,
+            "caption_context": caption_context,
+            "original_caption": caption_context,
+            "transcript": transcript,
             "media_type": media_type,
             "media_link": media_link,
             "thumbnail_link": thumbnail_link,
-            "status": "done",
+            "top_comment": top_comment,
+            "status": "ingested",
             "name": slide_data.get("name", ""),
             "text1": slide_data.get("text1", ""),
             "text2": slide_data.get("text2", ""),
@@ -2606,6 +2609,7 @@ def _create_post_from_prompt(prompt: str, custom_link: str, uploaded_file) -> in
             "media_type": media_type,
             "media_link": media_link,
             "thumbnail_link": thumbnail_link,
+            "top_comment": top_comment,
             "status": "ingested",
         })
 
@@ -2618,15 +2622,14 @@ def _create_post_from_prompt(prompt: str, custom_link: str, uploaded_file) -> in
     new_row = all_rows[-1]
     row_num = new_row["row_number"]
 
-    if not slide_data:
-        try:
-            if row_ready_for_caption(new_row):
-                caption = generate_row_caption(new_row)
-                update_caption(GOOGLE_SHEET_ID, row_num, caption, "done")
-            else:
-                update_status(GOOGLE_SHEET_ID, row_num, "done")
-        except Exception:
-            update_status(GOOGLE_SHEET_ID, row_num, "ingested")
+    try:
+        if row_ready_for_caption(new_row):
+            caption = generate_row_caption(new_row)
+            update_caption(GOOGLE_SHEET_ID, row_num, caption, "done")
+        else:
+            update_status(GOOGLE_SHEET_ID, row_num, "done")
+    except Exception:
+        update_status(GOOGLE_SHEET_ID, row_num, "ingested")
 
     return row_num
 
@@ -3457,38 +3460,30 @@ def _render_workspace_link_dialog(row: dict) -> None:
     )
     selected_top_comment = fundraising_presets.get(selected_source, "").strip()
 
+    _DEFAULT_CUSTOM_LINK_CTA = "Say LINK to watch"
+
     if selected_source != previous_source:
         if selected_source == "Custom":
-            st.session_state.pop(link_comment_key, None)
+            st.session_state[link_comment_key] = _DEFAULT_CUSTOM_LINK_CTA
         else:
             st.session_state[link_comment_key] = selected_top_comment
 
-    if selected_source == "Custom":
-        st.text_input(
-            "Link",
-            key=link_url_key,
-            placeholder="https://example.com",
+    if link_comment_key not in st.session_state:
+        st.session_state[link_comment_key] = (
+            _DEFAULT_CUSTOM_LINK_CTA if selected_source == "Custom" else selected_top_comment
         )
-    else:
-        if link_comment_key not in st.session_state:
-            st.session_state[link_comment_key] = selected_top_comment
-        st.text_area(
-            "Top comment",
-            key=link_comment_key,
-            height=180,
-        )
+
+    st.text_area(
+        "Top comment",
+        key=link_comment_key,
+        height=180,
+    )
 
     if st.button("Add", key=f"workspace_link_add_{row_num}", type="primary", width="stretch"):
-        full_link = st.session_state.get(link_url_key, "").strip()
-        if selected_source == "Custom" and not _is_https_url(full_link):
-            st.session_state["workspace_error"] = f"Row {row_num}: link must start with https://"
+        addition = st.session_state.get(link_comment_key, "").strip()
+        if not addition:
+            st.session_state["workspace_error"] = f"Row {row_num}: top comment cannot be empty."
             _rerun_workspace("Edit")
-
-        addition = (
-            _build_link_cta(full_link)
-            if selected_source == "Custom"
-            else st.session_state.get(link_comment_key, selected_top_comment).strip()
-        )
         top_comment = _encode_top_comment(addition, pinned=False)
         try:
             _apply_top_comment_to_caption(row, row_num, speaker_name, top_comment)

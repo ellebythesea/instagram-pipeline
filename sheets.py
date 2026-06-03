@@ -346,6 +346,7 @@ def append_manual_post_row(sheet_id: str, row_data: dict) -> None:
     row[7] = (row_data.get("thumbnail_link") or "").strip()
     row[8] = (row_data.get("original_caption") or "").strip()
     row[9] = (row_data.get("transcript") or "").strip()
+    row[10] = (row_data.get("top_comment") or "").strip()
     row[13] = (row_data.get("status") or "").strip()
     row[14] = (row_data.get("caption_context") or "").strip()
     row[16] = (row_data.get("name") or "").strip()
