@@ -2508,6 +2508,35 @@ def _upload_split_videos(media_link: str, preview_folder_id: str, mode: str = "f
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+_BLANK_SLIDE_JSON = """{
+  "name": "",
+  "text1": "",
+  "text2": "",
+  "text3": "",
+  "text4": "",
+  "text5": "",
+  "text6": "",
+  "slide_cta": "",
+  "caption": ""
+}"""
+
+_SLIDE_JSON_KEYS = {"name", "text1", "text2", "text3", "text4", "text5", "text6", "slide_cta", "caption"}
+
+
+def _parse_slide_json(prompt: str) -> dict | None:
+    """Return parsed slide dict if prompt is valid slide JSON, else None."""
+    stripped = (prompt or "").strip()
+    if not (stripped.startswith("{") and stripped.endswith("}")):
+        return None
+    try:
+        data = json.loads(stripped)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(data, dict) or not any(k in data for k in _SLIDE_JSON_KEYS):
+        return None
+    return data
+
+
 def _create_post_from_prompt(prompt: str, custom_link: str, uploaded_file) -> int:
     """Append a new row from a manual prompt, upload media if provided, and generate a caption."""
     media_link = ""
@@ -2515,37 +2544,58 @@ def _create_post_from_prompt(prompt: str, custom_link: str, uploaded_file) -> in
     media_type = ""
     transcript = ""
 
+    slide_data = _parse_slide_json(prompt)
+
     if uploaded_file is not None:
-        name = uploaded_file.name or "upload"
-        ext = os.path.splitext(name)[-1].lower()
+        file_name = uploaded_file.name or "upload"
+        ext = os.path.splitext(file_name)[-1].lower()
         is_video = ext in {".mp4", ".mov"}
         media_type = "reel" if is_video else "photo"
         if not GOOGLE_DRIVE_FOLDER_ID:
             raise RuntimeError("GOOGLE_DRIVE_FOLDER_ID is not configured.")
         tmp_dir = tempfile.mkdtemp(prefix="workspace_create_post_")
         try:
-            local_path = os.path.join(tmp_dir, name)
+            local_path = os.path.join(tmp_dir, file_name)
             with open(local_path, "wb") as f:
                 f.write(uploaded_file.getbuffer())
-            media_link = upload_to_drive(local_path, name, GOOGLE_DRIVE_FOLDER_ID)
+            media_link = upload_to_drive(local_path, file_name, GOOGLE_DRIVE_FOLDER_ID)
             if not is_video:
                 thumbnail_link = media_link
             else:
-                # Use the prompt as the transcript so caption generation works for reels
-                transcript = prompt
+                transcript = slide_data.get("caption", "") if slide_data else prompt
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
-    append_manual_post_row(GOOGLE_SHEET_ID, {
-        "url": custom_link,
-        "caption_context": prompt,
-        "original_caption": prompt,
-        "transcript": transcript,
-        "media_type": media_type,
-        "media_link": media_link,
-        "thumbnail_link": thumbnail_link,
-        "status": "ingested",
-    })
+    if slide_data:
+        row_caption = slide_data.get("caption", "")
+        append_manual_post_row(GOOGLE_SHEET_ID, {
+            "url": custom_link,
+            "caption": row_caption,
+            "caption_context": row_caption,
+            "media_type": media_type,
+            "media_link": media_link,
+            "thumbnail_link": thumbnail_link,
+            "status": "done",
+            "name": slide_data.get("name", ""),
+            "text1": slide_data.get("text1", ""),
+            "text2": slide_data.get("text2", ""),
+            "text3": slide_data.get("text3", ""),
+            "text4": slide_data.get("text4", ""),
+            "text5": slide_data.get("text5", ""),
+            "text6": slide_data.get("text6", ""),
+            "slide_cta": slide_data.get("slide_cta", ""),
+        })
+    else:
+        append_manual_post_row(GOOGLE_SHEET_ID, {
+            "url": custom_link,
+            "caption_context": prompt,
+            "original_caption": prompt,
+            "transcript": transcript,
+            "media_type": media_type,
+            "media_link": media_link,
+            "thumbnail_link": thumbnail_link,
+            "status": "ingested",
+        })
 
     all_rows = _run_with_sheet_quota_countdown(
         lambda: get_all_rows(GOOGLE_SHEET_ID),
@@ -2556,14 +2606,15 @@ def _create_post_from_prompt(prompt: str, custom_link: str, uploaded_file) -> in
     new_row = all_rows[-1]
     row_num = new_row["row_number"]
 
-    try:
-        if row_ready_for_caption(new_row):
-            caption = generate_row_caption(new_row)
-            update_caption(GOOGLE_SHEET_ID, row_num, caption, "done")
-        else:
-            update_status(GOOGLE_SHEET_ID, row_num, "done")
-    except Exception:
-        update_status(GOOGLE_SHEET_ID, row_num, "ingested")
+    if not slide_data:
+        try:
+            if row_ready_for_caption(new_row):
+                caption = generate_row_caption(new_row)
+                update_caption(GOOGLE_SHEET_ID, row_num, caption, "done")
+            else:
+                update_status(GOOGLE_SHEET_ID, row_num, "done")
+        except Exception:
+            update_status(GOOGLE_SHEET_ID, row_num, "ingested")
 
     return row_num
 
@@ -3035,6 +3086,9 @@ def _render_workspace_home_action_dialog() -> None:
                 st.query_params["workspace_row"] = str(row_num)
                 _close_workspace_home_action_dialog(clear_inputs=True)
                 _rerun_workspace("Home")
+        st.divider()
+        st.caption("Blank slide template — copy, fill in, then paste into the prompt above:")
+        st.code(_BLANK_SLIDE_JSON, language="json")
     elif st.button(_action_label(mode), key=f"workspace_home_dialog_submit_{mode}", type="primary", width="stretch"):
         _run_workspace_home_action(
             mode,
