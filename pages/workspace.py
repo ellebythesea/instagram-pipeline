@@ -2512,19 +2512,76 @@ _SLIDE_JSON_KEYS = {"name", "text1", "text2", "text3", "text4", "text5", "text6"
 
 
 def _build_create_post_slide_prompt() -> str:
-    """Return the full slide prompt with a blank placeholder row (no row number)."""
-    placeholder_row = {
-        "row_number": "new",
-        "Source Username": "",
-        "Media Type": "",
-        "Speaker Name": "",
-        "Transcript": "(paste your content, transcript, or talking points here)",
-        "Original Caption": "",
-        "Caption Context": "",
-        "Instagram URL": "",
-        "Media Drive Link": "",
-    }
-    return _build_chatgpt_handoff_prompt([placeholder_row])
+    """Return the full slide + caption prompt with a blank placeholder row."""
+    row_block = "\n".join([
+        "ROW new",
+        "username: (fill in)",
+        "media_type: post",
+        "speaker_name: (none)",
+        "transcript:",
+        "(paste your content, transcript, or talking points here)",
+        "original_caption:",
+        "(none)",
+        "caption_context:",
+        "(none)",
+    ])
+
+    caption_instructions = (
+        "For each object also include a \"generated_caption\" field. "
+        "Write a short, clear social post under 1300 characters using exactly two simple paragraphs.\n\n"
+        "Never write in first person. Do not use I, me, my, mine, we, us, our, or ours "
+        "unless inside a direct quote. Stay in third person.\n\n"
+        "The first paragraph must be 250 characters or fewer and serve as the most important summary. "
+        "It must include all hashtags. Use 3 to 5 relevant hashtags total. "
+        "Prioritize hashtags for the main people the post is about, then one single-word subject hashtag "
+        "for trending news discovery, then any remaining relevant tags. "
+        "Replace the normal word or phrase in the sentence with the hashtag version — for example use "
+        "#DonaldTrump in the sentence instead of writing the name normally. "
+        "Do not add a separate hashtag-only line at the end.\n\n"
+        "The second paragraph adds context using verified facts, dates, and numbers when relevant. "
+        "Include direct quotes from the transcript when available. Verify names and quotes carefully. "
+        "Any hashtag in the caption body counts toward the 3–5 total. "
+        "Avoid speculation, flourish, links, or references to Trump's current office status.\n\n"
+        "Do not refer to the source as a transcript, clip, speech, interview, or video unless explicitly certain. "
+        "Write as if describing the underlying event or claim directly.\n"
+    )
+
+    instructions = (
+        "Return ONLY valid JSON as an array. No markdown, no commentary outside JSON.\n\n"
+        "Each object must include: row_number, name, text1, text2, text3, generated_caption\n\n"
+        "Mandatory research step before writing:\n"
+        "* For every row with a current event, public figure, legal case, government action, investigation, company, or breaking news claim, search online for reliable context before writing.\n"
+        "* Use search to verify names, dates, charges, court rulings, dollar amounts, locations, and status of claims.\n"
+        "* Prefer primary sources, Reuters, AP, local public radio, court records, official statements, and reputable outlets.\n"
+        "* Do not add unverified claims. If context cannot be verified, stay close to the supplied transcript and caption.\n"
+        "* Never cite sources in the JSON output. Use research only to improve accuracy and context.\n\n"
+        "Rules:\n"
+        "* Keep row_number exactly as shown\n"
+        "* No markdown, no commentary outside JSON\n"
+        "* Plain straight double quotes only, no smart quotes\n"
+        + pipeline_caption_ops.carousel_slide_rules()
+        + "Caption rules:\n"
+        + caption_instructions
+        + "\nQuality check before final output:\n"
+        "* Confirm every object has exactly row_number, name, text1, text2, text3, generated_caption\n"
+        "* Confirm character limits are respected\n"
+        "* Confirm text is not too short when more verified context exists\n"
+        "* Confirm no field repeats another field\n"
+        "* Confirm no hashtags, em dashes, smart quotes, markdown, newlines, or source citations appear in slide fields\n"
+        "* Confirm every quote is verbatim from supplied text\n\n"
+        "Output format example:\n"
+        "[\n"
+        "  {\n"
+        '    "row_number": "new",\n'
+        '    "name": "nowthis",\n'
+        '    "text1": "\\"We could abolish medical debt 10 times over.\\" The line frames the central contrast: billions flowing into military spending while families still face unpaid medical bills, coverage gaps, and debt that can follow them for years.",\n'
+        '    "text2": "The argument connects military funding, healthcare costs, Medicaid pressure, and lobbying money into one political charge: Washington keeps finding money for war while ordinary people are told basic care is too expensive.",\n'
+        '    "text3": "The fallout is political as much as financial. The carousel should leave viewers with the real stakes: who benefits from federal spending choices, who absorbs the cost, and why healthcare debt remains unresolved.",\n'
+        '    "generated_caption": "#BernieSanders says the U.S. could abolish medical debt 10 times over with what it spends on the military. The contrast is stark and personal for millions of Americans still carrying unpaid bills.\\n\\nSanders made the argument during a Senate speech, pointing to Medicaid cuts and rising premiums as Congress approved another round of defense spending. \\"We keep finding money for war,\\" he said, \\"while people can\'t afford insulin.\\""\n'
+        "  }\n"
+        "]\n"
+    )
+    return instructions + "\n\n" + row_block
 
 
 def _parse_slide_json(prompt: str) -> dict | None:
@@ -2684,27 +2741,19 @@ def _build_watch_cta(username: str, link: str) -> str:
 
 def _slide_three_cta_text(option: str, top_comment: str) -> str:
     normalized = (option or "more").strip().lower()
-    if normalized == "custom link":
-        custom = re.sub(r"https?://\S+", "", top_comment or "").strip()
-        custom = re.sub(r"\s+", " ", custom)
-        custom = re.sub(r"\s+([,.;:!?])", r"\1", custom)
-        if not custom:
-            return "Say LINK for more"
-        custom = custom.rstrip(":;,.!?")
-        if not custom:
-            return "Say LINK for more"
-        return custom
     cta_text_by_option = {
         "article": "Say LINK for the article",
         "substack": "Say LINK for the Substack",
         "petition": "Say LINK for the petition",
         "video": "Say LINK for the video",
+        "more": "Say LINK for more",
+        "custom link": "Say LINK for more",
     }
     if normalized in cta_text_by_option:
         return cta_text_by_option[normalized]
-    if normalized not in {"more", "article", "substack", "petition", "video"}:
-        normalized = "more"
-    return "Say LINK for more"
+    # Non-standard value — treat as custom button text stored directly in the column
+    cleaned = (option or "").strip()
+    return cleaned if cleaned else "Say LINK for more"
 
 
 def _save_slide_three_cta_choice(row_number: int, state_key: str, option: str) -> None:
@@ -3353,7 +3402,7 @@ def _render_workspace_slide_action_dialog(row: dict) -> None:
         "text5": _cell_text(row.get("text5")).strip(),
         "text6": _cell_text(row.get("text6")).strip(),
         "caption": _cell_text(row.get("Generated Caption")).strip(),
-        "custom_link": clean_top_comment or "Say LINK to watch",
+        "custom_link": _cell_text(row.get("Slide CTA")).strip() or "Say LINK for more",
         "speaker": current_speaker_for_dialog,
     }
     dialog_labels = {
@@ -3418,15 +3467,8 @@ def _render_workspace_slide_action_dialog(row: dict) -> None:
                 update_caption(GOOGLE_SHEET_ID, row_num, edited_value, current_status)
                 st.session_state["workspace_success"] = f"Row {row_num}: caption saved."
             elif action == "custom_link":
-                top_comment = _encode_top_comment(edited_value, pinned=pinned_top_comment)
-                current_speaker_name = _cell_text(
-                    st.session_state.get(_workspace_speaker_key(row), row.get("Speaker Name", ""))
-                ).strip()
-                current_context = st.session_state.get(_workspace_key(row, "context"), row.get("Caption Context", "")).strip()
-                current_hashtags = st.session_state.get(_workspace_key(row, "hashtags"), row.get("Required Hashtags", "")).strip()
-                update_metadata(GOOGLE_SHEET_ID, row_num, current_context, current_speaker_name, current_hashtags, top_comment, "")
-                st.session_state[_workspace_key(row, "top")] = top_comment
-                st.session_state["workspace_success"] = f"Row {row_num}: custom link saved."
+                update_slide_cta_option(GOOGLE_SHEET_ID, row_num, edited_value)
+                st.session_state["workspace_success"] = f"Row {row_num}: slide button text saved."
             elif action == "speaker":
                 if update_speaker_names_batch is None:
                     raise RuntimeError("Speaker name updates are not supported in this build.")
