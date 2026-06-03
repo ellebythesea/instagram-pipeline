@@ -641,10 +641,9 @@ def _serper_search(query: str, *, num: int = 8, news: bool = False) -> list[dict
         raise RuntimeError("SERPER_API_KEY is not configured.")
     headers = {"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"}
     payload = {"q": query, "num": num, "gl": "us", "hl": "en"}
-    if news:
-        payload["tbm"] = "nws"
+    endpoint = "https://google.serper.dev/news" if news else "https://google.serper.dev/search"
     response = requests.post(
-        "https://google.serper.dev/search",
+        endpoint,
         json=payload,
         headers=headers,
         timeout=20,
@@ -2499,6 +2498,27 @@ def _upload_split_videos(media_link: str, preview_folder_id: str, mode: str = "f
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+def _preview_folder_has_splits(folder_id: str) -> bool:
+    """Return True if the preview folder already contains any mp4 files."""
+    service = _get_service()
+    query = f"'{folder_id}' in parents and trashed = false and mimeType = 'video/mp4'"
+    try:
+        result = (
+            service.files()
+            .list(
+                q=query,
+                fields="files(id)",
+                pageSize=1,
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True,
+            )
+            .execute()
+        )
+        return bool(result.get("files"))
+    except Exception:
+        return False
+
+
 def _is_https_url(value: str) -> bool:
     parsed = urlparse((value or "").strip())
     return parsed.scheme == "https" and bool(parsed.netloc)
@@ -4292,11 +4312,15 @@ def _run_all_steps() -> None:
                 username = _cell_text(row.get("Source Username")).strip() or f"row {row_num}"
                 s3.update(label=f"Step 3: Splitting {i}/{len(reels_to_split)} — {username} (row {row_num})…")
                 try:
-                    st.write(f"Row {row_num}: downloading and splitting…")
                     media_link = _cell_text(row.get("Media Drive Link")).strip().split(",")[0].strip()
                     username_clean = _cell_text(row.get("Source Username")).strip().lstrip("@")
                     handle_text = _cell_text(row.get("Speaker Name")).strip()
                     preview_folder_id, _, _ = _ensure_preview_folder(row_num, username_clean, handle_text, media_link)
+                    if _preview_folder_has_splits(preview_folder_id):
+                        st.write(f"Row {row_num}: already split, skipping.")
+                        split_succeeded += 1
+                        continue
+                    st.write(f"Row {row_num}: downloading and splitting…")
                     _upload_split_videos(media_link, preview_folder_id, mode="fill")
                     st.write(f"Row {row_num}: done.")
                     split_succeeded += 1
