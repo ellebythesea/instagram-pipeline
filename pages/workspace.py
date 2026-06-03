@@ -2508,30 +2508,42 @@ def _upload_split_videos(media_link: str, preview_folder_id: str, mode: str = "f
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
-_BLANK_SLIDE_JSON = """{
-  "name": "",
-  "text1": "",
-  "text2": "",
-  "text3": "",
-  "text4": "",
-  "text5": "",
-  "text6": "",
-  "slide_cta": "",
-  "caption": ""
-}"""
+_SLIDE_JSON_KEYS = {"name", "text1", "text2", "text3", "text4", "text5", "text6", "slide_cta", "caption", "generated_caption"}
 
-_SLIDE_JSON_KEYS = {"name", "text1", "text2", "text3", "text4", "text5", "text6", "slide_cta", "caption"}
+
+def _build_create_post_slide_prompt() -> str:
+    """Return the full slide prompt with a blank placeholder row (no row number)."""
+    placeholder_row = {
+        "row_number": "new",
+        "Source Username": "",
+        "Media Type": "",
+        "Speaker Name": "",
+        "Transcript": "(paste your content, transcript, or talking points here)",
+        "Original Caption": "",
+        "Caption Context": "",
+        "Instagram URL": "",
+        "Media Drive Link": "",
+    }
+    return _build_chatgpt_handoff_prompt([placeholder_row])
 
 
 def _parse_slide_json(prompt: str) -> dict | None:
-    """Return parsed slide dict if prompt is valid slide JSON, else None."""
+    """Return a slide dict if prompt is valid slide JSON (object or array), else None."""
     stripped = (prompt or "").strip()
-    if not (stripped.startswith("{") and stripped.endswith("}")):
+    starts_json = stripped.startswith("{") or stripped.startswith("[")
+    ends_json = stripped.endswith("}") or stripped.endswith("]")
+    if not (starts_json and ends_json):
         return None
     try:
         data = json.loads(stripped)
     except (json.JSONDecodeError, ValueError):
-        return None
+        try:
+            normalized = _normalize_slide_paste(stripped)
+            data = json.loads(normalized)
+        except Exception:
+            return None
+    if isinstance(data, list):
+        data = data[0] if data else None
     if not isinstance(data, dict) or not any(k in data for k in _SLIDE_JSON_KEYS):
         return None
     return data
@@ -2567,7 +2579,7 @@ def _create_post_from_prompt(prompt: str, custom_link: str, uploaded_file) -> in
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
     if slide_data:
-        row_caption = slide_data.get("caption", "")
+        row_caption = slide_data.get("generated_caption") or slide_data.get("caption", "")
         append_manual_post_row(GOOGLE_SHEET_ID, {
             "url": custom_link,
             "caption": row_caption,
@@ -3087,8 +3099,8 @@ def _render_workspace_home_action_dialog() -> None:
                 _close_workspace_home_action_dialog(clear_inputs=True)
                 _rerun_workspace("Home")
         st.divider()
-        st.caption("Blank slide template — copy, fill in, then paste into the prompt above:")
-        st.code(_BLANK_SLIDE_JSON, language="json")
+        st.caption("Slide prompt — copy, fill in your content, then paste the JSON result back into the prompt above:")
+        st.code(_build_create_post_slide_prompt(), language=None)
     elif st.button(_action_label(mode), key=f"workspace_home_dialog_submit_{mode}", type="primary", width="stretch"):
         _run_workspace_home_action(
             mode,
