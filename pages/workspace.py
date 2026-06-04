@@ -1489,12 +1489,16 @@ def _row_is_dirty(row: dict) -> bool:
 
 
 def _is_editable_row(row: dict) -> bool:
-    if not _cell_text(row.get("Instagram URL")).strip():
-        return False
-
     status = _cell_text(row.get("Status")).strip().lower()
+
+    # Rows with a known editable status are always shown, even without an
+    # Instagram URL (manually-created posts from "Create a Post" have no URL).
     if status in EDITABLE_STATUSES:
         return True
+
+    # Rows without a URL and without an editable status are hidden.
+    if not _cell_text(row.get("Instagram URL")).strip():
+        return False
 
     # Some rows may already be effectively ingested even if the status field
     # is not one of the editor-specific values yet.
