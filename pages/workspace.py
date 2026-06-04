@@ -6567,143 +6567,143 @@ if active_section_tab == "Home":
                         on_change=_handle_speaker_name_change,
                         args=(row,),
                     )
-                    if url:
-                        media_links = [
-                            link.strip()
-                            for link in _cell_text(row.get("Media Drive Link")).split(",")
-                            if link.strip()
-                        ]
-                        menu_nonce = st.session_state.get(menu_nonce_key, 0)
-                        menu_label_with_nonce = f"Post actions{chr(0x200B) * menu_nonce}"
-                        with st.popover(menu_label_with_nonce, use_container_width=True):
-                            st.text_input(
-                                "Add context",
-                                key=context_key,
-                                placeholder="Add context",
-                                label_visibility="collapsed",
-                            )
+                    media_links = [
+                        link.strip()
+                        for link in _cell_text(row.get("Media Drive Link")).split(",")
+                        if link.strip()
+                    ]
+                    menu_nonce = st.session_state.get(menu_nonce_key, 0)
+                    menu_label_with_nonce = f"Post actions{chr(0x200B) * menu_nonce}"
+                    with st.popover(menu_label_with_nonce, use_container_width=True):
+                        st.text_input(
+                            "Add context",
+                            key=context_key,
+                            placeholder="Add context",
+                            label_visibility="collapsed",
+                        )
+                        if url:
                             st.link_button(
                                 "Open in Instagram" if is_instagram else "Open source link",
                                 url,
                                 width="stretch",
                             )
-                            if media_links:
-                                st.link_button(
-                                    "Open reel in Drive" if is_reel else "Open media in Drive",
-                                    media_links[0],
-                                    width="stretch",
-                                )
-                            if st.button(
-                                "Slides",
-                                key=f"workspace_menu_post_slides_{row_num}",
+                        if media_links:
+                            st.link_button(
+                                "Open reel in Drive" if is_reel else "Open media in Drive",
+                                media_links[0],
                                 width="stretch",
-                            ):
-                                _close_workspace_menu(row)
-                                _open_workspace_post_slides_dialog(row_num)
-                                _rerun_workspace("Edit")
-                            if st.button(
-                                "Make generic",
-                                key=f"workspace_menu_generic_slides_{row_num}",
-                                width="stretch",
-                                help="Build a source-agnostic slides prompt — strips speaker, adds research directive, neutralizes caption, removes CTA",
-                            ):
-                                _close_workspace_menu(row)
-                                _open_workspace_generic_slides_dialog(row_num)
-                                _rerun_workspace("Edit")
-                            if st.button(
-                                "Update screenshot",
-                                key=f"workspace_menu_thumbnail_open_{row_num}",
-                                width="stretch",
-                            ):
-                                _close_workspace_menu(row)
-                                st.session_state["workspace_thumbnail_dialog_row"] = row_num
-                                _rerun_workspace("Edit")
-                            if st.button("Add link", key=f"workspace_link_open_{row_num}", width="stretch"):
-                                _close_workspace_menu(row)
-                                st.session_state["workspace_link_dialog_row"] = row_num
-                                _rerun_workspace("Edit")
-                            if is_reel and media_links and st.button(
-                                "Crop video to fit",
-                                key=f"workspace_menu_crop_video_fit_{row_num}",
-                                width="stretch",
-                                help="Scale the original video to fit the 4:5 canvas with black bars and upload segments to Drive.",
-                            ):
-                                _close_workspace_menu(row)
-                                _queue_workspace_action(row_num, "split_video_fit")
-                                _rerun_workspace("Edit")
-                            primary_action = "process_post" if is_instagram else "image_text"
-                            primary_help = (
-                                "Transcribe, generate the caption, and generate slide copy."
-                                if _is_reel_url(url)
-                                else "Use available post text and image text to generate the caption and slide copy."
                             )
-                            if st.button("Edit caption", key=f"workspace_menu_edit_caption_{row_num}", width="stretch"):
-                                _close_workspace_menu(row)
-                                _open_workspace_slide_action_dialog(row_num, "caption")
-                                _rerun_workspace("Edit")
-                            if is_instagram and st.button(
-                                menu_label,
-                                key=f"workspace_menu_primary_{row_num}",
-                                disabled=not url,
-                                width="stretch",
-                                help=primary_help,
-                            ):
-                                if primary_action == "process_post" and not transcript:
-                                    try:
-                                        warning = _check_reel_transcript_risk(row)
-                                    except Exception as e:
-                                        st.session_state["workspace_error"] = f"Row {row_num}: could not check reel size - {describe_error(e)}"
-                                        _close_workspace_menu(row)
-                                        _rerun_workspace("Edit")
-                                    if warning:
-                                        st.session_state[warning_key] = warning
-                                        _close_workspace_menu(row)
-                                        _rerun_workspace("Edit")
-                                _close_workspace_menu(row)
-                                _queue_workspace_action(row_num, primary_action)
-                                _rerun_workspace("Edit")
-                            if is_article and _is_substack_url(url) and st.button(
-                                "Process as Candidate Article",
-                                key=f"workspace_menu_candidate_article_{row_num}",
-                                width="stretch",
-                                help="Generate a three-slide carousel and footer from this Substack article row.",
-                            ):
-                                _close_workspace_menu(row)
-                                _open_workspace_candidate_article_dialog(row_num)
-                                _rerun_workspace("Edit")
-                            skip_label = "Unskip" if status.strip().lower() == "skipped" else "Skip"
-                            if st.button(
-                                skip_label,
-                                key=f"workspace_menu_skip_{row_num}",
-                                width="stretch",
-                            ):
-                                next_status = _default_editor_status(row) if status.strip().lower() == "skipped" else "skipped"
-                                update_status(GOOGLE_SHEET_ID, row_num, next_status)
-                                if next_status == "skipped":
-                                    if str(st.query_params.get("workspace_row", "") or "") == str(row_num):
-                                        st.query_params.pop("workspace_row", None)
-                                    if st.session_state.get("workspace_target_row") == str(row_num):
-                                        st.session_state.pop("workspace_target_row", None)
-                                _close_workspace_menu(row)
-                                st.session_state["workspace_success"] = (
-                                    f"Row {row_num}: moved back into the main edit list."
-                                    if next_status != "skipped"
-                                    else f"Row {row_num}: skipped and moved to the bottom."
-                                )
-                                _rerun_workspace("Edit")
-                            if st.button(
-                                "Delete row",
-                                key=f"workspace_menu_delete_{row_num}",
-                                width="stretch",
-                            ):
+                        if st.button(
+                            "Slides",
+                            key=f"workspace_menu_post_slides_{row_num}",
+                            width="stretch",
+                        ):
+                            _close_workspace_menu(row)
+                            _open_workspace_post_slides_dialog(row_num)
+                            _rerun_workspace("Edit")
+                        if st.button(
+                            "Make generic",
+                            key=f"workspace_menu_generic_slides_{row_num}",
+                            width="stretch",
+                            help="Build a source-agnostic slides prompt — strips speaker, adds research directive, neutralizes caption, removes CTA",
+                        ):
+                            _close_workspace_menu(row)
+                            _open_workspace_generic_slides_dialog(row_num)
+                            _rerun_workspace("Edit")
+                        if st.button(
+                            "Update screenshot",
+                            key=f"workspace_menu_thumbnail_open_{row_num}",
+                            width="stretch",
+                        ):
+                            _close_workspace_menu(row)
+                            st.session_state["workspace_thumbnail_dialog_row"] = row_num
+                            _rerun_workspace("Edit")
+                        if st.button("Add link", key=f"workspace_link_open_{row_num}", width="stretch"):
+                            _close_workspace_menu(row)
+                            st.session_state["workspace_link_dialog_row"] = row_num
+                            _rerun_workspace("Edit")
+                        if is_reel and media_links and st.button(
+                            "Crop video to fit",
+                            key=f"workspace_menu_crop_video_fit_{row_num}",
+                            width="stretch",
+                            help="Scale the original video to fit the 4:5 canvas with black bars and upload segments to Drive.",
+                        ):
+                            _close_workspace_menu(row)
+                            _queue_workspace_action(row_num, "split_video_fit")
+                            _rerun_workspace("Edit")
+                        primary_action = "process_post" if is_instagram else "image_text"
+                        primary_help = (
+                            "Transcribe, generate the caption, and generate slide copy."
+                            if _is_reel_url(url)
+                            else "Use available post text and image text to generate the caption and slide copy."
+                        )
+                        if st.button("Edit caption", key=f"workspace_menu_edit_caption_{row_num}", width="stretch"):
+                            _close_workspace_menu(row)
+                            _open_workspace_slide_action_dialog(row_num, "caption")
+                            _rerun_workspace("Edit")
+                        if is_instagram and st.button(
+                            menu_label,
+                            key=f"workspace_menu_primary_{row_num}",
+                            disabled=not url,
+                            width="stretch",
+                            help=primary_help,
+                        ):
+                            if primary_action == "process_post" and not transcript:
                                 try:
-                                    _delete_workspace_row(row)
+                                    warning = _check_reel_transcript_risk(row)
                                 except Exception as e:
-                                    st.session_state["workspace_error"] = f"Row {row_num}: could not delete row - {describe_error(e)}"
-                                else:
-                                    st.session_state["workspace_success"] = f"Row {row_num}: deleted from the sheet."
-                                _close_workspace_menu(row)
-                                _rerun_workspace("Edit")
+                                    st.session_state["workspace_error"] = f"Row {row_num}: could not check reel size - {describe_error(e)}"
+                                    _close_workspace_menu(row)
+                                    _rerun_workspace("Edit")
+                                if warning:
+                                    st.session_state[warning_key] = warning
+                                    _close_workspace_menu(row)
+                                    _rerun_workspace("Edit")
+                            _close_workspace_menu(row)
+                            _queue_workspace_action(row_num, primary_action)
+                            _rerun_workspace("Edit")
+                        if is_article and _is_substack_url(url) and st.button(
+                            "Process as Candidate Article",
+                            key=f"workspace_menu_candidate_article_{row_num}",
+                            width="stretch",
+                            help="Generate a three-slide carousel and footer from this Substack article row.",
+                        ):
+                            _close_workspace_menu(row)
+                            _open_workspace_candidate_article_dialog(row_num)
+                            _rerun_workspace("Edit")
+                        skip_label = "Unskip" if status.strip().lower() == "skipped" else "Skip"
+                        if st.button(
+                            skip_label,
+                            key=f"workspace_menu_skip_{row_num}",
+                            width="stretch",
+                        ):
+                            next_status = _default_editor_status(row) if status.strip().lower() == "skipped" else "skipped"
+                            update_status(GOOGLE_SHEET_ID, row_num, next_status)
+                            if next_status == "skipped":
+                                if str(st.query_params.get("workspace_row", "") or "") == str(row_num):
+                                    st.query_params.pop("workspace_row", None)
+                                if st.session_state.get("workspace_target_row") == str(row_num):
+                                    st.session_state.pop("workspace_target_row", None)
+                            _close_workspace_menu(row)
+                            st.session_state["workspace_success"] = (
+                                f"Row {row_num}: moved back into the main edit list."
+                                if next_status != "skipped"
+                                else f"Row {row_num}: skipped and moved to the bottom."
+                            )
+                            _rerun_workspace("Edit")
+                        if st.button(
+                            "Delete row",
+                            key=f"workspace_menu_delete_{row_num}",
+                            width="stretch",
+                        ):
+                            try:
+                                _delete_workspace_row(row)
+                            except Exception as e:
+                                st.session_state["workspace_error"] = f"Row {row_num}: could not delete row - {describe_error(e)}"
+                            else:
+                                st.session_state["workspace_success"] = f"Row {row_num}: deleted from the sheet."
+                            _close_workspace_menu(row)
+                            _rerun_workspace("Edit")
                     transcript_warning = st.session_state.get(warning_key)
                     if transcript_warning:
                         size_label = _format_bytes(transcript_warning["size_bytes"])
