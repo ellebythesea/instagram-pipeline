@@ -12,7 +12,7 @@ import streamlit as st
 
 from config import GOOGLE_SHEET_ID, OPENAI_API_KEY
 from ingest_helpers import upload_media_bundle
-from pipeline_caption import generate_row_caption, row_ready_for_caption
+from pipeline_caption import carousel_slide_rules, generate_row_caption, row_ready_for_caption
 from post_scraper import process_url as process_post_url
 from reel_scraper import process_url as process_reel_url
 from sheets import (
@@ -178,6 +178,85 @@ def _redo_caption_from_image_text(row: dict) -> None:
     update_caption(GOOGLE_SHEET_ID, row_num, caption, "done")
 
 
+def _build_generic_slides_prompt(row: dict, hashtags: str, caption_context: str) -> str:
+    """Build a source-agnostic slides prompt that strips the speaker and adds a research directive."""
+    row_num = row.get("row_number", "new")
+    username = (row.get("Source Username", "") or "").strip() or "unknown"
+    media_type = (row.get("Media Type", "") or "post").strip()
+    transcript = (row.get("Transcript", "") or "").strip()
+    original_caption = (row.get("Original Caption", "") or "").strip()
+    cc = (caption_context or "").strip()
+
+    row_block = "\n".join([
+        f"ROW {row_num}",
+        f"username: {username}",
+        f"media_type: {media_type}",
+        "speaker_name: (none — do not attribute to any speaker)",
+        "transcript:",
+        transcript or "(none)",
+        "original_caption:",
+        original_caption or "(none)",
+        "caption_context:",
+        cc or "(none)",
+    ])
+
+    hashtag_note = (
+        f"\nRequired hashtags to include in the caption: {hashtags}\n"
+        if hashtags else ""
+    )
+
+    instructions = (
+        "You are creating a standalone, source-agnostic informative carousel post.\n\n"
+        "CRITICAL: This post must NOT mention, credit, quote, or attribute anything to the original speaker "
+        "or the source of the content below. Do not name the speaker. Do not reference the clip, interview, "
+        "speech, or original post in any way.\n\n"
+        "Instead: identify the underlying topic or main person/subject the content is ABOUT, "
+        "and write the post as if it is original research on that topic.\n\n"
+        "Mandatory extended research step before writing:\n"
+        "* Identify the core topic or main person of interest from the content below.\n"
+        "* Search online extensively for additional facts, data, dates, numbers, context, and recent "
+        "developments on this topic.\n"
+        "* Pull in verified statistics, timelines, key figures, and relevant background that "
+        "strengthens the post.\n"
+        "* Prefer primary sources, Reuters, AP, government records, court documents, and reputable outlets.\n"
+        "* Do not add unverified claims. If context cannot be verified, stay close to the supplied content.\n"
+        "* Never cite sources in the JSON output. Use research only to improve accuracy and depth.\n\n"
+        "Return ONLY valid JSON as an array. No markdown, no commentary outside JSON.\n\n"
+        "Each object must include: row_number, name, text1, text2, text3, generated_caption\n\n"
+        "Rules:\n"
+        "* Keep row_number exactly as shown\n"
+        "* No markdown, no commentary outside JSON\n"
+        "* Plain straight double quotes only, no smart quotes\n"
+        + carousel_slide_rules()
+        + hashtag_note
+        + "\nCaption rules:\n"
+        "Write a neutral, third-person informative caption under 1300 characters using exactly two simple "
+        "paragraphs.\n\n"
+        "Never write in first person. Do not use I, me, my, mine, we, us, our, or ours unless inside "
+        "a verified direct quote from a named public source. Stay in third person.\n\n"
+        "The first paragraph must be 250 characters or fewer and serve as the most important summary. "
+        "It must include all required hashtags plus 3 to 5 relevant hashtags total. "
+        "Prioritize hashtags for the main subject or topic, then subject-area hashtags for discovery. "
+        "Replace the normal word or phrase in the sentence with the hashtag version. "
+        "Do not add a separate hashtag-only line at the end.\n\n"
+        "The second paragraph adds context using verified facts, dates, and numbers. "
+        "Do not refer to any transcript, clip, speech, interview, or video. "
+        "Write as if describing the underlying topic directly.\n\n"
+        "Do NOT include any call to action asking readers to comment or DM for a link. "
+        "Do not include any line about 'Comment LINK', 'Say LINK', 'DM', or any link-retrieval "
+        "instructions.\n\n"
+        "\nQuality check before final output:\n"
+        "* Confirm no reference to the original speaker appears anywhere in the output\n"
+        "* Confirm no reference to a clip, transcript, speech, interview, or video\n"
+        "* Confirm the post reads as original research on the topic, not a summary of someone's content\n"
+        "* Confirm no call-to-action about commenting, DMing, or retrieving a link\n"
+        "* Confirm every object has exactly row_number, name, text1, text2, text3, generated_caption\n"
+        "* Confirm character limits are respected\n"
+        "* Confirm no hashtags, em dashes, smart quotes, markdown, or newlines in slide fields\n\n"
+    )
+    return instructions + "\n\n" + row_block
+
+
 # ---------------------------------------------------------------------------
 # UI
 # ---------------------------------------------------------------------------
@@ -288,7 +367,7 @@ for row in rows:
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    action_cols = st.columns(3)
+    action_cols = st.columns(4)
     with action_cols[0]:
         rerun_disabled = "/reel/" not in url.lower() and "/reels/" not in url.lower()
         if st.button(
@@ -338,6 +417,26 @@ for row in rows:
                 else:
                     st.success(f"Row {row_num}: caption regenerated from image text.")
                     st.rerun()
+    with action_cols[3]:
+        if st.button(
+            "Make generic",
+            key=f"post_editor_generic_{row_num}",
+            help="Build a source-agnostic slides prompt — strips speaker, adds research directive",
+            use_container_width=True,
+        ):
+            _hashtags = st.session_state.get(f"hashtags_{row_num}", row.get("Required Hashtags", ""))
+            _preset_choices = st.session_state.get(f"presets_{row_num}", [])
+            _preset_tags = " ".join(PRESET_HASHTAGS[p] for p in _preset_choices)
+            _combined_hashtags = " ".join(filter(None, [_hashtags.strip(), _preset_tags])).strip()
+            _caption_context = st.session_state.get(f"context_{row_num}", row.get("Caption Context", ""))
+            st.session_state[f"generic_prompt_{row_num}"] = _build_generic_slides_prompt(
+                row, _combined_hashtags, _caption_context
+            )
+
+    generic_prompt = st.session_state.get(f"generic_prompt_{row_num}")
+    if generic_prompt:
+        st.caption("Generic slides prompt — source-agnostic, research-forward. Copy and paste into a research-enabled model:")
+        st.code(generic_prompt, language=None)
 
 ingested_rows = [
     r for r in rows

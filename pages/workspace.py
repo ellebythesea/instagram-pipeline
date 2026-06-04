@@ -1237,6 +1237,22 @@ def _close_workspace_post_slides_dialog(clear_inputs: bool = False) -> None:
         st.session_state.pop("workspace_post_slides_results", None)
 
 
+def _open_workspace_generic_slides_dialog(row_number: int) -> None:
+    if st.session_state.get("workspace_generic_slides_dialog_row") != row_number:
+        st.session_state.pop("workspace_generic_slides_results", None)
+    st.session_state["workspace_generic_slides_dialog_row"] = row_number
+
+
+def _close_workspace_generic_slides_dialog(clear_inputs: bool = False) -> None:
+    st.session_state.pop("workspace_generic_slides_dialog_row", None)
+    if clear_inputs:
+        st.session_state.pop("workspace_generic_slides_results", None)
+
+
+def _dismiss_workspace_generic_slides_dialog() -> None:
+    _close_workspace_generic_slides_dialog(clear_inputs=True)
+
+
 def _workspace_home_link_label(mode: str) -> str:
     if mode == "Process as Candidate Article":
         return "Substack URL"
@@ -3389,6 +3405,56 @@ def _render_workspace_post_slides_dialog(row: dict) -> None:
         _rerun_workspace("Edit")
 
 
+@st.dialog("Make generic", width="large", on_dismiss=_dismiss_workspace_generic_slides_dialog)
+def _render_workspace_generic_slides_dialog(row: dict) -> None:
+    row_num = row["row_number"]
+    st.caption(
+        f"Row {row_num}. Strips the speaker, adds an extended research directive, neutralizes the caption, "
+        "and removes all comment/DM CTAs. Paste results back to apply."
+    )
+
+    pasted_results = st.text_area(
+        "Paste slide results",
+        key="workspace_generic_slides_results",
+        height=100,
+        placeholder='[{"row_number":2,"name":"...","text1":"...","text2":"...","text3":"...","generated_caption":"..."}]',
+    )
+    current_status = _cell_text(row.get("Status")).strip()
+    if st.button(
+        "Apply to this post",
+        key=f"workspace_generic_slides_apply_{row_num}",
+        type="primary",
+        width="stretch",
+        disabled=not pasted_results.strip(),
+    ):
+        try:
+            updated_count, issues = _apply_generic_slide_result(row_num, pasted_results, current_status)
+        except Exception as e:
+            st.error(f"Could not apply slide result: {describe_error(e)}")
+        else:
+            if updated_count:
+                msg = f"Row {row_num}: generic slide result applied."
+                if issues:
+                    msg += f" {' | '.join(issues[:3])}"
+                st.session_state["workspace_success"] = msg
+            else:
+                st.session_state["workspace_error"] = (
+                    f"Row {row_num}: no valid slide result was found."
+                    + (f" {' | '.join(issues[:3])}" if issues else "")
+                )
+            st.session_state.pop("workspace_generic_slides_results", None)
+            st.session_state.pop(_workspace_speaker_key(row), None)
+            _close_workspace_generic_slides_dialog(clear_inputs=True)
+            _rerun_workspace("Edit")
+
+    st.caption("Generic slides prompt")
+    st.code(_build_generic_chatgpt_prompt(row), language=None)
+
+    if st.button("Close", key=f"workspace_generic_slides_close_{row_num}", width="stretch"):
+        _close_workspace_generic_slides_dialog(clear_inputs=True)
+        _rerun_workspace("Edit")
+
+
 @st.dialog("Slide action", on_dismiss=_dismiss_workspace_slide_action_dialog)
 def _render_workspace_slide_action_dialog(row: dict) -> None:
     dialog_state = st.session_state.get("workspace_slide_action_dialog") or {}
@@ -4270,7 +4336,7 @@ def _copy_tabs(
                 width="stretch",
             )
         if (slide_text3 or "").strip():
-            st.code(
+            _tab_copy_preview(
                 _caption_tab_value(
                     generated,
                     original_caption,
@@ -4278,8 +4344,7 @@ def _copy_tabs(
                     top_comment,
                     required_hashtags,
                     is_instagram,
-                ) or "(none)",
-                language=None,
+                ) or "(none)"
             )
             st.caption("Custom link text")
             st.code(top_comment or "(none)", language=None)
@@ -5694,6 +5759,129 @@ def _build_chatgpt_handoff_prompt(rows: list[dict]) -> str:
     return instructions + "\n\n" + "\n\n---\n\n".join(blocks)
 
 
+def _build_generic_chatgpt_prompt(row: dict) -> str:
+    """Build a source-agnostic slides + caption prompt: no speaker, extended research, neutral caption, no CTA."""
+    working_row = _ensure_photo_post_source_text(row)
+    row_num = working_row["row_number"]
+    username = _cell_text(working_row.get("Source Username")).strip() or "unknown"
+    media_type = _cell_text(working_row.get("Media Type")).strip().lower() or "post"
+    transcript = _cell_text(working_row.get("Transcript")).strip()
+    original_caption = _cell_text(working_row.get("Original Caption")).strip()
+    caption_context = _cell_text(working_row.get("Caption Context")).strip()
+    hashtags = _cell_text(working_row.get("Required Hashtags")).strip()
+
+    row_block = "\n".join([
+        f"ROW {row_num}",
+        f"username: {username}",
+        f"media_type: {media_type}",
+        "speaker_name: (none — do not attribute to any speaker)",
+        f"transcript:\n{transcript or '(none)'}",
+        f"original_caption:\n{original_caption or '(none)'}",
+        f"caption_context:\n{caption_context or '(none)'}",
+    ])
+
+    hashtag_note = (
+        f"\nRequired hashtags to include in the caption: {hashtags}\n"
+        if hashtags else ""
+    )
+
+    instructions = (
+        "You are creating a standalone, source-agnostic informative carousel post.\n\n"
+        "CRITICAL: This post must NOT mention, credit, quote, or attribute anything to the original speaker "
+        "or the source of the content below. Do not name the speaker. Do not reference the clip, interview, "
+        "speech, or original post in any way.\n\n"
+        "Instead: identify the underlying topic or main person/subject the content is ABOUT, "
+        "and write the post as if it is original research on that topic.\n\n"
+        "Mandatory extended research step before writing:\n"
+        "* Identify the core topic or main person of interest from the content below.\n"
+        "* Search online extensively for additional facts, data, dates, numbers, context, and recent "
+        "developments on this topic.\n"
+        "* Pull in verified statistics, timelines, key figures, and relevant background that "
+        "strengthens the post.\n"
+        "* Prefer primary sources, Reuters, AP, government records, court documents, and reputable outlets.\n"
+        "* Do not add unverified claims. If context cannot be verified, stay close to the supplied content.\n"
+        "* Never cite sources in the JSON output. Use research only to improve accuracy and depth.\n\n"
+        "Return ONLY valid JSON as an array. No markdown, no commentary outside JSON.\n\n"
+        "Each object must include: row_number, name, text1, text2, text3, generated_caption\n\n"
+        "Rules:\n"
+        "* Keep row_number exactly as shown\n"
+        "* No markdown, no commentary outside JSON\n"
+        "* Plain straight double quotes only, no smart quotes\n"
+        + pipeline_caption_ops.carousel_slide_rules()
+        + hashtag_note
+        + "\nCaption rules:\n"
+        "Write a neutral, third-person informative caption under 1300 characters using exactly two simple "
+        "paragraphs.\n\n"
+        "Never write in first person. Do not use I, me, my, mine, we, us, our, or ours unless inside "
+        "a verified direct quote from a named public source. Stay in third person.\n\n"
+        "The first paragraph must be 250 characters or fewer and serve as the most important summary. "
+        "It must include all required hashtags plus 3 to 5 relevant hashtags total. "
+        "Prioritize hashtags for the main subject or topic, then subject-area hashtags for discovery. "
+        "Replace the normal word or phrase in the sentence with the hashtag version. "
+        "Do not add a separate hashtag-only line at the end.\n\n"
+        "The second paragraph adds context using verified facts, dates, and numbers. "
+        "Do not refer to any transcript, clip, speech, interview, or video. "
+        "Write as if describing the underlying topic directly.\n\n"
+        "Do NOT include any call to action asking readers to comment or DM for a link. "
+        "Do not include any line about 'Comment LINK', 'Say LINK', 'DM', or any link-retrieval "
+        "instructions.\n\n"
+        "\nQuality check before final output:\n"
+        "* Confirm no reference to the original speaker appears anywhere in the output\n"
+        "* Confirm no reference to a clip, transcript, speech, interview, or video\n"
+        "* Confirm the post reads as original research on the topic, not a summary of someone's content\n"
+        "* Confirm no call-to-action about commenting, DMing, or retrieving a link\n"
+        "* Confirm every object has exactly row_number, name, text1, text2, text3, generated_caption\n"
+        "* Confirm character limits are respected\n"
+        "* Confirm no hashtags, em dashes, smart quotes, markdown, or newlines in slide fields\n\n"
+    )
+    return instructions + "\n\n" + row_block
+
+
+def _apply_generic_slide_result(row_number: int, raw_text: str, current_status: str) -> tuple[int, list[str]]:
+    """Apply generic slide result: writes carousel fields and, if present, the generated_caption."""
+    payload = _extract_json_payload(raw_text)
+    items = payload if isinstance(payload, list) else [payload]
+    dict_items = [item for item in items if isinstance(item, dict)]
+    if not dict_items:
+        raise ValueError("Paste one JSON object or an array containing one slide result.")
+
+    selected = None
+    for item in dict_items:
+        try:
+            if int(item.get("row_number")) == int(row_number):
+                selected = item
+                break
+        except Exception:
+            continue
+    if selected is None:
+        selected = dict_items[0]
+
+    raw_name = _cell_text(selected.get("name")).strip()
+    carousel = {
+        "name": ("@" + raw_name if raw_name and not raw_name.startswith("@") and " " not in raw_name else raw_name),
+        "text1": _single_paragraph_slide_text(selected.get("text1")),
+        "text2": _single_paragraph_slide_text(selected.get("text2")),
+        "text3": _single_paragraph_slide_text(selected.get("text3")),
+        "text4": _single_paragraph_slide_text(selected.get("text4")),
+        "text5": _single_paragraph_slide_text(selected.get("text5")),
+        "text6": _single_paragraph_slide_text(selected.get("text6")),
+    }
+    if not (carousel["name"] or carousel["text1"] or carousel["text2"] or carousel["text3"]):
+        return 0, [f"Row {row_number}: no name or slide text values were provided."]
+
+    _write_specific_carousel_fields(row_number, carousel)
+
+    if update_speaker_names_batch is not None:
+        update_speaker_names_batch(GOOGLE_SHEET_ID, {row_number: ""})
+
+    caption = _cell_text(selected.get("generated_caption")).strip()
+    if caption:
+        next_status = current_status if current_status and current_status not in ("ingested", "") else "done"
+        update_caption(GOOGLE_SHEET_ID, row_number, caption, next_status)
+
+    return 1, []
+
+
 _SLIDE_KEYS = ["row_number", "name", "text1", "text2", "text3", "text4", "text5", "text6", "generated_caption"]
 
 
@@ -6259,6 +6447,14 @@ if active_section_tab == "Home":
         else:
             _render_workspace_post_slides_dialog(post_slides_dialog_row)
 
+    generic_slides_dialog_row_number = st.session_state.get("workspace_generic_slides_dialog_row")
+    if generic_slides_dialog_row_number is not None:
+        generic_slides_dialog_row = next((row for row in editor_rows if row.get("row_number") == generic_slides_dialog_row_number), None)
+        if generic_slides_dialog_row is None:
+            _close_workspace_generic_slides_dialog(clear_inputs=True)
+        else:
+            _render_workspace_generic_slides_dialog(generic_slides_dialog_row)
+
     slide_dialog_state = st.session_state.get("workspace_slide_action_dialog") or {}
     slide_dialog_row_number = slide_dialog_state.get("row_number")
     if slide_dialog_row_number is not None:
@@ -6400,6 +6596,15 @@ if active_section_tab == "Home":
                             ):
                                 _close_workspace_menu(row)
                                 _open_workspace_post_slides_dialog(row_num)
+                                _rerun_workspace("Edit")
+                            if st.button(
+                                "Make generic",
+                                key=f"workspace_menu_generic_slides_{row_num}",
+                                width="stretch",
+                                help="Build a source-agnostic slides prompt — strips speaker, adds research directive, neutralizes caption, removes CTA",
+                            ):
+                                _close_workspace_menu(row)
+                                _open_workspace_generic_slides_dialog(row_num)
                                 _rerun_workspace("Edit")
                             if st.button(
                                 "Update screenshot",
