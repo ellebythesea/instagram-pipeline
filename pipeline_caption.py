@@ -387,6 +387,10 @@ def carousel_slide_rules() -> str:
         "* Use the person's name when provided\n"
         "* Prioritize text1 and text2 for direct quotes\n"
         "* text3 may use fewer quotes when context explains the stakes more naturally\n"
+        "* If the transcript appears to be from a notable public figure — politician, executive, celebrity, "
+        "activist, expert, or anyone whose direct words carry weight — maximize direct quotes across all "
+        "slides. Pack each slide with as much verbatim content from the transcript as the character limit "
+        "allows. Use their exact words rather than paraphrases whenever possible.\n"
     )
 
 
