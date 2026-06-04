@@ -3413,8 +3413,8 @@ def _render_workspace_post_slides_dialog(row: dict) -> None:
 def _render_workspace_generic_slides_dialog(row: dict) -> None:
     row_num = row["row_number"]
     st.caption(
-        f"Row {row_num}. Strips the speaker, adds an extended research directive, neutralizes the caption, "
-        "and removes all comment/DM CTAs. Paste results back to apply."
+        f"Row {row_num}. Creates a new source-agnostic post — the original is left unchanged. "
+        "Paste the result below and click Create new post."
     )
 
     pasted_results = st.text_area(
@@ -3423,31 +3423,22 @@ def _render_workspace_generic_slides_dialog(row: dict) -> None:
         height=100,
         placeholder='[{"row_number":2,"name":"...","text1":"...","text2":"...","text3":"...","generated_caption":"..."}]',
     )
-    current_status = _cell_text(row.get("Status")).strip()
     if st.button(
-        "Apply to this post",
+        "Create new post",
         key=f"workspace_generic_slides_apply_{row_num}",
         type="primary",
         width="stretch",
         disabled=not pasted_results.strip(),
     ):
         try:
-            updated_count, issues = _apply_generic_slide_result(row_num, pasted_results, current_status)
+            new_row_num = _create_generic_post_from_result(row, pasted_results)
         except Exception as e:
-            st.error(f"Could not apply slide result: {describe_error(e)}")
+            st.error(f"Could not create generic post: {describe_error(e)}")
         else:
-            if updated_count:
-                msg = f"Row {row_num}: generic slide result applied."
-                if issues:
-                    msg += f" {' | '.join(issues[:3])}"
-                st.session_state["workspace_success"] = msg
-            else:
-                st.session_state["workspace_error"] = (
-                    f"Row {row_num}: no valid slide result was found."
-                    + (f" {' | '.join(issues[:3])}" if issues else "")
-                )
+            st.session_state["workspace_success"] = f"Generic post created as row {new_row_num}."
+            st.session_state["workspace_selected_row_num"] = new_row_num
+            st.query_params["workspace_row"] = str(new_row_num)
             st.session_state.pop("workspace_generic_slides_results", None)
-            st.session_state.pop(_workspace_speaker_key(row), None)
             _close_workspace_generic_slides_dialog(clear_inputs=True)
             _rerun_workspace("Edit")
 
@@ -5841,18 +5832,19 @@ def _build_generic_chatgpt_prompt(row: dict) -> str:
     return instructions + "\n\n" + row_block
 
 
-def _apply_generic_slide_result(row_number: int, raw_text: str, current_status: str) -> tuple[int, list[str]]:
-    """Apply generic slide result: writes carousel fields and, if present, the generated_caption."""
+def _create_generic_post_from_result(original_row: dict, raw_text: str) -> int:
+    """Append a new source-agnostic post row from a generic slide result; leaves the original row unchanged."""
     payload = _extract_json_payload(raw_text)
     items = payload if isinstance(payload, list) else [payload]
     dict_items = [item for item in items if isinstance(item, dict)]
     if not dict_items:
         raise ValueError("Paste one JSON object or an array containing one slide result.")
 
+    original_row_num = original_row.get("row_number")
     selected = None
     for item in dict_items:
         try:
-            if int(item.get("row_number")) == int(row_number):
+            if int(item.get("row_number")) == int(original_row_num):
                 selected = item
                 break
         except Exception:
@@ -5861,29 +5853,49 @@ def _apply_generic_slide_result(row_number: int, raw_text: str, current_status: 
         selected = dict_items[0]
 
     raw_name = _cell_text(selected.get("name")).strip()
-    carousel = {
-        "name": ("@" + raw_name if raw_name and not raw_name.startswith("@") and " " not in raw_name else raw_name),
+    if not (raw_name or selected.get("text1") or selected.get("text2") or selected.get("text3")):
+        raise ValueError("No name or slide text values were found in the pasted result.")
+
+    caption = _cell_text(selected.get("generated_caption")).strip()
+
+    # Carry the original row's media over to the new post so it keeps its visual
+    first_media_link = _cell_text(original_row.get("Media Drive Link")).split(",")[0].strip()
+    thumbnail_link = _cell_text(original_row.get("Thumbnail Drive Link")).strip()
+    media_type = _cell_text(original_row.get("Media Type")).strip()
+
+    append_manual_post_row(GOOGLE_SHEET_ID, {
+        "url": "",
+        "source_username": raw_name,
+        "caption_context": caption,
+        "original_caption": caption,
+        "media_type": media_type,
+        "media_link": first_media_link,
+        "thumbnail_link": thumbnail_link,
+        "speaker_name": "",
+        "status": "ingested",
+        "name": raw_name,
         "text1": _single_paragraph_slide_text(selected.get("text1")),
         "text2": _single_paragraph_slide_text(selected.get("text2")),
         "text3": _single_paragraph_slide_text(selected.get("text3")),
         "text4": _single_paragraph_slide_text(selected.get("text4")),
         "text5": _single_paragraph_slide_text(selected.get("text5")),
         "text6": _single_paragraph_slide_text(selected.get("text6")),
-    }
-    if not (carousel["name"] or carousel["text1"] or carousel["text2"] or carousel["text3"]):
-        return 0, [f"Row {row_number}: no name or slide text values were provided."]
+    })
 
-    _write_specific_carousel_fields(row_number, carousel)
+    all_rows = _run_with_sheet_quota_countdown(
+        lambda: get_all_rows(GOOGLE_SHEET_ID),
+        "Create generic post paused (sheet quota):",
+    )
+    if not all_rows:
+        raise RuntimeError("Could not retrieve rows after creating generic post.")
+    new_row_num = all_rows[-1]["row_number"]
 
-    if update_speaker_names_batch is not None:
-        update_speaker_names_batch(GOOGLE_SHEET_ID, {row_number: ""})
-
-    caption = _cell_text(selected.get("generated_caption")).strip()
     if caption:
-        next_status = current_status if current_status and current_status not in ("ingested", "") else "done"
-        update_caption(GOOGLE_SHEET_ID, row_number, caption, next_status)
+        update_caption(GOOGLE_SHEET_ID, new_row_num, caption, "done")
+    else:
+        update_status(GOOGLE_SHEET_ID, new_row_num, "done")
 
-    return 1, []
+    return new_row_num
 
 
 _SLIDE_KEYS = ["row_number", "name", "text1", "text2", "text3", "text4", "text5", "text6", "generated_caption"]
