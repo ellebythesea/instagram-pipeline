@@ -376,7 +376,7 @@ def carousel_slide_rules() -> str:
         "* Never repeat the same fact, quote, setup, accusation, or disclaimer across text1, text2, and text3\n\n"
 
         "Slide structure:\n"
-        "* text1 = strongest opening slide. Lead with the best direct quote, most explosive verified fact, or clearest news hook\n"
+        "* text1 = strongest opening slide. Lead with the most emotionally compelling verified quote, allegation, consequence, contradiction, or fact. Optimize for maximum curiosity and swipe-through rate. Write text1 like a viral news headline — prioritize emotion, conflict, consequences, and curiosity over explanation. text1 must make the viewer urgently want to read slide 2.\n"
         "* text2 = quote heavy. Use the strongest exchanges, pushback, direct lines, new facts, verified context, names, dates, numbers, contradictions, or legal details only\n"
         "* text3 = broader context, stakes, political backdrop, public reaction, fallout, unanswered questions, public consequences, policy stakes, legal implications, or next steps\n"
         "* Assume the viewer already read previous slides. Do not restate information\n"
