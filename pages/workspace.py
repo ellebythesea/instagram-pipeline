@@ -3990,7 +3990,7 @@ def _render_text_slide_preview(
           overflow: hidden;
           box-sizing: border-box;
         ">
-          <div>{safe_body}</div>
+          <div style="white-space: pre-wrap;">{safe_body}</div>
           {cta_html}
         </div>
       </div>
@@ -5860,6 +5860,8 @@ def _create_generic_post_from_result(original_row: dict, raw_text: str) -> int:
         raise ValueError("No name or slide text values were found in the pasted result.")
 
     caption = _cell_text(selected.get("generated_caption")).strip()
+    # Fallback JSON parsers return raw escape sequences — normalize \n to real newlines
+    caption = caption.replace("\\n", "\n")
     if caption:
         footer = DEFAULT_POST_FOOTER.strip()
         if footer:
@@ -6169,7 +6171,9 @@ def _apply_slide_result_to_specific_row(row_number: int, raw_text: str) -> tuple
 
 
 def _single_paragraph_slide_text(value: str) -> str:
-    return re.sub(r"\s+", " ", _cell_text(value).strip()).strip()
+    text = _cell_text(value).strip()
+    # Collapse runs of non-newline whitespace but preserve intentional line breaks
+    return re.sub(r"[^\S\n]+", " ", text).strip()
 
 
 def _apply_chatgpt_handoff_results(sheet_id: str, raw_text: str) -> tuple[int, list[str]]:
