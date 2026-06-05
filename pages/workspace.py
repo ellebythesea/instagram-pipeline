@@ -217,7 +217,7 @@ SUBSTACK_CANDIDATE_ARTICLE_PROMPT_TEMPLATE = textwrap.dedent(
     * No commentary outside JSON
     * Use plain straight double quotes for all JSON keys and string values, no smart quotes, no escaped quotes inside key names
     * name = "voteinorout"
-    * text1 = strongest opening carousel slide under 350 chars
+    * text1 = strongest opening carousel slide under 350 chars. Lead with the most emotionally compelling verified quote, allegation, consequence, contradiction, or fact. Write it like a viral news headline — prioritize emotion, conflict, consequences, and curiosity over explanation. text1 must make the viewer urgently want to read slide 2.
     * text2 and text3 = under 900 chars each
     * generated_caption = Instagram caption body under 900 chars before the standard footer/hashtags are appended in-app
     * No em dashes
@@ -5389,7 +5389,7 @@ def _build_substack_slide_handoff(
         "Keep row_number exactly as shown in the input.\n"
         "Use plain language, no hashtags, no citations, no markdown, and no newline characters inside values.\n"
         "Each slide should be self-contained and specific.\n"
-        "text1 is the strongest opening slide under 350 characters.\n"
+        "text1 is the strongest opening slide under 350 characters. Lead with the most emotionally compelling verified quote, allegation, consequence, contradiction, or fact. Write it like a viral news headline — prioritize emotion, conflict, consequences, and curiosity over explanation. text1 must make the viewer urgently want to read slide 2.\n"
         "text2, text3, text4, and text5 are semi-longer explainer slides, usually 500 to 800 characters each.\n"
         "text6 is the closing slide under 500 characters. It should point people to the full article without adding a URL.\n"
         "Every text2-text5 slide must include at least one concrete piece of data from the article: a date, number, office, jurisdiction, candidate name, quote, poll, vote margin, dollar amount, legal status, or other specific fact.\n"
