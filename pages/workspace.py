@@ -5860,20 +5860,19 @@ def _create_generic_post_from_result(original_row: dict, raw_text: str) -> int:
         raise ValueError("No name or slide text values were found in the pasted result.")
 
     caption = _cell_text(selected.get("generated_caption")).strip()
-
-    # Carry the original row's media over to the new post so it keeps its visual
-    first_media_link = _cell_text(original_row.get("Media Drive Link")).split(",")[0].strip()
-    thumbnail_link = _cell_text(original_row.get("Thumbnail Drive Link")).strip()
-    media_type = _cell_text(original_row.get("Media Type")).strip()
+    if caption:
+        footer = DEFAULT_POST_FOOTER.strip()
+        if footer:
+            caption = f"{caption}\n\n{footer}"
 
     append_manual_post_row(GOOGLE_SHEET_ID, {
         "url": "",
-        "source_username": raw_name,
+        "source_username": "",
         "caption_context": caption,
         "original_caption": caption,
-        "media_type": media_type,
-        "media_link": first_media_link,
-        "thumbnail_link": thumbnail_link,
+        "media_type": "",
+        "media_link": "",
+        "thumbnail_link": "",
         "speaker_name": "",
         "status": "ingested",
         "name": raw_name,
