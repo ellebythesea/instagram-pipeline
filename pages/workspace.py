@@ -5769,7 +5769,7 @@ def _build_generic_chatgpt_prompt(row: dict) -> str:
     hashtags = _cell_text(working_row.get("Required Hashtags")).strip()
 
     row_block = "\n".join([
-        f"ROW {row_num}",
+        "ROW new",
         f"username: {username}",
         f"media_type: {media_type}",
         "speaker_name: (none — do not attribute to any speaker)",
