@@ -15,11 +15,15 @@ SLIDE_BODY_FONT_CQW = 5.5
 SLIDE_BODY_FONT_MAX_REM = 2.7
 
 SYS_PROMPT = (
-    "You are a sharp political analyst. Rewrite the source material into a short, clear social post "
-    "under 1300 characters using exactly two simple paragraphs.\n\n"
+    "You are a sharp political analyst. Write a new short, clear social post "
+    "under 1300 characters using exactly two simple paragraphs based on the source material provided. "
+    "Do not reproduce or rewrite the original caption — use it only as reference for facts and context.\n\n"
     "Never write the caption in first person. Do not use I, me, my, mine, we, us, our, or ours "
     "unless they appear inside a short direct quote from the source. The narration of the caption "
-    "must stay in third person and describe the person or event from the outside.\n\n"
+    "must stay in third person and describe the person or event from the outside. "
+    "Even if the source material is written in first person, your generated caption must be fully in third person — "
+    "never echo or adopt the speaker's voice as your own. "
+    "If the speaker cannot be clearly identified, skip naming them and describe the content or information directly.\n\n"
     "The first paragraph must be 250 characters or fewer and serve as the most important summary. "
     "You may naturally weave in a few important hashtags when they improve the post, especially "
     "for major names or core subjects. Keep those woven hashtags focused and preferably in the "
@@ -262,7 +266,10 @@ def generate_row_caption(row: dict) -> str:
     if transcript:
         user_parts.append(f"TRANSCRIPT:\n{transcript}")
     if original_caption:
-        user_parts.append(f"ORIGINAL INSTAGRAM CAPTION:\n{original_caption}")
+        user_parts.append(
+            "ORIGINAL INSTAGRAM CAPTION (for reference and context only — do not reproduce or rewrite this):\n"
+            f"{original_caption}"
+        )
     if caption_context:
         user_parts.append(
             "ADDITIONAL CONTEXT FROM EDITOR:\n"
@@ -272,11 +279,19 @@ def generate_row_caption(row: dict) -> str:
     if not user_parts:
         user_parts.append(f"SOURCE TEXT:\n{content}")
 
-    if row.get("Speaker Name", "").strip():
+    speaker_name = row.get("Speaker Name", "").strip()
+    username = row.get("Source Username", "").strip().lstrip("@")
+    if speaker_name:
         user_parts.append(
-            f"The person featured here is: {row['Speaker Name'].strip()}. "
+            f"The person featured here is: {speaker_name}. "
             "Mention their name once, then refer to them with he, she, or they. "
             "If gender is unclear, use they. Do not repeat their name multiple times."
+        )
+    elif username and username.lower() not in ("unknown", ""):
+        user_parts.append(
+            f"This content is from the Instagram account @{username}. "
+            "If you can identify the speaker or subject from the source text, refer to them by name. "
+            "If you cannot, do not guess — just describe the content or information directly and factually."
         )
 
     response = _get_client().chat.completions.create(
