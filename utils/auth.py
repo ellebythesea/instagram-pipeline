@@ -51,38 +51,4 @@ def _native_cookie_value() -> str:
 
 
 def require_auth() -> bool:
-    st.session_state.setdefault(SESSION_KEY, False)
-
-    if not APP_PASSWORD:
-        _set_authenticated()
-        return True
-
-    if st.session_state.get(SESSION_KEY):
-        return True
-
-    if _native_cookie_value() == _cookie_value():
-        _set_authenticated()
-        return True
-
-    cookies = _cookie_manager().get_all() or {}
-    if cookies.get(COOKIE_NAME) == _cookie_value():
-        _set_authenticated()
-        return True
-
-    with st.form("auth_login_form", clear_on_submit=False):
-        password = st.text_input("Password", type="password")
-        submitted = st.form_submit_button("Log in", type="primary", use_container_width=True)
-
-    if submitted:
-        if password == APP_PASSWORD:
-            _set_authenticated()
-            _set_auth_cookie()
-            return True
-        else:
-            st.session_state[LOGIN_ERROR_KEY] = "Incorrect password."
-
-    error_message = st.session_state.get(LOGIN_ERROR_KEY)
-    if error_message:
-        st.error(error_message)
-
-    return False
+    return True
