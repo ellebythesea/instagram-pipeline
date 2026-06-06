@@ -1413,10 +1413,10 @@ def _sync_workspace_row_state(row: dict) -> None:
     if previous_token:
         tokens_to_clear.add(previous_token)
     if previous_identity is not None or previous_token is not None:
-        st.session_state.pop(speaker_key, None)
         for token in tokens_to_clear:
             for key in _workspace_row_state_keys_for_token(token):
                 st.session_state.pop(key, None)
+    st.session_state[speaker_key] = _cell_text(row.get("Speaker Name")).strip()
     st.session_state[identity_key] = current_identity
     st.session_state[token_key] = current_token
 
@@ -6576,9 +6576,10 @@ if active_section_tab == "Home":
                     else:
                         st.markdown(f"#### Row {row_num}")
 
+                    if speaker_key not in st.session_state:
+                        st.session_state[speaker_key] = speaker_name
                     st.text_input(
                         "Speaker name",
-                        value=speaker_name,
                         key=speaker_key,
                         placeholder="Speaker name",
                         label_visibility="collapsed",
