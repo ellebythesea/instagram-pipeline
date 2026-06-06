@@ -4124,6 +4124,8 @@ def _copy_tabs(
         slide_four_font_adjust_key = f"workspace_slide_four_preview_font_adjust_{row_num}"
         slide_five_font_adjust_key = f"workspace_slide_five_preview_font_adjust_{row_num}"
         slide_six_font_adjust_key = f"workspace_slide_six_preview_font_adjust_{row_num}"
+        slide_merge_key = f"workspace_slide_merge_row_{row_num}"
+        slide_merge_original_key = f"workspace_slide_merge_original_t3_{row_num}"
         preview_links_key = f"workspace_preview_upload_links_{row_num}"
         default_slide_one_fit_mode = _is_candidate_article_row(prompt_row or {})
         current_slide_one_font_adjust = int(st.session_state.get(slide_one_font_adjust_key, 0) or 0)
@@ -4297,6 +4299,34 @@ def _copy_tabs(
             if st.button("Edit text 3", key=f"workspace_row_slides_edit_text3_{row_num}", width="stretch"):
                 _open_workspace_slide_action_dialog(row_num, "text3")
                 _rerun_workspace("Edit")
+            slides_merged = st.session_state.get(slide_merge_key, False)
+            if slides_merged:
+                if st.button("Break slides", key=f"workspace_row_slides_break_{row_num}", width="stretch"):
+                    original_t3 = st.session_state.get(slide_merge_original_key, "")
+                    slide_name = _cell_text((prompt_row or {}).get("name", "")).strip()
+                    _write_specific_carousel_fields(row_num, {
+                        "name": slide_name,
+                        "text1": slide_text1, "text2": slide_text2,
+                        "text3": original_t3,
+                        "text4": slide_text4, "text5": slide_text5, "text6": slide_text6,
+                    })
+                    st.session_state.pop(slide_merge_key, None)
+                    st.session_state.pop(slide_merge_original_key, None)
+                    _rerun_workspace("Edit")
+            elif (slide_text2 or "").strip() and (slide_text3 or "").strip():
+                if st.button("Merge slides 2+3", key=f"workspace_row_slides_merge_{row_num}", width="stretch"):
+                    original_t3 = (slide_text3 or "").strip()
+                    merged_t3 = (slide_text2 or "").strip() + "\n\n" + original_t3
+                    slide_name = _cell_text((prompt_row or {}).get("name", "")).strip()
+                    _write_specific_carousel_fields(row_num, {
+                        "name": slide_name,
+                        "text1": slide_text1, "text2": slide_text2,
+                        "text3": merged_t3,
+                        "text4": slide_text4, "text5": slide_text5, "text6": slide_text6,
+                    })
+                    st.session_state[slide_merge_key] = True
+                    st.session_state[slide_merge_original_key] = original_t3
+                    _rerun_workspace("Edit")
             if (slide_text4 or "").strip() and st.button("Edit text 4", key=f"workspace_row_slides_edit_text4_{row_num}", width="stretch"):
                 _open_workspace_slide_action_dialog(row_num, "text4")
                 _rerun_workspace("Edit")
