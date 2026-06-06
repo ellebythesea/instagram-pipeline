@@ -35,6 +35,7 @@ from drive import (
     _get_service,
     copy_drive_file_to_folder,
     download_drive_file,
+    extract_drive_file_id,
     get_drive_file_metadata,
     get_or_create_subfolder,
     upload_to_drive,
@@ -4466,31 +4467,29 @@ SAFE_DELETE_SUBFOLDER = "safe_for_deletion"
 
 
 def _cleanup_orphaned_preview_folders(all_rows: list[dict]) -> int:
-    """Move Drive preview subfolders that no longer match any active row into safe_for_deletion."""
+    """Move orphaned Drive files and preview subfolders into safe_for_deletion."""
     if not GOOGLE_DRIVE_FOLDER_ID:
         return 0
     service = _get_service()
 
-    query = (
-        f"'{GOOGLE_DRIVE_FOLDER_ID}' in parents and "
-        "mimeType = 'application/vnd.google-apps.folder' and "
-        "trashed = false"
-    )
-    result = service.files().list(
-        q=query,
-        fields="files(id,name)",
-        pageSize=1000,
-        supportsAllDrives=True,
-        includeItemsFromAllDrives=True,
-    ).execute()
-    existing_folders: dict[str, str] = {
-        f["name"]: f["id"] for f in result.get("files", [])
-        if f["name"] != SAFE_DELETE_SUBFOLDER
-    }
-    if not existing_folders:
-        return 0
+    # Collect all active Drive file IDs from every media link in the sheet.
+    active_file_ids: set[str] = set()
+    for row in all_rows:
+        for link in _cell_text(row.get("Media Drive Link")).split(","):
+            link = link.strip()
+            if link:
+                fid = extract_drive_file_id(link)
+                if fid:
+                    active_file_ids.add(fid)
+        for link in _cell_text(row.get("Thumbnail Drive Link")).split(","):
+            link = link.strip()
+            if link:
+                fid = extract_drive_file_id(link)
+                if fid:
+                    active_file_ids.add(fid)
 
-    expected_names: set[str] = set()
+    # Compute expected preview subfolder names from active rows.
+    expected_folder_names: set[str] = set()
     for row in all_rows:
         media_link = _cell_text(row.get("Media Drive Link")).strip().split(",")[0].strip()
         if not media_link:
@@ -4499,12 +4498,37 @@ def _cleanup_orphaned_preview_folders(all_rows: list[dict]) -> int:
         handle_text = _cell_text(row.get("Speaker Name")).strip()
         try:
             folder_name, _ = _preview_folder_base_name(username or handle_text, media_link, row["row_number"])
-            expected_names.add(folder_name)
+            expected_folder_names.add(folder_name)
         except Exception:
             pass
 
-    orphans = {name: fid for name, fid in existing_folders.items() if name not in expected_names}
-    if not orphans:
+    # List all items directly in the main Drive folder (files and subfolders).
+    query = (
+        f"'{GOOGLE_DRIVE_FOLDER_ID}' in parents and "
+        "trashed = false"
+    )
+    result = service.files().list(
+        q=query,
+        fields="files(id,name,mimeType)",
+        pageSize=1000,
+        supportsAllDrives=True,
+        includeItemsFromAllDrives=True,
+    ).execute()
+    all_items = result.get("files", [])
+
+    orphan_files: list[dict] = []
+    orphan_folders: list[dict] = []
+    for item in all_items:
+        if item["name"] == SAFE_DELETE_SUBFOLDER:
+            continue
+        if item["mimeType"] == "application/vnd.google-apps.folder":
+            if item["name"] not in expected_folder_names:
+                orphan_folders.append(item)
+        else:
+            if item["id"] not in active_file_ids:
+                orphan_files.append(item)
+
+    if not orphan_files and not orphan_folders:
         return 0
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -4512,19 +4536,20 @@ def _cleanup_orphaned_preview_folders(all_rows: list[dict]) -> int:
     archive_folder_id = get_or_create_subfolder(safe_root_id, timestamp)
 
     moved = 0
-    for name, folder_id in orphans.items():
+    for item in orphan_files + orphan_folders:
         try:
             service.files().update(
-                fileId=folder_id,
+                fileId=item["id"],
                 addParents=archive_folder_id,
                 removeParents=GOOGLE_DRIVE_FOLDER_ID,
                 fields="id,parents",
                 supportsAllDrives=True,
             ).execute()
-            st.write(f"Moved to safe_for_deletion: {name}")
+            kind = "folder" if item["mimeType"] == "application/vnd.google-apps.folder" else "file"
+            st.write(f"Moved to safe_for_deletion ({kind}): {item['name']}")
             moved += 1
         except Exception as e:
-            st.warning(f"Could not move preview folder '{name}': {describe_error(e)}")
+            st.warning(f"Could not move '{item['name']}': {describe_error(e)}")
     return moved
 
 
@@ -4621,11 +4646,11 @@ def _run_all_steps() -> None:
                     st.warning(f"Row {row_num}: {describe_error(e)}")
             s3.update(label=f"Step 3: Split {split_succeeded}/{len(reels_to_split)} reel(s)", state="complete")
 
-    # Step 4: Trash orphaned preview folders in Drive
-    with st.status("Step 4: Cleaning up orphaned preview folders…", expanded=True) as s4:
+    # Step 4: Move orphaned files and preview folders in Drive to safe_for_deletion
+    with st.status("Step 4: Cleaning up orphaned Drive files and folders…", expanded=True) as s4:
         try:
             trashed = _cleanup_orphaned_preview_folders(all_rows)
-            s4.update(label=f"Step 4: Trashed {trashed} orphaned preview folder(s)", state="complete")
+            s4.update(label=f"Step 4: Moved {trashed} orphaned item(s) to safe_for_deletion", state="complete")
         except Exception as e:
             s4.update(label=f"Step 4 cleanup error: {describe_error(e)}", state="error")
 
