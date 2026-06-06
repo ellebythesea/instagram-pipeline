@@ -4202,23 +4202,23 @@ def _copy_tabs(
                 current_slide_two_font_adjust,
             )
             with st.popover("Slide 2 actions", use_container_width=True):
-                if st.button("S2 Link: More", key=f"workspace_row_slides_s2cta_more_{row_num}", width="stretch"):
+                if st.button("More link", key=f"workspace_row_slides_s2cta_more_{row_num}", width="stretch"):
                     st.session_state[slide_two_cta_key] = "more"
                     _rerun_workspace("Edit")
-                if st.button("S2 Link: Video", key=f"workspace_row_slides_s2cta_video_{row_num}", width="stretch"):
+                if st.button("Video link", key=f"workspace_row_slides_s2cta_video_{row_num}", width="stretch"):
                     st.session_state[slide_two_cta_key] = "video"
                     _rerun_workspace("Edit")
-                if st.button("S2 Link: Article", key=f"workspace_row_slides_s2cta_article_{row_num}", width="stretch"):
+                if st.button("Article link", key=f"workspace_row_slides_s2cta_article_{row_num}", width="stretch"):
                     st.session_state[slide_two_cta_key] = "article"
                     _rerun_workspace("Edit")
-                if st.button("S2 Link: Petition", key=f"workspace_row_slides_s2cta_petition_{row_num}", width="stretch"):
+                if st.button("Petition link", key=f"workspace_row_slides_s2cta_petition_{row_num}", width="stretch"):
                     st.session_state[slide_two_cta_key] = "petition"
                     _rerun_workspace("Edit")
-                if st.button("S2 Link: Custom Link", key=f"workspace_row_slides_s2cta_custom_{row_num}", width="stretch"):
+                if st.button("Link", key=f"workspace_row_slides_s2cta_custom_{row_num}", width="stretch"):
                     st.session_state[slide_two_cta_key] = "custom link"
                     _open_workspace_slide_action_dialog(row_num, "custom_link")
                     _rerun_workspace("Edit")
-                if st.button("S2 Hide link", key=f"workspace_row_slides_s2cta_hidden_{row_num}", width="stretch"):
+                if st.button("Hide link", key=f"workspace_row_slides_s2cta_hidden_{row_num}", width="stretch"):
                     st.session_state[slide_two_cta_key] = "hidden"
                     _rerun_workspace("Edit")
         if (slide_text3 or "").strip():
