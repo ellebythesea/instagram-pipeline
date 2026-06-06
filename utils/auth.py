@@ -64,6 +64,11 @@ def require_auth() -> bool:
         _set_authenticated()
         return True
 
+    cookies = _cookie_manager().get_all() or {}
+    if cookies.get(COOKIE_NAME) == _cookie_value():
+        _set_authenticated()
+        return True
+
     with st.form("auth_login_form", clear_on_submit=False):
         password = st.text_input("Password", type="password")
         submitted = st.form_submit_button("Log in", type="primary", use_container_width=True)
