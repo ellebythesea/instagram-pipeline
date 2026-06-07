@@ -5262,6 +5262,8 @@ def _write_specific_carousel_fields(row_number: int, carousel: dict[str, str]) -
         _single_paragraph_slide_text(carousel.get("text5")),
         _single_paragraph_slide_text(carousel.get("text6")),
     )
+    if update_quote is not None and "quote" in carousel:
+        update_quote(GOOGLE_SHEET_ID, row_number, carousel.get("quote", ""))
 
 
 def _carousel_has_required_text(carousel: dict[str, str]) -> bool:
@@ -5800,6 +5802,8 @@ def _write_carousel_fields(row_number: int, row: dict) -> None:
         carousel.get("text5", ""),
         carousel.get("text6", ""),
     )
+    if update_quote is not None and carousel.get("quote"):
+        update_quote(GOOGLE_SHEET_ID, row_number, carousel["quote"])
 
 
 def _row_ready_for_chatgpt(row: dict) -> bool:
