@@ -4156,7 +4156,7 @@ def _copy_tabs(
         slide_quote_font_adjust_key = f"workspace_slide_quote_font_adjust_{row_num}"
         preview_links_key = f"workspace_preview_upload_links_{row_num}"
         default_slide_one_fit_mode = _is_candidate_article_row(prompt_row or {})
-        current_slide_one_font_adjust = int(st.session_state.get(slide_one_font_adjust_key, 0) or 0)
+        current_slide_one_font_adjust = int(st.session_state.get(slide_one_font_adjust_key, 6) or 6)
         current_slide_one_background_adjust = int(st.session_state.get(slide_one_background_adjust_key, 0) or 0)
         current_slide_one_fit_mode = bool(
             st.session_state.get(slide_one_fit_toggle_key, default_slide_one_fit_mode)
