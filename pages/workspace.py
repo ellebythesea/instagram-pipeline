@@ -3911,7 +3911,6 @@ def _render_slide_one_preview(
             font-family: {PREVIEW_SLIDE_FONT_FAMILY};
             background: linear-gradient(180deg, rgba(18, 23, 34, 0) 0%, rgba(18, 23, 34, 0.9) 36.34%, #121722 80.76%);
           ">
-            {quote_html}
             <div class="workspace-slide-preview-handle" style="
               font-size: clamp(0.7rem, 2.7cqw, 1rem);
               letter-spacing: 0.3em;
@@ -3919,6 +3918,7 @@ def _render_slide_one_preview(
               text-transform: uppercase;
               white-space: nowrap;
             ">{safe_handle}</div>
+            {quote_html}
             <div class="workspace-slide-preview-headline" style="
               font-size: {headline_clamp_css};
               line-height: {PREVIEW_SLIDE_LINE_HEIGHT};
@@ -4208,7 +4208,7 @@ def _copy_tabs(
                 current_slide_one_font_adjust,
                 current_slide_one_background_adjust,
                 current_slide_one_fit_mode,
-                quote=slide_quote if st.session_state.get(slide_quote_show_key) else "",
+                quote=slide_quote if st.session_state.get(slide_quote_show_key, True) else "",
                 quote_font_adjust_px=int(st.session_state.get(slide_quote_font_adjust_key, 0) or 0),
             )
             _render_workspace_preview_control_bar(
@@ -4221,7 +4221,7 @@ def _copy_tabs(
                 current_slide_one_fit_mode,
             )
             if slide_quote:
-                current_quote_show = st.session_state.get(slide_quote_show_key, False)
+                current_quote_show = st.session_state.get(slide_quote_show_key, True)
                 current_quote_font_adjust = int(st.session_state.get(slide_quote_font_adjust_key, 0) or 0)
                 q_cols = st.columns([2, 1, 1], gap="small")
                 with q_cols[0]:
