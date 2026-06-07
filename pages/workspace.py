@@ -6049,7 +6049,7 @@ def _create_generic_post_from_result(original_row: dict, raw_text: str) -> int:
     return new_row_num
 
 
-_SLIDE_KEYS = ["row_number", "name", "text1", "text2", "text3", "text4", "text5", "text6", "generated_caption"]
+_SLIDE_KEYS = ["row_number", "name", "quote", "text1", "text2", "text3", "text4", "text5", "text6", "generated_caption"]
 
 
 def _normalize_slide_paste(text: str) -> str:
@@ -6157,7 +6157,7 @@ def _extract_json_payload(raw_text: str):
         return repaired
 
     def _parse_by_known_keys(candidate: str) -> list:
-        known = ["row_number", "name", "text1", "text2", "text3", "text4", "text5", "text6", "generated_caption"]
+        known = ["row_number", "name", "quote", "text1", "text2", "text3", "text4", "text5", "text6", "generated_caption"]
         key_pat = '"(' + "|".join(re.escape(k) for k in known) + r')"\s*:\s*'
         raw = candidate.strip().lstrip("[").rstrip("]")
         blocks = re.split(r"}\s*,\s*{", raw)
