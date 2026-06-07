@@ -1008,6 +1008,7 @@ update_scheduled_times = sheet_ops.update_scheduled_times
 update_transcript = sheet_ops.update_transcript
 update_thumbnail_link = getattr(sheet_ops, "update_thumbnail_link", None)
 update_carousel_fields = getattr(sheet_ops, "update_carousel_fields", None)
+update_quote = getattr(sheet_ops, "update_quote", None)
 delete_sheet_row = sheet_ops.delete_row
 get_fundraising_links = getattr(sheet_ops, "get_fundraising_links", lambda _sheet_id: [])
 get_slide_cta_options = getattr(sheet_ops, "get_slide_cta_options", lambda _sheet_id: {})
@@ -3479,6 +3480,7 @@ def _render_workspace_slide_action_dialog(row: dict) -> None:
         "caption": _cell_text(row.get("Generated Caption")).strip(),
         "custom_link": _cell_text(row.get("Slide CTA")).strip() or "Say LINK for more",
         "speaker": current_speaker_for_dialog,
+        "quote": _cell_text(row.get("quote")).strip(),
     }
     dialog_labels = {
         "prompt": "Generate prompt",
@@ -3491,6 +3493,7 @@ def _render_workspace_slide_action_dialog(row: dict) -> None:
         "caption": "Edit caption",
         "custom_link": "Edit custom link",
         "speaker": "Update name",
+        "quote": "Edit quote",
     }
     if action not in current_values:
         st.session_state["workspace_error"] = f"Row {row_num}: unknown slide action {action}."
@@ -3537,6 +3540,11 @@ def _render_workspace_slide_action_dialog(row: dict) -> None:
                 text6 = _single_paragraph_slide_text(edited_value if action == "text6" else row.get("text6"))
                 update_carousel_fields(GOOGLE_SHEET_ID, row_num, name, text1, text2, text3, text4, text5, text6)
                 st.session_state["workspace_success"] = f"Row {row_num}: {dialog_labels[action].lower()} saved."
+            elif action == "quote":
+                if update_quote is None:
+                    raise RuntimeError("Quote updates are not supported in this build.")
+                update_quote(GOOGLE_SHEET_ID, row_num, edited_value)
+                st.session_state["workspace_success"] = f"Row {row_num}: quote saved."
             elif action == "caption":
                 current_status = _cell_text(row.get("Status")).strip() or _default_editor_status(row)
                 update_caption(GOOGLE_SHEET_ID, row_num, edited_value, current_status)
@@ -3797,6 +3805,8 @@ def _render_slide_one_preview(
     headline_font_adjust_px: int = 0,
     background_y_adjust_px: int = 0,
     fit_to_top: bool = False,
+    quote: str = "",
+    quote_font_adjust_px: int = 0,
 ) -> None:
     headline_text = (headline or "").strip()
     if not headline_text:
@@ -3821,9 +3831,22 @@ def _render_slide_one_preview(
         if safe_background
         else "background: #121722;"
     )
+    quote_html = ""
+    if (quote or "").strip():
+        safe_quote = html.escape(quote.strip())
+        quote_html = f"""<div style="
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: clamp(2rem, calc(10.2cqw + {quote_font_adjust_px}px), 7rem);
+  font-weight: 400;
+  line-height: 85%;
+  color: #FFF;
+  text-transform: uppercase;
+  margin-bottom: 0.4rem;
+">{safe_quote}</div>"""
     preview_html = f"""
     <div style="margin-top: 1rem;">
       <style>
+        @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap');
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap');
         .workspace-preview-shell {{
           width: 100%;
@@ -3886,6 +3909,7 @@ def _render_slide_one_preview(
             font-family: {PREVIEW_SLIDE_FONT_FAMILY};
             background: linear-gradient(180deg, rgba(18, 23, 34, 0) 0%, rgba(18, 23, 34, 0.9) 36.34%, #121722 80.76%);
           ">
+            {quote_html}
             <div class="workspace-slide-preview-handle" style="
               font-size: clamp(0.7rem, 2.7cqw, 1rem);
               letter-spacing: 0.3em;
@@ -4126,6 +4150,8 @@ def _copy_tabs(
         slide_six_font_adjust_key = f"workspace_slide_six_preview_font_adjust_{row_num}"
         slide_merge_key = f"workspace_slide_merge_row_{row_num}"
         slide_merge_original_key = f"workspace_slide_merge_original_t3_{row_num}"
+        slide_quote_show_key = f"workspace_slide_quote_show_{row_num}"
+        slide_quote_font_adjust_key = f"workspace_slide_quote_font_adjust_{row_num}"
         preview_links_key = f"workspace_preview_upload_links_{row_num}"
         default_slide_one_fit_mode = _is_candidate_article_row(prompt_row or {})
         current_slide_one_font_adjust = int(st.session_state.get(slide_one_font_adjust_key, 0) or 0)
@@ -4160,6 +4186,7 @@ def _copy_tabs(
         slide_handle = current_speaker_name or username.strip()
         if slide_handle and slide_handle == username.strip() and not slide_handle.startswith("@"):
             slide_handle = f"@{slide_handle}"
+        slide_quote = _cell_text((prompt_row or {}).get("quote", "")).strip()
         last_cta_slide_number = 3
         for candidate_slide_number, candidate_text in (
             (6, slide_text6),
@@ -4179,6 +4206,8 @@ def _copy_tabs(
                 current_slide_one_font_adjust,
                 current_slide_one_background_adjust,
                 current_slide_one_fit_mode,
+                quote=slide_quote if st.session_state.get(slide_quote_show_key) else "",
+                quote_font_adjust_px=int(st.session_state.get(slide_quote_font_adjust_key, 0) or 0),
             )
             _render_workspace_preview_control_bar(
                 f"{row_num}_slide1",
@@ -4189,6 +4218,23 @@ def _copy_tabs(
                 slide_one_fit_toggle_key,
                 current_slide_one_fit_mode,
             )
+            if slide_quote:
+                current_quote_show = st.session_state.get(slide_quote_show_key, False)
+                current_quote_font_adjust = int(st.session_state.get(slide_quote_font_adjust_key, 0) or 0)
+                q_cols = st.columns([2, 1, 1], gap="small")
+                with q_cols[0]:
+                    toggle_label = "Hide quote" if current_quote_show else "Show quote on slide 1"
+                    if st.button(toggle_label, key=f"workspace_quote_toggle_{row_num}", width="stretch"):
+                        st.session_state[slide_quote_show_key] = not current_quote_show
+                        _rerun_workspace("Edit")
+                with q_cols[1]:
+                    if st.button("A-", key=f"workspace_quote_font_down_{row_num}", width="stretch"):
+                        st.session_state[slide_quote_font_adjust_key] = max(-40, current_quote_font_adjust - 4)
+                        _rerun_workspace("Edit")
+                with q_cols[2]:
+                    if st.button("A+", key=f"workspace_quote_font_up_{row_num}", width="stretch"):
+                        st.session_state[slide_quote_font_adjust_key] = min(40, current_quote_font_adjust + 4)
+                        _rerun_workspace("Edit")
         if (slide_text2 or "").strip():
             _render_text_slide_preview(
                 2,
@@ -4292,6 +4338,18 @@ def _copy_tabs(
                 _rerun_workspace("Edit")
             if st.button("Edit text 1", key=f"workspace_row_slides_edit_text1_{row_num}", width="stretch"):
                 _open_workspace_slide_action_dialog(row_num, "text1")
+                _rerun_workspace("Edit")
+            if st.button("Edit quote", key=f"workspace_row_slides_edit_quote_{row_num}", width="stretch"):
+                _open_workspace_slide_action_dialog(row_num, "quote")
+                _rerun_workspace("Edit")
+            if st.button("Generate quote", key=f"workspace_row_slides_gen_quote_{row_num}", width="stretch"):
+                try:
+                    generated_q = _generate_quote_for_row(prompt_row or {})
+                    if update_quote is not None:
+                        update_quote(GOOGLE_SHEET_ID, row_num, generated_q)
+                    st.session_state["workspace_success"] = f"Row {row_num}: quote generated."
+                except Exception as e:
+                    st.session_state["workspace_error"] = f"Could not generate quote: {describe_error(e)}"
                 _rerun_workspace("Edit")
             if st.button("Edit text 2", key=f"workspace_row_slides_edit_text2_{row_num}", width="stretch"):
                 _open_workspace_slide_action_dialog(row_num, "text2")
@@ -5159,6 +5217,35 @@ def _generate_caption_for_row(row: dict) -> None:
     update_caption(GOOGLE_SHEET_ID, row_num, caption, next_status)
     if _row_is_photo_post(updated_row):
         _write_carousel_fields(row_num, updated_row)
+
+
+def _generate_quote_for_row(row: dict) -> str:
+    """Extract the single best pull-quote from the row's transcript or caption."""
+    transcript = _cell_text(row.get("Transcript")).strip()
+    original_caption = _cell_text(row.get("Original Caption")).strip()
+    source = transcript or original_caption
+    if not source:
+        raise ValueError("No transcript or caption available to generate a quote from.")
+    client = _get_client()
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are extracting a single pull-quote from source material for a social media graphic. "
+                    "Return ONLY the verbatim quote text — no quotation marks, no attribution, no explanation. "
+                    "Pick the most punchy, surprising, or emotionally resonant direct quote from the source. "
+                    "It should be short enough to display as large text: ideally under 120 characters. "
+                    "If the source has no strong direct quotes, write a tight paraphrase in the speaker's voice."
+                ),
+            },
+            {"role": "user", "content": source},
+        ],
+        max_tokens=120,
+        temperature=0.3,
+    )
+    return response.choices[0].message.content.strip().strip('"').strip("'").strip()
 
 
 def _write_specific_carousel_fields(row_number: int, carousel: dict[str, str]) -> None:

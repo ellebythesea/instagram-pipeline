@@ -13,6 +13,7 @@ Sheet layout:
   R  #text1             S  #text2             T  #text3
   U  Slide CTA          V  text4             W  text5
   X  text6
+  Y  quote
 """
 
 import json
@@ -56,6 +57,7 @@ _EXPECTED_HEADERS = [
     "text4",
     "text5",
     "text6",
+    "quote",
 ]
 
 _headers_checked: set[tuple[str, str]] = set()
@@ -594,6 +596,13 @@ def update_slide_cta_option(sheet_id: str, row_number: int, option: str) -> None
     """Persist a row's selected slide CTA in column U of the main sheet."""
     ws = _worksheet(sheet_id)
     _with_backoff(ws.update, f"U{row_number}", [[(option or "").strip()]])
+
+
+def update_quote(sheet_id: str, row_number: int, quote: str) -> None:
+    """Write a pull-quote to column Y of the main sheet."""
+    ws = _worksheet(sheet_id)
+    _with_backoff(ws.update, f"Y{row_number}", [[(quote or "").strip()]])
+    _invalidate_rows_cache(sheet_id)
 
 
 def get_fundraising_links(sheet_id: str) -> list[dict[str, str]]:
