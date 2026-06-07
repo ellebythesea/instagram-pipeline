@@ -516,20 +516,19 @@ def update_carousel_fields(
     text4: str = "",
     text5: str = "",
     text6: str = "",
-    quote: str = "",
 ) -> None:
-    """Write carousel fields to cols Q-X (and optionally Y for quote) and set status to 'slides'."""
+    """Write carousel fields to cols Q-X and set status to 'slides'."""
     ws = _worksheet(sheet_id)
-    ranges = [
-        {"range": f"N{row_number}", "values": [["slides"]]},
-        {
-            "range": f"Q{row_number}:X{row_number}",
-            "values": [[name, text1, text2, text3, "", text4, text5, text6]],
-        },
-    ]
-    if quote:
-        ranges.append({"range": f"Y{row_number}", "values": [[quote.strip()]]})
-    _with_backoff(ws.batch_update, ranges)
+    _with_backoff(
+        ws.batch_update,
+        [
+            {"range": f"N{row_number}", "values": [["slides"]]},
+            {
+                "range": f"Q{row_number}:X{row_number}",
+                "values": [[name, text1, text2, text3, "", text4, text5, text6]],
+            },
+        ],
+    )
     _invalidate_rows_cache(sheet_id)
 
 

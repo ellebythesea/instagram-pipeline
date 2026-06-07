@@ -5272,8 +5272,10 @@ def _write_specific_carousel_fields(row_number: int, carousel: dict[str, str]) -
         _single_paragraph_slide_text(carousel.get("text4")),
         _single_paragraph_slide_text(carousel.get("text5")),
         _single_paragraph_slide_text(carousel.get("text6")),
-        carousel.get("quote", ""),
     )
+    quote = (carousel.get("quote") or "").strip()
+    if quote and update_quote is not None:
+        update_quote(GOOGLE_SHEET_ID, row_number, quote)
 
 
 def _carousel_has_required_text(carousel: dict[str, str]) -> bool:
@@ -5811,8 +5813,9 @@ def _write_carousel_fields(row_number: int, row: dict) -> None:
         carousel.get("text4", ""),
         carousel.get("text5", ""),
         carousel.get("text6", ""),
-        carousel.get("quote", ""),
     )
+    if carousel.get("quote") and update_quote is not None:
+        update_quote(GOOGLE_SHEET_ID, row_number, carousel["quote"])
 
 
 def _row_ready_for_chatgpt(row: dict) -> bool:
@@ -6379,7 +6382,9 @@ def _apply_chatgpt_handoff_results(sheet_id: str, raw_text: str) -> tuple[int, l
 
         quote = _cell_text(item.get("quote")).strip().strip('"').strip("'").strip()
         if update_carousel_fields is not None:
-            update_carousel_fields(sheet_id, row_number, name, text1, text2, text3, text4, text5, text6, quote)
+            update_carousel_fields(sheet_id, row_number, name, text1, text2, text3, text4, text5, text6)
+        if quote and update_quote is not None:
+            update_quote(sheet_id, row_number, quote)
         updated_count += 1
 
     return updated_count, issues
