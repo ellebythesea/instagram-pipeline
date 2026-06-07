@@ -360,6 +360,7 @@ def append_manual_post_row(sheet_id: str, row_data: dict) -> None:
     row[21] = (row_data.get("text4") or "").strip()
     row[22] = (row_data.get("text5") or "").strip()
     row[23] = (row_data.get("text6") or "").strip()
+    row[24] = (row_data.get("quote") or "").strip()
     ws = _worksheet(sheet_id)
     _with_backoff(ws.append_row, row, value_input_option="USER_ENTERED")
     _invalidate_rows_cache(sheet_id)

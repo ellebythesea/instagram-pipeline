@@ -2574,7 +2574,7 @@ def _build_create_post_slide_prompt() -> str:
 
     instructions = (
         "Return ONLY valid JSON as an array. No markdown, no commentary outside JSON.\n\n"
-        "Each object must include: row_number, name, text1, text2, text3, generated_caption\n\n"
+        "Each object must include: row_number, name, quote, text1, text2, text3, generated_caption\n\n"
         "Mandatory research step before writing:\n"
         "* For every row with a current event, public figure, legal case, government action, investigation, company, or breaking news claim, search online for reliable context before writing.\n"
         "* Use search to verify names, dates, charges, court rulings, dollar amounts, locations, and status of claims.\n"
@@ -2589,7 +2589,7 @@ def _build_create_post_slide_prompt() -> str:
         + "Caption rules:\n"
         + caption_instructions
         + "\nQuality check before final output:\n"
-        "* Confirm every object has exactly row_number, name, text1, text2, text3, generated_caption\n"
+        "* Confirm every object has exactly row_number, name, quote, text1, text2, text3, generated_caption\n"
         "* Confirm character limits are respected\n"
         "* Confirm text is not too short when more verified context exists\n"
         "* Confirm no field repeats another field\n"
@@ -2600,7 +2600,8 @@ def _build_create_post_slide_prompt() -> str:
         "  {\n"
         '    "row_number": "new",\n'
         '    "name": "nowthis",\n'
-        '    "text1": "\\"We could abolish medical debt 10 times over.\\" The line frames the central contrast: billions flowing into military spending while families still face unpaid medical bills, coverage gaps, and debt that can follow them for years.",\n'
+        '    "quote": "We could abolish medical debt 10 times over.",\n'
+        '    "text1": "The line frames the central contrast: billions flowing into military spending while families still face unpaid medical bills, coverage gaps, and debt that can follow them for years.",\n'
         '    "text2": "The argument connects military funding, healthcare costs, Medicaid pressure, and lobbying money into one political charge: Washington keeps finding money for war while ordinary people are told basic care is too expensive.",\n'
         '    "text3": "The fallout is political as much as financial. The carousel should leave viewers with the real stakes: who benefits from federal spending choices, who absorbs the cost, and why healthcare debt remains unresolved.",\n'
         '    "generated_caption": "#BernieSanders says the U.S. could abolish medical debt 10 times over with what it spends on the military. The contrast is stark and personal for millions of Americans still carrying unpaid bills.\\n\\nSanders made the argument during a Senate speech, pointing to Medicaid cuts and rising premiums as Congress approved another round of defense spending. \\"We keep finding money for war,\\" he said, \\"while people can\'t afford insulin.\\""\n'
@@ -2677,6 +2678,7 @@ def _create_post_from_prompt(prompt: str, custom_link: str, uploaded_file, speak
             "top_comment": top_comment,
             "status": "ingested",
             "name": slide_data.get("name", ""),
+            "quote": slide_data.get("quote", ""),
             "text1": slide_data.get("text1", ""),
             "text2": slide_data.get("text2", ""),
             "text3": slide_data.get("text3", ""),
@@ -5867,7 +5869,7 @@ def _build_chatgpt_handoff_prompt(rows: list[dict]) -> str:
     instructions = (
         "Return ONLY valid JSON as an array. No markdown, no commentary outside JSON.\n\n"
 
-        "Each object must include: row_number, name, text1, text2, text3\n\n"
+        "Each object must include: row_number, name, quote, text1, text2, text3\n\n"
 
         "Mandatory research step before writing:\n"
         "* For every row with a current event, public figure, legal case, government action, investigation, company, or breaking news claim, search online for reliable context before writing.\n"
@@ -5882,7 +5884,7 @@ def _build_chatgpt_handoff_prompt(rows: list[dict]) -> str:
         "* Plain straight double quotes only, no smart quotes\n"
         + pipeline_caption_ops.carousel_slide_rules()
         + "Quality check before final output:\n"
-        "* Confirm every object has exactly row_number, name, text1, text2, text3\n"
+        "* Confirm every object has exactly row_number, name, quote, text1, text2, text3\n"
         "* Confirm character limits are respected\n"
         "* Confirm text is not too short when more verified context exists\n"
         "* Confirm no field repeats another field\n"
@@ -5894,7 +5896,8 @@ def _build_chatgpt_handoff_prompt(rows: list[dict]) -> str:
         "  {\n"
         '    "row_number": 1,\n'
         '    "name": "nowthis",\n'
-        '    "text1": "\\"We could abolish medical debt 10 times over.\\" The line frames the central contrast: billions flowing into military spending while families still face unpaid medical bills, coverage gaps, and debt that can follow them for years.",\n'
+        '    "quote": "We could abolish medical debt 10 times over.",\n'
+        '    "text1": "The line frames the central contrast: billions flowing into military spending while families still face unpaid medical bills, coverage gaps, and debt that can follow them for years.",\n'
         '    "text2": "The argument connects military funding, healthcare costs, Medicaid pressure, and lobbying money into one political charge: Washington keeps finding money for war while ordinary people are told basic care is too expensive. The strongest details should be names, dollar amounts, dates, and direct claims from the source material.",\n'
         '    "text3": "The fallout is political as much as financial. The carousel should leave viewers with the real stakes: who benefits from federal spending choices, who absorbs the cost, and why healthcare debt remains unresolved even when Congress approves massive spending elsewhere."\n'
         "  }\n"
@@ -5946,7 +5949,7 @@ def _build_generic_chatgpt_prompt(row: dict) -> str:
         "* Do not add unverified claims. If context cannot be verified, stay close to the supplied content.\n"
         "* Never cite sources in the JSON output. Use research only to improve accuracy and depth.\n\n"
         "Return ONLY valid JSON as an array. No markdown, no commentary outside JSON.\n\n"
-        "Each object must include: row_number, name, text1, text2, text3, generated_caption\n\n"
+        "Each object must include: row_number, name, quote, text1, text2, text3, generated_caption\n\n"
         "Rules:\n"
         "* Keep row_number exactly as shown\n"
         "* No markdown, no commentary outside JSON\n"
@@ -5974,7 +5977,7 @@ def _build_generic_chatgpt_prompt(row: dict) -> str:
         "* Confirm no reference to a clip, transcript, speech, interview, or video\n"
         "* Confirm the post reads as original research on the topic, not a summary of someone's content\n"
         "* Confirm no call-to-action about commenting, DMing, or retrieving a link\n"
-        "* Confirm every object has exactly row_number, name, text1, text2, text3, generated_caption\n"
+        "* Confirm every object has exactly row_number, name, quote, text1, text2, text3, generated_caption\n"
         "* Confirm character limits are respected\n"
         "* Confirm no hashtags, em dashes, smart quotes, markdown, or newlines in slide fields\n\n"
     )
