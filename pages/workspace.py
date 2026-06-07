@@ -6297,6 +6297,7 @@ def _apply_slide_result_to_specific_row(row_number: int, raw_text: str) -> tuple
     raw_name = _cell_text(selected.get("name")).strip()
     carousel = {
         "name": ("@" + raw_name if raw_name and not raw_name.startswith("@") and " " not in raw_name else raw_name),
+        "quote": _cell_text(selected.get("quote")).strip().strip('"').strip("'").strip(),
         "text1": _single_paragraph_slide_text(selected.get("text1")),
         "text2": _single_paragraph_slide_text(selected.get("text2")),
         "text3": _single_paragraph_slide_text(selected.get("text3")),
@@ -6371,6 +6372,9 @@ def _apply_chatgpt_handoff_results(sheet_id: str, raw_text: str) -> tuple[int, l
 
         if update_carousel_fields is not None:
             update_carousel_fields(sheet_id, row_number, name, text1, text2, text3, text4, text5, text6)
+        quote = _cell_text(item.get("quote")).strip().strip('"').strip("'").strip()
+        if quote and update_quote is not None:
+            update_quote(sheet_id, row_number, quote)
         updated_count += 1
 
     return updated_count, issues
