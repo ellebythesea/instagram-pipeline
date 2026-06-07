@@ -3818,9 +3818,9 @@ def _render_slide_one_preview(
     safe_headline = html.escape(headline_text)
     safe_background = html.escape(background_url.strip()) if background_url else ""
     headline_clamp_css = (
-        f"clamp(calc(0.6rem + {headline_font_adjust_px}px), "
-        f"calc(2.5cqw + {headline_font_adjust_px}px), "
-        f"calc(0.85rem + {headline_font_adjust_px}px))"
+        f"clamp(calc(0.9rem + {headline_font_adjust_px}px), "
+        f"calc(3.6cqw + {headline_font_adjust_px}px), "
+        f"calc(1.125rem + {headline_font_adjust_px}px))"
     )
     background_position = f"center {background_y_adjust_px}px"
     background_size = "contain" if fit_to_top else "cover"
@@ -3835,7 +3835,7 @@ def _render_slide_one_preview(
     )
     quote_html = ""
     if (quote or "").strip():
-        safe_quote = html.escape(quote.strip())
+        safe_quote = html.escape(f'"{quote.strip()}"')
         quote_html = f"""<div style="
   font-family: 'Bebas Neue', sans-serif;
   font-size: clamp(2rem, calc(10.2cqw + {quote_font_adjust_px}px), 7rem);
@@ -4161,17 +4161,17 @@ def _copy_tabs(
         current_slide_one_fit_mode = bool(
             st.session_state.get(slide_one_fit_toggle_key, default_slide_one_fit_mode)
         )
-        current_slide_two_font_adjust = int(st.session_state.get(slide_two_font_adjust_key, 0) or 0)
+        current_slide_two_font_adjust = int(st.session_state.get(slide_two_font_adjust_key, -2) or -2)
         current_slide_two_cta = _cell_text(
             st.session_state.get(slide_two_cta_key, "hidden")
         ).strip().lower() or "hidden"
         if current_slide_two_cta not in {"more", "article", "petition", "video", "custom link", "hidden"}:
             current_slide_two_cta = "hidden"
             st.session_state[slide_two_cta_key] = current_slide_two_cta
-        current_slide_three_font_adjust = int(st.session_state.get(slide_three_font_adjust_key, 0) or 0)
-        current_slide_four_font_adjust = int(st.session_state.get(slide_four_font_adjust_key, 0) or 0)
-        current_slide_five_font_adjust = int(st.session_state.get(slide_five_font_adjust_key, 0) or 0)
-        current_slide_six_font_adjust = int(st.session_state.get(slide_six_font_adjust_key, 0) or 0)
+        current_slide_three_font_adjust = int(st.session_state.get(slide_three_font_adjust_key, -2) or -2)
+        current_slide_four_font_adjust = int(st.session_state.get(slide_four_font_adjust_key, -2) or -2)
+        current_slide_five_font_adjust = int(st.session_state.get(slide_five_font_adjust_key, -2) or -2)
+        current_slide_six_font_adjust = int(st.session_state.get(slide_six_font_adjust_key, -2) or -2)
         _known_cta_options = {"more", "article", "substack", "petition", "video", "custom link", "hidden"}
         default_slide_three_cta_option = "article" if _is_candidate_article_row(prompt_row or {}) else "hidden"
         raw_sheet_cta = _cell_text((prompt_row or {}).get("Slide CTA")).strip()
@@ -6307,7 +6307,7 @@ def _apply_slide_result_to_specific_row(row_number: int, raw_text: str) -> tuple
     raw_name = _cell_text(selected.get("name")).strip()
     carousel = {
         "name": ("@" + raw_name if raw_name and not raw_name.startswith("@") and " " not in raw_name else raw_name),
-        "quote": _cell_text(selected.get("quote")).strip().strip('"').strip("'").strip(),
+        "quote": _cell_text(selected.get("quote")).strip().strip('"').strip("'").strip().rstrip("."),
         "text1": _single_paragraph_slide_text(selected.get("text1")),
         "text2": _single_paragraph_slide_text(selected.get("text2")),
         "text3": _single_paragraph_slide_text(selected.get("text3")),
@@ -6380,7 +6380,7 @@ def _apply_chatgpt_handoff_results(sheet_id: str, raw_text: str) -> tuple[int, l
             )
             continue
 
-        quote = _cell_text(item.get("quote")).strip().strip('"').strip("'").strip()
+        quote = _cell_text(item.get("quote")).strip().strip('"').strip("'").strip().rstrip(".")
         if update_carousel_fields is not None:
             update_carousel_fields(sheet_id, row_number, name, text1, text2, text3, text4, text5, text6)
         if quote and update_quote is not None:

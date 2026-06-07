@@ -362,9 +362,9 @@ def carousel_slide_rules() -> str:
     """Canonical slide generation rules shared by all carousel prompt builders."""
     return (
         "* name = short lowercase account username, no @ symbol\n"
-        "* text1 = strongest opening slide under 350 chars\n"
-        "* text2 = usually 350 to 450 chars depending on source strength\n"
-        "* text3 = usually 350 to 450 chars depending on source strength\n"
+        "* text1 = strongest opening slide under 150 chars\n"
+        "* text2 = target 450 to 650 chars. Use the full space when the source supports it. Only go shorter if the source is genuinely thin\n"
+        "* text3 = target 450 to 650 chars. Use the full space when the source supports it. Only go shorter if the source is genuinely thin\n"
         "* If the source material is too thin, write the strongest accurate version without padding\n"
         "* No em dashes, emojis, hashtags, paragraph breaks, or newline characters inside text fields\n"
         "* Every text field must be a single continuous paragraph with no line breaks or paragraph spacing\n"
@@ -377,7 +377,7 @@ def carousel_slide_rules() -> str:
 
         "Slide structure:\n"
         "* quote = the single best verbatim pull-quote from the source. Under 120 characters. No quotation marks, no attribution. This is the large-format display quote shown on slide 1. If no strong verbatim quote exists, write the most charged paraphrase in the speaker's voice.\n"
-        "* text1 = slide 1 body text. This is the supporting context that appears alongside the quote. Do NOT repeat the quote in text1. Write it as the hook/framing that gives the quote meaning — the setup, the stakes, or the consequence. Under 350 chars, single paragraph.\n"
+        "* text1 = slide 1 body text. This is the supporting context that appears alongside the quote. Do NOT repeat the quote in text1. Write it as the hook/framing that gives the quote meaning — the setup, the stakes, or the consequence. Under 150 chars, single paragraph.\n"
         "* text2 = quote heavy. Use the strongest exchanges, pushback, direct lines, new facts, verified context, names, dates, numbers, contradictions, or legal details only\n"
         "* text3 = broader context, stakes, political backdrop, public reaction, fallout, unanswered questions, public consequences, policy stakes, legal implications, or next steps\n"
         "* Assume the viewer already read previous slides. Do not restate information\n"
@@ -478,7 +478,7 @@ def generate_carousel_copy_with_model(row: dict, model: str = "gpt-4o") -> dict[
 
     return {
         "name": (payload.get("name") or display_name or "").strip(),
-        "quote": (payload.get("quote") or "").strip().strip('"').strip("'").strip(),
+        "quote": (payload.get("quote") or "").strip().strip('"').strip("'").strip().rstrip("."),
         "text1": _single_paragraph_slide_text(payload.get("text1") or "", 350),
         "text2": _single_paragraph_slide_text(payload.get("text2") or "", 900),
         "text3": _single_paragraph_slide_text(payload.get("text3") or "", 900),
@@ -550,7 +550,7 @@ def generate_batch_carousel_copy_with_model(rows: list[dict], model: str = "gpt-
             continue
         results[row_number] = {
             "name": (item.get("name") or display_names.get(row_number) or "").strip(),
-            "quote": (item.get("quote") or "").strip().strip('"').strip("'").strip(),
+            "quote": (item.get("quote") or "").strip().strip('"').strip("'").strip().rstrip("."),
             "text1": _single_paragraph_slide_text(item.get("text1") or "", 350),
             "text2": _single_paragraph_slide_text(item.get("text2") or "", 900),
             "text3": _single_paragraph_slide_text(item.get("text3") or "", 900),
