@@ -3818,9 +3818,9 @@ def _render_slide_one_preview(
     safe_headline = html.escape(headline_text)
     safe_background = html.escape(background_url.strip()) if background_url else ""
     headline_clamp_css = (
-        f"clamp(calc(1rem + {headline_font_adjust_px}px), "
-        f"calc(5.5cqw + {headline_font_adjust_px}px), "
-        f"calc(2.8rem + {headline_font_adjust_px}px))"
+        f"clamp(calc(0.6rem + {headline_font_adjust_px}px), "
+        f"calc(2.5cqw + {headline_font_adjust_px}px), "
+        f"calc(0.85rem + {headline_font_adjust_px}px))"
     )
     background_position = f"center {background_y_adjust_px}px"
     background_size = "contain" if fit_to_top else "cover"
@@ -3843,7 +3843,7 @@ def _render_slide_one_preview(
   line-height: 85%;
   color: #FFF;
   text-transform: uppercase;
-  margin-bottom: 0.4rem;
+  margin-bottom: 0;
 ">{safe_quote}</div>"""
     preview_html = f"""
     <div style="margin-top: 1rem;">
