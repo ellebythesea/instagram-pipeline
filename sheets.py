@@ -227,7 +227,7 @@ def _ensure_headers(sheet_id: str, ws: gspread.Worksheet) -> None:
     current = _with_backoff(ws.row_values, 1)
     normalized = current[:len(_EXPECTED_HEADERS)]
     if normalized != _EXPECTED_HEADERS:
-        _with_backoff(ws.update, "A1:X1", [_EXPECTED_HEADERS])
+        _with_backoff(ws.update, "A1:Y1", [_EXPECTED_HEADERS])
     _headers_checked.add(cache_key)
 
 
