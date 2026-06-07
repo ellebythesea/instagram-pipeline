@@ -4227,6 +4227,15 @@ def _copy_tabs(
                 with q_cols[0]:
                     toggle_label = "Hide quote" if current_quote_show else "Show quote on slide 1"
                     if st.button(toggle_label, key=f"workspace_quote_toggle_{row_num}", width="stretch"):
+                        if current_quote_show:
+                            merged_text1 = (slide_quote.strip() + " " + (slide_text1 or "").strip()).strip()
+                            slide_name = _cell_text((prompt_row or {}).get("name", "")).strip()
+                            _write_specific_carousel_fields(row_num, {
+                                "name": slide_name,
+                                "text1": merged_text1, "text2": slide_text2,
+                                "text3": slide_text3, "text4": slide_text4,
+                                "text5": slide_text5, "text6": slide_text6,
+                            })
                         st.session_state[slide_quote_show_key] = not current_quote_show
                         _rerun_workspace("Edit")
                 with q_cols[1]:
