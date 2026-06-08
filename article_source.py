@@ -31,7 +31,7 @@ _REQUEST_TIMEOUT = (5, 12)
 _ARTICLE_TIMEOUT_SECONDS = 40
 _MAX_HTML_BYTES = 3 * 1024 * 1024
 _SERPER_TIMEOUT = 15
-_SERPER_MAX_AGE_DAYS = 14
+_SERPER_MAX_AGE_DAYS = 60
 
 _NOISE_PATTERNS = [
     r"^copyright\s+\d{4}.*all rights reserved\.?$",
@@ -218,7 +218,11 @@ def _build_serper_query(url: str, title: str, description: str) -> str:
     if not query:
         parsed = urlparse(url)
         query = parsed.netloc.replace("www.", "").strip()
-    return query[:180]
+    # Prefix with site: so Serper searches the actual source domain first
+    domain = urlparse(url).netloc.replace("www.", "").strip()
+    if domain and query and not query.startswith("site:"):
+        query = f"site:{domain} {query}"
+    return query[:200]
 
 
 def _parse_recent_date(value: str) -> datetime | None:
@@ -472,7 +476,10 @@ def _fetch_article_source_inner(url: str) -> dict:
                 ),
                 "source_text": fallback.get("source_text", ""),
             }
-        return _fetch_serper_fallback(url, "", "")
+        try:
+            return _fetch_serper_fallback(url, "", "")
+        except Exception:
+            raise RuntimeError("Could not retrieve article content from direct fetch, reader, or search.")
 
     og_title = _extract_meta(html, "property", "og:title")
     og_description = _extract_meta(html, "property", "og:description")
@@ -513,7 +520,21 @@ def _fetch_article_source_inner(url: str) -> dict:
                 }
         except Exception:
             pass
-        return _fetch_serper_fallback(final_url, title, description, image_url)
+        try:
+            return _fetch_serper_fallback(final_url, title, description, image_url)
+        except Exception:
+            # Serper failed but we at least have og: metadata — use that rather than hard-erroring
+            if summary_text:
+                return {
+                    "url": final_url,
+                    "domain": domain,
+                    "title": title,
+                    "description": description,
+                    "image_url": image_url,
+                    "summary_text": summary_text,
+                    "source_text": summary_text,
+                }
+            raise
 
     return {
         "url": final_url,
