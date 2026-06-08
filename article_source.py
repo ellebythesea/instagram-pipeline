@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import time
 import re
 from datetime import datetime, timedelta, timezone
 from html import unescape
@@ -438,11 +439,17 @@ def _fetch_article_html(url: str) -> tuple[str, str]:
         ) as response:
             final_url = response.url or url
             response.raise_for_status()
+            # Cloudflare-protected sites can drip-feed chunks indefinitely —
+            # each chunk arrives within the per-read socket timeout so it never
+            # fires. Enforce a hard wall-clock budget for the body read instead.
+            read_deadline = time.monotonic() + _REQUEST_TIMEOUT[1]
             chunks: list[bytes] = []
             total_bytes = 0
             for chunk in response.iter_content(chunk_size=65536):
                 if not chunk:
                     continue
+                if time.monotonic() > read_deadline:
+                    break
                 chunks.append(chunk)
                 total_bytes += len(chunk)
                 if total_bytes >= _MAX_HTML_BYTES:
