@@ -3835,7 +3835,7 @@ def _render_slide_one_preview(
     )
     quote_html = ""
     if (quote or "").strip():
-        safe_quote = html.escape(f'"{quote.strip()}"')
+        safe_quote = html.escape(quote.strip().strip('"').strip("'").strip())
         quote_html = f"""<div style="
   font-family: 'Bebas Neue', sans-serif;
   font-size: clamp(2rem, calc(10.2cqw + {quote_font_adjust_px}px), 7rem);
@@ -4266,6 +4266,9 @@ def _copy_tabs(
                         })
                     st.session_state[slide_quote_show_key] = not current_quote_show
                     _rerun_workspace("Edit")
+            if st.button("Edit quote", key=f"workspace_quote_edit_{row_num}", width="stretch"):
+                _open_workspace_slide_action_dialog(row_num, "quote")
+                _rerun_workspace("Edit")
         if (slide_text2 or "").strip():
             _render_text_slide_preview(
                 2,
@@ -4369,9 +4372,6 @@ def _copy_tabs(
                 _rerun_workspace("Edit")
             if st.button("Edit text 1", key=f"workspace_row_slides_edit_text1_{row_num}", width="stretch"):
                 _open_workspace_slide_action_dialog(row_num, "text1")
-                _rerun_workspace("Edit")
-            if st.button("Edit quote", key=f"workspace_row_slides_edit_quote_{row_num}", width="stretch"):
-                _open_workspace_slide_action_dialog(row_num, "quote")
                 _rerun_workspace("Edit")
             if st.button("Generate quote", key=f"workspace_row_slides_gen_quote_{row_num}", width="stretch"):
                 try:
