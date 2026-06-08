@@ -380,6 +380,16 @@ div[data-testid="stVerticalBlock"]:has(> div.workspace-preview-controls-anchor) 
     white-space: nowrap;
     font-weight: 700;
 }
+div[data-testid="stVerticalBlock"]:has(> div.workspace-slide1-ctrl-anchor) {
+    max-width: none;
+}
+div[data-testid="stVerticalBlock"]:has(> div.workspace-slide1-ctrl-anchor) [data-testid="stHorizontalBlock"] {
+    grid-auto-columns: 100px;
+}
+div[data-testid="stVerticalBlock"]:has(> div.workspace-slide1-ctrl-anchor) .stButton > button {
+    width: 100px;
+    min-width: 100px;
+}
 div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="stCodeBlock"] {
     margin: 0.2rem 0 0.35rem;
     min-height: 2.1rem;
