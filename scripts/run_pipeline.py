@@ -400,11 +400,7 @@ def step1_ingest(sheet_id: str) -> int:
         row_num = row["row_number"]
         url = (row.get("Instagram URL") or "").strip()
         print(f"  Row {row_num}: {url[:80]}")
-        try:
-            result = _ingest_row(row)
-        except Exception as e:
-            print(f"  Row {row_num}: ingest error — {e}")
-            continue
+        result = _ingest_row(row)
         try:
             update_ingest_result(
                 sheet_id, row_num,

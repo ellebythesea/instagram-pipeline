@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import threading
-import time
+import multiprocessing
 import re
 from datetime import datetime, timedelta, timezone
 from html import unescape
 from html.parser import HTMLParser
+from queue import Empty
 from urllib.parse import urljoin, urlparse
 
 import requests
@@ -27,12 +27,11 @@ _REQUEST_HEADERS = {
     "Pragma": "no-cache",
     "Upgrade-Insecure-Requests": "1",
 }
-_REQUEST_TIMEOUT = (5, 10)
-_READER_TIMEOUT = (8, 25)
-_ARTICLE_TIMEOUT_SECONDS = 60
+_REQUEST_TIMEOUT = (8, 25)
+_ARTICLE_TIMEOUT_SECONDS = 40
 _MAX_HTML_BYTES = 3 * 1024 * 1024
 _SERPER_TIMEOUT = 15
-_SERPER_MAX_AGE_DAYS = 60
+_SERPER_MAX_AGE_DAYS = 14
 
 _NOISE_PATTERNS = [
     r"^copyright\s+\d{4}.*all rights reserved\.?$",
@@ -219,11 +218,7 @@ def _build_serper_query(url: str, title: str, description: str) -> str:
     if not query:
         parsed = urlparse(url)
         query = parsed.netloc.replace("www.", "").strip()
-    # Prefix with site: so Serper searches the actual source domain first
-    domain = urlparse(url).netloc.replace("www.", "").strip()
-    if domain and query and not query.startswith("site:"):
-        query = f"site:{domain} {query}"
-    return query[:200]
+    return query[:180]
 
 
 def _parse_recent_date(value: str) -> datetime | None:
@@ -347,8 +342,6 @@ def _fetch_serper_fallback(url: str, title: str, description: str, image_url: st
 
 def _reader_fallback_candidates(url: str) -> list[str]:
     parsed = urlparse(url)
-    # Strip tracking-only params that can break some paywalls/readers
-    scheme = parsed.scheme or "https"
     query = f"?{parsed.query}" if parsed.query else ""
 
     hosts: list[str] = []
@@ -358,11 +351,9 @@ def _reader_fallback_candidates(url: str) -> list[str]:
             hosts.append(f"www.{parsed.netloc}")
 
     candidates: list[str] = []
-    # Use https:// for the reconstructed URL so Jina follows redirects correctly
     for host in hosts:
-        candidates.append(f"https://r.jina.ai/https://{host}{parsed.path}{query}")
-    # Pass the original URL directly (already includes scheme)
-    candidates.append(f"https://r.jina.ai/{url}")
+        candidates.append(f"https://r.jina.ai/http://{host}{parsed.path}{query}")
+    candidates.append(f"https://r.jina.ai/http://{url}")
 
     seen: set[str] = set()
     deduped: list[str] = []
@@ -412,7 +403,7 @@ def _fetch_reader_fallback(url: str) -> dict:
         try:
             response = requests.get(
                 fallback_url,
-                timeout=_READER_TIMEOUT,
+                timeout=_REQUEST_TIMEOUT,
                 headers=_REQUEST_HEADERS,
                 allow_redirects=True,
             )
@@ -439,17 +430,11 @@ def _fetch_article_html(url: str) -> tuple[str, str]:
         ) as response:
             final_url = response.url or url
             response.raise_for_status()
-            # Cloudflare-protected sites can drip-feed chunks indefinitely —
-            # each chunk arrives within the per-read socket timeout so it never
-            # fires. Enforce a hard wall-clock budget for the body read instead.
-            read_deadline = time.monotonic() + _REQUEST_TIMEOUT[1]
             chunks: list[bytes] = []
             total_bytes = 0
             for chunk in response.iter_content(chunk_size=65536):
                 if not chunk:
                     continue
-                if time.monotonic() > read_deadline:
-                    break
                 chunks.append(chunk)
                 total_bytes += len(chunk)
                 if total_bytes >= _MAX_HTML_BYTES:
@@ -483,10 +468,7 @@ def _fetch_article_source_inner(url: str) -> dict:
                 ),
                 "source_text": fallback.get("source_text", ""),
             }
-        try:
-            return _fetch_serper_fallback(url, "", "")
-        except Exception:
-            raise RuntimeError("Could not retrieve article content from direct fetch, reader, or search.")
+        return _fetch_serper_fallback(url, "", "")
 
     og_title = _extract_meta(html, "property", "og:title")
     og_description = _extract_meta(html, "property", "og:description")
@@ -527,21 +509,7 @@ def _fetch_article_source_inner(url: str) -> dict:
                 }
         except Exception:
             pass
-        try:
-            return _fetch_serper_fallback(final_url, title, description, image_url)
-        except Exception:
-            # Serper failed but we at least have og: metadata — use that rather than hard-erroring
-            if summary_text:
-                return {
-                    "url": final_url,
-                    "domain": domain,
-                    "title": title,
-                    "description": description,
-                    "image_url": image_url,
-                    "summary_text": summary_text,
-                    "source_text": summary_text,
-                }
-            raise
+        return _fetch_serper_fallback(final_url, title, description, image_url)
 
     return {
         "url": final_url,
@@ -554,23 +522,35 @@ def _fetch_article_source_inner(url: str) -> dict:
     }
 
 
+def _article_source_worker(url: str, output_queue) -> None:
+    try:
+        output_queue.put(("ok", _fetch_article_source_inner(url)))
+    except Exception as error:
+        status = getattr(getattr(error, "response", None), "status_code", None)
+        output_queue.put(("error", error.__class__.__name__, str(error), status))
+
+
 def fetch_article_source(url: str) -> dict:
-    result: list = []
-    error: list = []
+    context = multiprocessing.get_context("spawn")
+    output_queue = context.Queue(maxsize=1)
+    process = context.Process(target=_article_source_worker, args=(url, output_queue))
+    process.daemon = True
+    process.start()
+    process.join(_ARTICLE_TIMEOUT_SECONDS)
 
-    def _run() -> None:
-        try:
-            result.append(_fetch_article_source_inner(url))
-        except Exception as exc:
-            error.append(exc)
-
-    # daemon=True: if the thread gets stuck on a hanging connection it won't
-    # block process exit (unlike ThreadPoolExecutor's atexit-registered threads).
-    t = threading.Thread(target=_run, daemon=True)
-    t.start()
-    t.join(timeout=_ARTICLE_TIMEOUT_SECONDS)
-    if t.is_alive():
+    if process.is_alive():
+        process.terminate()
+        process.join(2)
         raise TimeoutError(f"Article request timed out after {_ARTICLE_TIMEOUT_SECONDS} seconds.")
-    if error:
-        raise error[0]
-    return result[0]
+
+    try:
+        result = output_queue.get_nowait()
+    except Empty:
+        raise RuntimeError("Article extraction failed before returning a result.")
+
+    if result[0] == "ok":
+        return result[1]
+
+    _, error_name, message, status = result
+    status_label = f" ({status})" if status else ""
+    raise RuntimeError(f"{error_name}{status_label}: {message}")
