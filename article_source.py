@@ -27,7 +27,7 @@ _REQUEST_HEADERS = {
     "Pragma": "no-cache",
     "Upgrade-Insecure-Requests": "1",
 }
-_REQUEST_TIMEOUT = (8, 25)
+_REQUEST_TIMEOUT = (5, 12)
 _ARTICLE_TIMEOUT_SECONDS = 40
 _MAX_HTML_BYTES = 3 * 1024 * 1024
 _SERPER_TIMEOUT = 15
@@ -342,6 +342,8 @@ def _fetch_serper_fallback(url: str, title: str, description: str, image_url: st
 
 def _reader_fallback_candidates(url: str) -> list[str]:
     parsed = urlparse(url)
+    # Strip tracking-only params that can break some paywalls/readers
+    scheme = parsed.scheme or "https"
     query = f"?{parsed.query}" if parsed.query else ""
 
     hosts: list[str] = []
@@ -351,9 +353,11 @@ def _reader_fallback_candidates(url: str) -> list[str]:
             hosts.append(f"www.{parsed.netloc}")
 
     candidates: list[str] = []
+    # Use https:// for the reconstructed URL so Jina follows redirects correctly
     for host in hosts:
-        candidates.append(f"https://r.jina.ai/http://{host}{parsed.path}{query}")
-    candidates.append(f"https://r.jina.ai/http://{url}")
+        candidates.append(f"https://r.jina.ai/https://{host}{parsed.path}{query}")
+    # Pass the original URL directly (already includes scheme)
+    candidates.append(f"https://r.jina.ai/{url}")
 
     seen: set[str] = set()
     deduped: list[str] = []
