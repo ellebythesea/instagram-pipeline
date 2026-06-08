@@ -548,9 +548,10 @@ def _fetch_article_source_inner(url: str) -> dict:
 
 
 def fetch_article_source(url: str) -> dict:
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(_fetch_article_source_inner, url)
-        try:
-            return future.result(timeout=_ARTICLE_TIMEOUT_SECONDS)
-        except concurrent.futures.TimeoutError:
-            raise TimeoutError(f"Article request timed out after {_ARTICLE_TIMEOUT_SECONDS} seconds.")
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(_fetch_article_source_inner, url)
+    executor.shutdown(wait=False)
+    try:
+        return future.result(timeout=_ARTICLE_TIMEOUT_SECONDS)
+    except concurrent.futures.TimeoutError:
+        raise TimeoutError(f"Article request timed out after {_ARTICLE_TIMEOUT_SECONDS} seconds.")
