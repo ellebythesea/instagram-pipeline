@@ -324,6 +324,9 @@ div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) div[dat
     padding-right: 0.5rem;
     min-width: 2.75rem;
 }
+div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) div[data-testid="stPopover"] [data-testid="stPopoverBody"] {
+    padding-bottom: 1.5rem;
+}
 div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-testid="column"] {
     min-width: 0;
 }

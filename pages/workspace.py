@@ -1589,7 +1589,7 @@ def _render_editor_grid(editor_rows: list[dict], selected_row_num: int | None = 
             f'<span class="workspace-grid-badge" title="{html.escape(title)}">{html.escape(label)}</span>'
             for label, title in _grid_badges(row)
         )
-        label = f"@{username}" if username else f"Row {row_num}"
+        label = f"@{username}" if username and media_type != "article" else (username or f"Row {row_num}")
         href = f"?workspace_row={row_num}#workspace-row-{row_num}"
         if image_url:
             media_html = f'<img src="{html.escape(image_url)}" alt="{html.escape(label)}" loading="lazy" decoding="async">'
@@ -4157,12 +4157,14 @@ def _copy_tabs(
         preview_links_key = f"workspace_preview_upload_links_{row_num}"
         default_slide_one_fit_mode = _is_candidate_article_row(prompt_row or {})
         slide_quote = _cell_text((prompt_row or {}).get("quote", "")).strip()
-        current_slide_one_font_adjust = int(st.session_state.get(slide_one_font_adjust_key, 2) or 2)
+        _raw_s1_font = st.session_state.get(slide_one_font_adjust_key)
+        current_slide_one_font_adjust = 2 if _raw_s1_font is None else int(_raw_s1_font)
         current_slide_one_background_adjust = int(st.session_state.get(slide_one_background_adjust_key, 0) or 0)
         current_slide_one_fit_mode = bool(
             st.session_state.get(slide_one_fit_toggle_key, default_slide_one_fit_mode)
         )
-        current_slide_two_font_adjust = int(st.session_state.get(slide_two_font_adjust_key, -2) or -2)
+        _raw_s2_font = st.session_state.get(slide_two_font_adjust_key)
+        current_slide_two_font_adjust = -2 if _raw_s2_font is None else int(_raw_s2_font)
         current_slide_two_cta = _cell_text(
             st.session_state.get(slide_two_cta_key, "hidden")
         ).strip().lower() or "hidden"
@@ -4258,12 +4260,22 @@ def _copy_tabs(
                     with s1_cols[7]:
                         hide_label = "Hide" if current_quote_show else "Show"
                         if st.button(hide_label, key=f"workspace_quote_toggle_{row_num}", width="stretch"):
+                            slide_name = _cell_text((prompt_row or {}).get("name", "")).strip()
                             if current_quote_show:
                                 merged_text1 = (slide_quote.strip() + " " + (slide_text1 or "").strip()).strip()
-                                slide_name = _cell_text((prompt_row or {}).get("name", "")).strip()
                                 _write_specific_carousel_fields(row_num, {
                                     "name": slide_name,
                                     "text1": merged_text1, "text2": slide_text2,
+                                    "text3": slide_text3, "text4": slide_text4,
+                                    "text5": slide_text5, "text6": slide_text6,
+                                })
+                            else:
+                                current_text1 = (slide_text1 or "").strip()
+                                quote_prefix = slide_quote.strip() + " "
+                                restored_text1 = current_text1[len(quote_prefix):] if current_text1.startswith(quote_prefix) else current_text1
+                                _write_specific_carousel_fields(row_num, {
+                                    "name": slide_name,
+                                    "text1": restored_text1, "text2": slide_text2,
                                     "text3": slide_text3, "text4": slide_text4,
                                     "text5": slide_text5, "text6": slide_text6,
                                 })
@@ -6707,6 +6719,11 @@ if active_section_tab == "Home":
         _render_editor_grid(editor_rows, current_selected)
         current_index = row_numbers.index(current_selected)
         selected_row = editor_rows[current_index]
+        preview_scroll_target = st.session_state.pop("workspace_preview_scroll_target", None)
+        if preview_scroll_target:
+            _scroll_to_element(preview_scroll_target)
+        else:
+            _scroll_to_editor_row(str(selected_row["row_number"]))
         for row in [selected_row]:
             _sync_workspace_row_state(row)
             row_num = row["row_number"]
@@ -6792,7 +6809,14 @@ if active_section_tab == "Home":
                             placeholder="Add context",
                             label_visibility="collapsed",
                         )
-                        if url:
+                        if is_article or media_type == "article":
+                            st.link_button(
+                                "Open article link",
+                                url or "#",
+                                width="stretch",
+                                disabled=not url,
+                            )
+                        elif url:
                             st.link_button(
                                 "Open in Instagram" if is_instagram else "Open source link",
                                 url,
@@ -6964,12 +6988,6 @@ if active_section_tab == "Home":
                         _cell_text(row.get("Thumbnail Drive Link")).strip(),
                         slide_cta_options,
                     )
-
-        preview_scroll_target = st.session_state.pop("workspace_preview_scroll_target", None)
-        if preview_scroll_target:
-            _scroll_to_element(preview_scroll_target)
-        else:
-            _scroll_to_editor_row(str(selected_row["row_number"]))
 
         queue = st.session_state.get("workspace_action_queue", [])
         if queue:
