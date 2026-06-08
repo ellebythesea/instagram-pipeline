@@ -4176,7 +4176,8 @@ def _copy_tabs(
         current_slide_five_font_adjust = int(st.session_state.get(slide_five_font_adjust_key, -2) or -2)
         current_slide_six_font_adjust = int(st.session_state.get(slide_six_font_adjust_key, -2) or -2)
         _known_cta_options = {"more", "article", "substack", "petition", "video", "custom link", "hidden"}
-        default_slide_three_cta_option = "article" if _is_candidate_article_row(prompt_row or {}) else "hidden"
+        _is_article = _is_article_url(source_url)
+        default_slide_three_cta_option = "article" if (_is_article or _is_candidate_article_row(prompt_row or {})) else "hidden"
         raw_sheet_cta = _cell_text((prompt_row or {}).get("Slide CTA")).strip()
         default_slide_three_cta = raw_sheet_cta or default_slide_three_cta_option
         current_slide_three_cta = _cell_text(
@@ -4188,9 +4189,13 @@ def _copy_tabs(
         current_speaker_name = _cell_text(
             st.session_state.get(f"workspace_speaker_row_{row_num}", speaker_name)
         ).strip()
-        slide_handle = current_speaker_name or username.strip()
-        if slide_handle and slide_handle == username.strip() and not slide_handle.startswith("@"):
-            slide_handle = f"@{slide_handle}"
+        if _is_article:
+            _article_domain = urlparse(source_url).netloc.lower().removeprefix("www.") if source_url else ""
+            slide_handle = current_speaker_name or _article_domain
+        else:
+            slide_handle = current_speaker_name or username.strip()
+            if slide_handle and slide_handle == username.strip() and not slide_handle.startswith("@"):
+                slide_handle = f"@{slide_handle}"
         last_cta_slide_number = 3
         for candidate_slide_number, candidate_text in (
             (6, slide_text6),
