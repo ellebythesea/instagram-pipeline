@@ -4156,6 +4156,7 @@ def _copy_tabs(
         slide_quote_font_adjust_key = f"workspace_slide_quote_font_adjust_{row_num}"
         preview_links_key = f"workspace_preview_upload_links_{row_num}"
         default_slide_one_fit_mode = _is_candidate_article_row(prompt_row or {})
+        slide_quote = _cell_text((prompt_row or {}).get("quote", "")).strip()
         current_slide_one_font_adjust = int(st.session_state.get(slide_one_font_adjust_key, 2) or 2)
         current_slide_one_background_adjust = int(st.session_state.get(slide_one_background_adjust_key, 0) or 0)
         current_slide_one_fit_mode = bool(
@@ -4188,7 +4189,6 @@ def _copy_tabs(
         slide_handle = current_speaker_name or username.strip()
         if slide_handle and slide_handle == username.strip() and not slide_handle.startswith("@"):
             slide_handle = f"@{slide_handle}"
-        slide_quote = _cell_text((prompt_row or {}).get("quote", "")).strip()
         last_cta_slide_number = 3
         for candidate_slide_number, candidate_text in (
             (6, slide_text6),
@@ -4215,60 +4215,68 @@ def _copy_tabs(
             current_quote_font_adjust = int(st.session_state.get(slide_quote_font_adjust_key, 0) or 0)
             anchor_id = f"workspace-preview-ctrl-{row_num}_slide1"
             st.markdown(f'<div id="{anchor_id}" class="workspace-preview-controls-anchor"></div>', unsafe_allow_html=True)
-            s1_controls = st.columns(7, gap="small")
-            with s1_controls[0]:
-                if st.button("A-", key=f"workspace_quote_font_down_{row_num}", width="stretch"):
+            _s1_col_count = 9 if slide_quote else 8
+            s1_cols = st.columns(_s1_col_count, gap="small")
+            with s1_cols[0]:
+                if st.button("Q-", key=f"workspace_quote_font_down_{row_num}", width="stretch"):
                     st.session_state[slide_quote_font_adjust_key] = max(-40, current_quote_font_adjust - 4)
                     st.session_state["workspace_preview_scroll_target"] = anchor_id
                     _rerun_workspace("Edit")
-            with s1_controls[1]:
-                if st.button("A+", key=f"workspace_quote_font_up_{row_num}", width="stretch"):
+            with s1_cols[1]:
+                if st.button("Q+", key=f"workspace_quote_font_up_{row_num}", width="stretch"):
                     st.session_state[slide_quote_font_adjust_key] = min(40, current_quote_font_adjust + 4)
                     st.session_state["workspace_preview_scroll_target"] = anchor_id
                     _rerun_workspace("Edit")
-            with s1_controls[2]:
+            with s1_cols[2]:
                 if st.button("A-", key=f"workspace_preview_{row_num}_slide1_font_down", width="stretch"):
                     st.session_state[slide_one_font_adjust_key] = max(-16, current_slide_one_font_adjust - 2)
                     st.session_state["workspace_preview_scroll_target"] = anchor_id
                     _rerun_workspace("Edit")
-            with s1_controls[3]:
+            with s1_cols[3]:
                 if st.button("A+", key=f"workspace_preview_{row_num}_slide1_font_up", width="stretch"):
                     st.session_state[slide_one_font_adjust_key] = min(24, current_slide_one_font_adjust + 2)
                     st.session_state["workspace_preview_scroll_target"] = anchor_id
                     _rerun_workspace("Edit")
-            with s1_controls[4]:
-                if st.button("Up", key=f"workspace_preview_{row_num}_slide1_bg_up", width="stretch"):
+            with s1_cols[4]:
+                if st.button("⬆", key=f"workspace_preview_{row_num}_slide1_bg_up", width="stretch"):
                     st.session_state[slide_one_background_adjust_key] = max(-200, current_slide_one_background_adjust - 48)
                     st.session_state["workspace_preview_scroll_target"] = anchor_id
                     _rerun_workspace("Edit")
-            with s1_controls[5]:
-                if st.button("Down", key=f"workspace_preview_{row_num}_slide1_bg_down", width="stretch"):
+            with s1_cols[5]:
+                if st.button("⬇", key=f"workspace_preview_{row_num}_slide1_bg_down", width="stretch"):
                     st.session_state[slide_one_background_adjust_key] = min(200, current_slide_one_background_adjust + 48)
                     st.session_state["workspace_preview_scroll_target"] = anchor_id
                     _rerun_workspace("Edit")
-            with s1_controls[6]:
+            with s1_cols[6]:
                 fit_label = "Fill" if current_slide_one_fit_mode else "Fit"
                 if st.button(fit_label, key=f"workspace_preview_{row_num}_slide1_fit_toggle", width="stretch"):
                     st.session_state[slide_one_fit_toggle_key] = not current_slide_one_fit_mode
                     st.session_state["workspace_preview_scroll_target"] = anchor_id
                     _rerun_workspace("Edit")
             if slide_quote:
-                toggle_label = "Hide quote" if current_quote_show else "Show quote on slide 1"
-                if st.button(toggle_label, key=f"workspace_quote_toggle_{row_num}", width="stretch"):
-                    if current_quote_show:
-                        merged_text1 = (slide_quote.strip() + " " + (slide_text1 or "").strip()).strip()
-                        slide_name = _cell_text((prompt_row or {}).get("name", "")).strip()
-                        _write_specific_carousel_fields(row_num, {
-                            "name": slide_name,
-                            "text1": merged_text1, "text2": slide_text2,
-                            "text3": slide_text3, "text4": slide_text4,
-                            "text5": slide_text5, "text6": slide_text6,
-                        })
-                    st.session_state[slide_quote_show_key] = not current_quote_show
-                    _rerun_workspace("Edit")
-            if st.button("Edit quote", key=f"workspace_quote_edit_{row_num}", width="stretch"):
-                _open_workspace_slide_action_dialog(row_num, "quote")
-                _rerun_workspace("Edit")
+                with s1_cols[7]:
+                    hide_label = "Hide" if current_quote_show else "Show"
+                    if st.button(hide_label, key=f"workspace_quote_toggle_{row_num}", width="stretch"):
+                        if current_quote_show:
+                            merged_text1 = (slide_quote.strip() + " " + (slide_text1 or "").strip()).strip()
+                            slide_name = _cell_text((prompt_row or {}).get("name", "")).strip()
+                            _write_specific_carousel_fields(row_num, {
+                                "name": slide_name,
+                                "text1": merged_text1, "text2": slide_text2,
+                                "text3": slide_text3, "text4": slide_text4,
+                                "text5": slide_text5, "text6": slide_text6,
+                            })
+                        st.session_state[slide_quote_show_key] = not current_quote_show
+                        _rerun_workspace("Edit")
+                with s1_cols[8]:
+                    if st.button("Edit", key=f"workspace_quote_edit_{row_num}", width="stretch"):
+                        _open_workspace_slide_action_dialog(row_num, "quote")
+                        _rerun_workspace("Edit")
+            else:
+                with s1_cols[7]:
+                    if st.button("Edit", key=f"workspace_quote_edit_{row_num}", width="stretch"):
+                        _open_workspace_slide_action_dialog(row_num, "quote")
+                        _rerun_workspace("Edit")
         if (slide_text2 or "").strip():
             _render_text_slide_preview(
                 2,

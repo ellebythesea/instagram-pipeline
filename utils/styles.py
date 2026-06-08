@@ -559,6 +559,7 @@ div[data-testid="stVerticalBlock"]:has(> div.workspace-generate-anchor) {
     padding: 0.9rem 1rem;
     backdrop-filter: blur(10px);
 }
+
 @media (max-width: 640px) {
     div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) {
         padding: 1rem;
