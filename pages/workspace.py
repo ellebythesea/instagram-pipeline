@@ -3835,7 +3835,7 @@ def _render_slide_one_preview(
     )
     quote_html = ""
     if (quote or "").strip():
-        safe_quote = html.escape(quote.strip().strip('"').strip("'").strip())
+        safe_quote = html.escape(quote.strip())
         quote_html = f"""<div style="
   font-family: 'Bebas Neue', sans-serif;
   font-size: clamp(2rem, calc(10.2cqw + {quote_font_adjust_px}px), 7rem);
