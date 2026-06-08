@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import multiprocessing
+import concurrent.futures
 import re
 from datetime import datetime, timedelta, timezone
 from html import unescape
 from html.parser import HTMLParser
-from queue import Empty
 from urllib.parse import urljoin, urlparse
 
 import requests
@@ -27,8 +26,9 @@ _REQUEST_HEADERS = {
     "Pragma": "no-cache",
     "Upgrade-Insecure-Requests": "1",
 }
-_REQUEST_TIMEOUT = (5, 12)
-_ARTICLE_TIMEOUT_SECONDS = 40
+_REQUEST_TIMEOUT = (5, 10)
+_READER_TIMEOUT = (8, 25)
+_ARTICLE_TIMEOUT_SECONDS = 60
 _MAX_HTML_BYTES = 3 * 1024 * 1024
 _SERPER_TIMEOUT = 15
 _SERPER_MAX_AGE_DAYS = 60
@@ -411,7 +411,7 @@ def _fetch_reader_fallback(url: str) -> dict:
         try:
             response = requests.get(
                 fallback_url,
-                timeout=_REQUEST_TIMEOUT,
+                timeout=_READER_TIMEOUT,
                 headers=_REQUEST_HEADERS,
                 allow_redirects=True,
             )
@@ -547,35 +547,10 @@ def _fetch_article_source_inner(url: str) -> dict:
     }
 
 
-def _article_source_worker(url: str, output_queue) -> None:
-    try:
-        output_queue.put(("ok", _fetch_article_source_inner(url)))
-    except Exception as error:
-        status = getattr(getattr(error, "response", None), "status_code", None)
-        output_queue.put(("error", error.__class__.__name__, str(error), status))
-
-
 def fetch_article_source(url: str) -> dict:
-    context = multiprocessing.get_context("spawn")
-    output_queue = context.Queue(maxsize=1)
-    process = context.Process(target=_article_source_worker, args=(url, output_queue))
-    process.daemon = True
-    process.start()
-    process.join(_ARTICLE_TIMEOUT_SECONDS)
-
-    if process.is_alive():
-        process.terminate()
-        process.join(2)
-        raise TimeoutError(f"Article request timed out after {_ARTICLE_TIMEOUT_SECONDS} seconds.")
-
-    try:
-        result = output_queue.get_nowait()
-    except Empty:
-        raise RuntimeError("Article extraction failed before returning a result.")
-
-    if result[0] == "ok":
-        return result[1]
-
-    _, error_name, message, status = result
-    status_label = f" ({status})" if status else ""
-    raise RuntimeError(f"{error_name}{status_label}: {message}")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(_fetch_article_source_inner, url)
+        try:
+            return future.result(timeout=_ARTICLE_TIMEOUT_SECONDS)
+        except concurrent.futures.TimeoutError:
+            raise TimeoutError(f"Article request timed out after {_ARTICLE_TIMEOUT_SECONDS} seconds.")
