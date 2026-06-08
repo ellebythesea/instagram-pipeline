@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import concurrent.futures
+import threading
 import re
 from datetime import datetime, timedelta, timezone
 from html import unescape
@@ -548,10 +548,22 @@ def _fetch_article_source_inner(url: str) -> dict:
 
 
 def fetch_article_source(url: str) -> dict:
-    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-    future = executor.submit(_fetch_article_source_inner, url)
-    executor.shutdown(wait=False)
-    try:
-        return future.result(timeout=_ARTICLE_TIMEOUT_SECONDS)
-    except concurrent.futures.TimeoutError:
+    result: list = []
+    error: list = []
+
+    def _run() -> None:
+        try:
+            result.append(_fetch_article_source_inner(url))
+        except Exception as exc:
+            error.append(exc)
+
+    # daemon=True: if the thread gets stuck on a hanging connection it won't
+    # block process exit (unlike ThreadPoolExecutor's atexit-registered threads).
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    t.join(timeout=_ARTICLE_TIMEOUT_SECONDS)
+    if t.is_alive():
         raise TimeoutError(f"Article request timed out after {_ARTICLE_TIMEOUT_SECONDS} seconds.")
+    if error:
+        raise error[0]
+    return result[0]
