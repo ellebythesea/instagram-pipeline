@@ -4223,48 +4223,48 @@ def _copy_tabs(
             anchor_id = f"workspace-preview-ctrl-{row_num}_slide1"
             with st.container():
                 st.markdown(f'<div id="{anchor_id}" class="workspace-preview-controls-anchor workspace-slide1-ctrl-anchor"></div>', unsafe_allow_html=True)
-                _s1_col_count = 9 if slide_quote else 8
+                _s1_col_count = 11 if slide_quote else 10
                 s1_cols = st.columns(_s1_col_count, gap="small")
                 with s1_cols[0]:
-                    if st.button("Q-", key=f"workspace_quote_font_down_{row_num}"):
+                    if st.button("Q-", key=f"workspace_quote_font_down_{row_num}", width="stretch"):
                         st.session_state[slide_quote_font_adjust_key] = max(-40, current_quote_font_adjust - 4)
                         st.session_state["workspace_preview_scroll_target"] = anchor_id
                         _rerun_workspace("Edit")
                 with s1_cols[1]:
-                    if st.button("Q+", key=f"workspace_quote_font_up_{row_num}"):
+                    if st.button("Q+", key=f"workspace_quote_font_up_{row_num}", width="stretch"):
                         st.session_state[slide_quote_font_adjust_key] = min(40, current_quote_font_adjust + 4)
                         st.session_state["workspace_preview_scroll_target"] = anchor_id
                         _rerun_workspace("Edit")
                 with s1_cols[2]:
-                    if st.button("A-", key=f"workspace_preview_{row_num}_slide1_font_down"):
+                    if st.button("A-", key=f"workspace_preview_{row_num}_slide1_font_down", width="stretch"):
                         st.session_state[slide_one_font_adjust_key] = max(-80, current_slide_one_font_adjust - 2)
                         st.session_state["workspace_preview_scroll_target"] = anchor_id
                         _rerun_workspace("Edit")
                 with s1_cols[3]:
-                    if st.button("A+", key=f"workspace_preview_{row_num}_slide1_font_up"):
+                    if st.button("A+", key=f"workspace_preview_{row_num}_slide1_font_up", width="stretch"):
                         st.session_state[slide_one_font_adjust_key] = min(24, current_slide_one_font_adjust + 2)
                         st.session_state["workspace_preview_scroll_target"] = anchor_id
                         _rerun_workspace("Edit")
                 with s1_cols[4]:
-                    if st.button("⬆", key=f"workspace_preview_{row_num}_slide1_bg_up"):
+                    if st.button("⬆", key=f"workspace_preview_{row_num}_slide1_bg_up", width="stretch"):
                         st.session_state[slide_one_background_adjust_key] = max(-1200, current_slide_one_background_adjust - 48)
                         st.session_state["workspace_preview_scroll_target"] = anchor_id
                         _rerun_workspace("Edit")
                 with s1_cols[5]:
-                    if st.button("⬇", key=f"workspace_preview_{row_num}_slide1_bg_down"):
+                    if st.button("⬇", key=f"workspace_preview_{row_num}_slide1_bg_down", width="stretch"):
                         st.session_state[slide_one_background_adjust_key] = min(1200, current_slide_one_background_adjust + 48)
                         st.session_state["workspace_preview_scroll_target"] = anchor_id
                         _rerun_workspace("Edit")
                 with s1_cols[6]:
                     fit_label = "Fill" if current_slide_one_fit_mode else "Fit"
-                    if st.button(fit_label, key=f"workspace_preview_{row_num}_slide1_fit_toggle"):
+                    if st.button(fit_label, key=f"workspace_preview_{row_num}_slide1_fit_toggle", width="stretch"):
                         st.session_state[slide_one_fit_toggle_key] = not current_slide_one_fit_mode
                         st.session_state["workspace_preview_scroll_target"] = anchor_id
                         _rerun_workspace("Edit")
                 if slide_quote:
                     with s1_cols[7]:
                         hide_label = "Hide" if current_quote_show else "Show"
-                        if st.button(hide_label, key=f"workspace_quote_toggle_{row_num}"):
+                        if st.button(hide_label, key=f"workspace_quote_toggle_{row_num}", width="stretch"):
                             slide_name = _cell_text((prompt_row or {}).get("name", "")).strip()
                             if current_quote_show:
                                 merged_text1 = (slide_quote.strip() + " " + (slide_text1 or "").strip()).strip()
@@ -4287,7 +4287,7 @@ def _copy_tabs(
                             st.session_state[slide_quote_show_key] = not current_quote_show
                             _rerun_workspace("Edit")
                     with s1_cols[8]:
-                        if st.button("Quote", key=f"workspace_quote_edit_{row_num}"):
+                        if st.button("Quote", key=f"workspace_quote_edit_{row_num}", width="stretch"):
                             try:
                                 _opts = _generate_quote_options_for_row(prompt_row or {})
                                 st.session_state[f"workspace_quote_options_{row_num}"] = _opts
@@ -4295,15 +4295,31 @@ def _copy_tabs(
                             except Exception as _qe:
                                 st.session_state["workspace_error"] = f"Row {row_num}: could not generate quotes — {describe_error(_qe)}"
                             _rerun_workspace("Edit")
+                    with s1_cols[9]:
+                        if st.button("Edit", key=f"workspace_quote_edit_btn_{row_num}", width="stretch"):
+                            st.session_state[f"workspace_quote_editing_{row_num}"] = not st.session_state.get(f"workspace_quote_editing_{row_num}", False)
+                            _rerun_workspace("Edit")
+                    with s1_cols[10]:
+                        if st.button("Edit Text 1", key=f"workspace_inline_edit_text1_{row_num}", width="stretch"):
+                            _open_workspace_slide_action_dialog(row_num, "text1")
+                            _rerun_workspace("Edit")
                 else:
                     with s1_cols[7]:
-                        if st.button("Quote", key=f"workspace_quote_edit_{row_num}"):
+                        if st.button("Quote", key=f"workspace_quote_edit_{row_num}", width="stretch"):
                             try:
                                 _opts = _generate_quote_options_for_row(prompt_row or {})
                                 st.session_state[f"workspace_quote_options_{row_num}"] = _opts
                                 st.session_state[f"workspace_quote_picker_{row_num}"] = True
                             except Exception as _qe:
                                 st.session_state["workspace_error"] = f"Row {row_num}: could not generate quotes — {describe_error(_qe)}"
+                            _rerun_workspace("Edit")
+                    with s1_cols[8]:
+                        if st.button("Edit", key=f"workspace_quote_edit_btn_{row_num}", width="stretch"):
+                            st.session_state[f"workspace_quote_editing_{row_num}"] = not st.session_state.get(f"workspace_quote_editing_{row_num}", False)
+                            _rerun_workspace("Edit")
+                    with s1_cols[9]:
+                        if st.button("Edit Text 1", key=f"workspace_inline_edit_text1_{row_num}", width="stretch"):
+                            _open_workspace_slide_action_dialog(row_num, "text1")
                             _rerun_workspace("Edit")
             if st.session_state.get(f"workspace_quote_editing_{row_num}"):
                 _quote_edit_val = st.text_input(
@@ -4327,10 +4343,6 @@ def _copy_tabs(
                     if st.button("Cancel", key=f"workspace_quote_edit_cancel_{row_num}"):
                         st.session_state.pop(f"workspace_quote_editing_{row_num}", None)
                         _rerun_workspace("Edit")
-            else:
-                if st.button("Edit", key=f"workspace_quote_edit_btn_{row_num}"):
-                    st.session_state[f"workspace_quote_editing_{row_num}"] = True
-                    _rerun_workspace("Edit")
             if st.session_state.get(f"workspace_quote_picker_{row_num}"):
                 _quote_options = st.session_state.get(f"workspace_quote_options_{row_num}", [])
                 _quote_sel = st.selectbox(
@@ -4353,9 +4365,6 @@ def _copy_tabs(
                         st.session_state.pop(f"workspace_quote_picker_{row_num}", None)
                         st.session_state.pop(f"workspace_quote_options_{row_num}", None)
                         _rerun_workspace("Edit")
-        if st.button("Edit Text 1", key=f"workspace_inline_edit_text1_{row_num}"):
-            _open_workspace_slide_action_dialog(row_num, "text1")
-            _rerun_workspace("Edit")
         if (slide_text2 or "").strip():
             _render_text_slide_preview(
                 2,
@@ -4365,11 +4374,21 @@ def _copy_tabs(
                 link_cta_target=current_slide_two_cta,
                 link_cta_text=_slide_three_cta_text(current_slide_two_cta, top_comment),
             )
-            _render_workspace_preview_control_bar(
-                f"{row_num}_slide2",
-                slide_two_font_adjust_key,
-                current_slide_two_font_adjust,
-            )
+            with st.container():
+                st.markdown('<div class="workspace-slide2-ctrl-anchor"></div>', unsafe_allow_html=True)
+                _s2_cols = st.columns(3, gap="small")
+                with _s2_cols[0]:
+                    if st.button("A-", key=f"workspace_preview_{row_num}_slide2_font_down", width="stretch"):
+                        st.session_state[slide_two_font_adjust_key] = max(-80, current_slide_two_font_adjust - 2)
+                        _rerun_workspace("Edit")
+                with _s2_cols[1]:
+                    if st.button("A+", key=f"workspace_preview_{row_num}_slide2_font_up", width="stretch"):
+                        st.session_state[slide_two_font_adjust_key] = min(24, current_slide_two_font_adjust + 2)
+                        _rerun_workspace("Edit")
+                with _s2_cols[2]:
+                    if st.button("Edit Text 2", key=f"workspace_inline_edit_text2_{row_num}", width="stretch"):
+                        _open_workspace_slide_action_dialog(row_num, "text2")
+                        _rerun_workspace("Edit")
             with st.popover("Slide 2 actions", use_container_width=True):
                 if st.button("More link", key=f"workspace_row_slides_s2cta_more_{row_num}", width="stretch"):
                     st.session_state[slide_two_cta_key] = "more"
@@ -4390,9 +4409,6 @@ def _copy_tabs(
                 if st.button("Hide link", key=f"workspace_row_slides_s2cta_hidden_{row_num}", width="stretch"):
                     st.session_state[slide_two_cta_key] = "hidden"
                     _rerun_workspace("Edit")
-        if st.button("Edit Text 2", key=f"workspace_inline_edit_text2_{row_num}"):
-            _open_workspace_slide_action_dialog(row_num, "text2")
-            _rerun_workspace("Edit")
         if (slide_text3 or "").strip():
             _render_text_slide_preview(
                 3,
@@ -4402,14 +4418,30 @@ def _copy_tabs(
                 link_cta_target=current_slide_three_cta,
                 link_cta_text=_slide_three_cta_text(current_slide_three_cta, top_comment),
             )
-            _render_workspace_preview_control_bar(
-                f"{row_num}_slide3",
-                slide_three_font_adjust_key,
-                current_slide_three_font_adjust,
-            )
-            if st.button("Edit Text 3", key=f"workspace_inline_edit_text3_{row_num}"):
-                _open_workspace_slide_action_dialog(row_num, "text3")
-                _rerun_workspace("Edit")
+            with st.container():
+                st.markdown('<div class="workspace-slide3-ctrl-anchor"></div>', unsafe_allow_html=True)
+                _s3_extra = (1 if _is_reel_url(source_url) else 0) + (1 if media_link else 0)
+                _s3_cols = st.columns(3 + _s3_extra, gap="small")
+                with _s3_cols[0]:
+                    if st.button("A-", key=f"workspace_preview_{row_num}_slide3_font_down", width="stretch"):
+                        st.session_state[slide_three_font_adjust_key] = max(-80, current_slide_three_font_adjust - 2)
+                        _rerun_workspace("Edit")
+                with _s3_cols[1]:
+                    if st.button("A+", key=f"workspace_preview_{row_num}_slide3_font_up", width="stretch"):
+                        st.session_state[slide_three_font_adjust_key] = min(24, current_slide_three_font_adjust + 2)
+                        _rerun_workspace("Edit")
+                with _s3_cols[2]:
+                    if st.button("Edit Text 3", key=f"workspace_inline_edit_text3_{row_num}", width="stretch"):
+                        _open_workspace_slide_action_dialog(row_num, "text3")
+                        _rerun_workspace("Edit")
+                _s3_idx = 3
+                if _is_reel_url(source_url):
+                    with _s3_cols[_s3_idx]:
+                        st.link_button("Open Reel", source_url)
+                    _s3_idx += 1
+                if media_link:
+                    with _s3_cols[_s3_idx]:
+                        st.link_button("Drive", media_link)
         if (slide_text4 or "").strip():
             _render_text_slide_preview(
                 4,
@@ -4531,12 +4563,6 @@ def _copy_tabs(
             if st.button("Hide link", key=f"workspace_row_slides_cta_hidden_{row_num}", width="stretch"):
                 _save_slide_three_cta_choice(row_num, slide_three_cta_key, "hidden")
                 _rerun_workspace("Edit")
-        if media_link:
-            st.link_button(
-                "Open reel in Drive" if media_type.lower() == "reel" else "Open media in Drive",
-                media_link,
-                width="stretch",
-            )
         if (slide_text3 or "").strip():
             _tab_copy_preview(
                 _caption_tab_value(
@@ -5350,9 +5376,9 @@ def _generate_quote_options_for_row(row: dict) -> list[str]:
                 "content": (
                     "You generate pull quotes and punchy headlines for social media graphics. "
                     "Return EXACTLY 10 options, one per line, numbered 1–10. "
-                    "7 of the 10 must be verbatim pull quotes lifted directly from the source text — "
+                    "Options 1–7 must be verbatim pull quotes lifted directly from the source text — "
                     "real sentences or phrases spoken or written in the source, unchanged. "
-                    "The remaining 3 may be salacious, attention-grabbing rewritten headlines. "
+                    "Options 8–10 must be salacious, attention-grabbing rewritten headlines (not verbatim). "
                     "Each option must be under 120 characters. "
                     "No quotation marks, no attribution, no extra commentary — just the numbered list."
                 ),
