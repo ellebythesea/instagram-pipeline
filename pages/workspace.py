@@ -4356,6 +4356,9 @@ def _copy_tabs(
                             st.session_state.pop(f"workspace_quote_picker_{row_num}", None)
                             st.session_state.pop(f"workspace_quote_options_{row_num}", None)
                             _rerun_workspace("Edit")
+        if st.button("Edit Text 1", key=f"workspace_inline_edit_text1_{row_num}", width="stretch"):
+            _open_workspace_slide_action_dialog(row_num, "text1")
+            _rerun_workspace("Edit")
         if (slide_text2 or "").strip():
             _render_text_slide_preview(
                 2,
@@ -4390,6 +4393,9 @@ def _copy_tabs(
                 if st.button("Hide link", key=f"workspace_row_slides_s2cta_hidden_{row_num}", width="stretch"):
                     st.session_state[slide_two_cta_key] = "hidden"
                     _rerun_workspace("Edit")
+        if st.button("Edit Text 2", key=f"workspace_inline_edit_text2_{row_num}", width="stretch"):
+            _open_workspace_slide_action_dialog(row_num, "text2")
+            _rerun_workspace("Edit")
         if (slide_text3 or "").strip():
             _render_text_slide_preview(
                 3,
@@ -4404,6 +4410,9 @@ def _copy_tabs(
                 slide_three_font_adjust_key,
                 current_slide_three_font_adjust,
             )
+            if st.button("Edit Text 3", key=f"workspace_inline_edit_text3_{row_num}", width="stretch"):
+                _open_workspace_slide_action_dialog(row_num, "text3")
+                _rerun_workspace("Edit")
         if (slide_text4 or "").strip():
             _render_text_slide_preview(
                 4,
@@ -4457,9 +4466,6 @@ def _copy_tabs(
                 st.session_state[prompt_key] = _build_single_row_chatgpt_prompt(effective_row)
                 _open_workspace_slide_action_dialog(row_num, "prompt")
                 _rerun_workspace("Edit")
-            if st.button("Edit text 1", key=f"workspace_row_slides_edit_text1_{row_num}", width="stretch"):
-                _open_workspace_slide_action_dialog(row_num, "text1")
-                _rerun_workspace("Edit")
             if st.button("Generate quote", key=f"workspace_row_slides_gen_quote_{row_num}", width="stretch"):
                 try:
                     generated_q = _generate_quote_for_row(prompt_row or {})
@@ -4468,12 +4474,6 @@ def _copy_tabs(
                     st.session_state["workspace_success"] = f"Row {row_num}: quote generated."
                 except Exception as e:
                     st.session_state["workspace_error"] = f"Could not generate quote: {describe_error(e)}"
-                _rerun_workspace("Edit")
-            if st.button("Edit text 2", key=f"workspace_row_slides_edit_text2_{row_num}", width="stretch"):
-                _open_workspace_slide_action_dialog(row_num, "text2")
-                _rerun_workspace("Edit")
-            if st.button("Edit text 3", key=f"workspace_row_slides_edit_text3_{row_num}", width="stretch"):
-                _open_workspace_slide_action_dialog(row_num, "text3")
                 _rerun_workspace("Edit")
             slides_merged = st.session_state.get(slide_merge_key, False)
             if slides_merged:
