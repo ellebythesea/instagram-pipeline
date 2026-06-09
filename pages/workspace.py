@@ -4287,14 +4287,63 @@ def _copy_tabs(
                             st.session_state[slide_quote_show_key] = not current_quote_show
                             _rerun_workspace("Edit")
                     with s1_cols[8]:
-                        if st.button("Edit", key=f"workspace_quote_edit_{row_num}", width="stretch"):
-                            _open_workspace_slide_action_dialog(row_num, "quote")
+                        if st.button("Quote", key=f"workspace_quote_edit_{row_num}", width="stretch"):
+                            try:
+                                _opts = _generate_quote_options_for_row(prompt_row or {})
+                                st.session_state[f"workspace_quote_options_{row_num}"] = _opts
+                                st.session_state[f"workspace_quote_picker_{row_num}"] = True
+                            except Exception as _qe:
+                                st.session_state["workspace_error"] = f"Row {row_num}: could not generate quotes — {describe_error(_qe)}"
                             _rerun_workspace("Edit")
                 else:
                     with s1_cols[7]:
-                        if st.button("Edit", key=f"workspace_quote_edit_{row_num}", width="stretch"):
-                            _open_workspace_slide_action_dialog(row_num, "quote")
+                        if st.button("Quote", key=f"workspace_quote_edit_{row_num}", width="stretch"):
+                            try:
+                                _opts = _generate_quote_options_for_row(prompt_row or {})
+                                st.session_state[f"workspace_quote_options_{row_num}"] = _opts
+                                st.session_state[f"workspace_quote_picker_{row_num}"] = True
+                            except Exception as _qe:
+                                st.session_state["workspace_error"] = f"Row {row_num}: could not generate quotes — {describe_error(_qe)}"
                             _rerun_workspace("Edit")
+            if st.session_state.get(f"workspace_quote_picker_{row_num}"):
+                _quote_options = st.session_state.get(f"workspace_quote_options_{row_num}", [])
+                _quote_sel = st.selectbox(
+                    "Pick a quote",
+                    _quote_options + ["Edit"],
+                    key=f"workspace_quote_select_{row_num}",
+                    label_visibility="collapsed",
+                )
+                _qcols = st.columns(2, gap="small")
+                if _quote_sel == "Edit":
+                    _quote_edit_val = st.text_input(
+                        "Quote",
+                        value=slide_quote,
+                        key=f"workspace_quote_manual_{row_num}",
+                        label_visibility="collapsed",
+                        placeholder="Enter quote text…",
+                    )
+                    with _qcols[0]:
+                        if st.button("Update", key=f"workspace_quote_update_{row_num}", width="stretch", type="primary"):
+                            if update_quote is not None:
+                                update_quote(GOOGLE_SHEET_ID, row_num, _quote_edit_val.strip())
+                            st.session_state.pop(f"workspace_quote_picker_{row_num}", None)
+                            st.session_state.pop(f"workspace_quote_options_{row_num}", None)
+                            st.session_state["workspace_success"] = f"Row {row_num}: quote saved."
+                            _rerun_workspace("Edit")
+                else:
+                    with _qcols[0]:
+                        if st.button("Use this", key=f"workspace_quote_use_{row_num}", width="stretch", type="primary"):
+                            if update_quote is not None:
+                                update_quote(GOOGLE_SHEET_ID, row_num, _quote_sel)
+                            st.session_state.pop(f"workspace_quote_picker_{row_num}", None)
+                            st.session_state.pop(f"workspace_quote_options_{row_num}", None)
+                            st.session_state["workspace_success"] = f"Row {row_num}: quote saved."
+                            _rerun_workspace("Edit")
+                with _qcols[1]:
+                    if st.button("Cancel", key=f"workspace_quote_cancel_{row_num}", width="stretch"):
+                        st.session_state.pop(f"workspace_quote_picker_{row_num}", None)
+                        st.session_state.pop(f"workspace_quote_options_{row_num}", None)
+                        _rerun_workspace("Edit")
         if (slide_text2 or "").strip():
             _render_text_slide_preview(
                 2,
@@ -5274,6 +5323,44 @@ def _generate_caption_for_row(row: dict) -> None:
     update_caption(GOOGLE_SHEET_ID, row_num, caption, next_status)
     if _row_is_photo_post(updated_row):
         _write_carousel_fields(row_num, updated_row)
+
+
+def _generate_quote_options_for_row(row: dict) -> list[str]:
+    transcript = _cell_text(row.get("Transcript")).strip()
+    original_caption = _cell_text(row.get("Original Caption")).strip()
+    generated = _cell_text(row.get("Generated Caption")).strip()
+    source_text = transcript or original_caption
+    if not source_text:
+        raise ValueError("No transcript or caption available to generate quotes from.")
+    source = f"{source_text}\n\n---\n\nCaption:\n{generated}" if generated else source_text
+    response = _get_client().chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You generate pull quotes and punchy headlines for social media graphics. "
+                    "Return EXACTLY 10 options, one per line, numbered 1–10. "
+                    "Mix verbatim pull quotes from the source and salacious, attention-grabbing "
+                    "rewritten headlines. Each must be under 120 characters. "
+                    "No quotation marks, no attribution, no extra commentary — just the numbered list."
+                ),
+            },
+            {"role": "user", "content": source},
+        ],
+        max_tokens=700,
+        temperature=0.85,
+    )
+    raw = response.choices[0].message.content.strip()
+    options: list[str] = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        line = re.sub(r"^\d+[.)]\s*", "", line).strip().strip('"').strip("'").strip()
+        if line:
+            options.append(line)
+    return options[:10]
 
 
 def _generate_quote_for_row(row: dict) -> str:
