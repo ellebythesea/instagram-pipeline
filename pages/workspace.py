@@ -4309,12 +4309,11 @@ def _copy_tabs(
                 _quote_options = st.session_state.get(f"workspace_quote_options_{row_num}", [])
                 _quote_sel = st.selectbox(
                     "Pick a quote",
-                    _quote_options + ["Edit"],
+                    _quote_options,
                     key=f"workspace_quote_select_{row_num}",
                     label_visibility="collapsed",
                 )
-                _qcols = st.columns(2, gap="small")
-                if _quote_sel == "Edit":
+                if st.session_state.get(f"workspace_quote_editing_{row_num}"):
                     _quote_edit_val = st.text_input(
                         "Quote",
                         value=slide_quote,
@@ -4322,15 +4321,24 @@ def _copy_tabs(
                         label_visibility="collapsed",
                         placeholder="Enter quote text…",
                     )
+                    _qcols = st.columns(2, gap="small")
                     with _qcols[0]:
                         if st.button("Update", key=f"workspace_quote_update_{row_num}", width="stretch", type="primary"):
                             if update_quote is not None:
                                 update_quote(GOOGLE_SHEET_ID, row_num, _quote_edit_val.strip())
                             st.session_state.pop(f"workspace_quote_picker_{row_num}", None)
                             st.session_state.pop(f"workspace_quote_options_{row_num}", None)
+                            st.session_state.pop(f"workspace_quote_editing_{row_num}", None)
                             st.session_state["workspace_success"] = f"Row {row_num}: quote saved."
                             _rerun_workspace("Edit")
+                    with _qcols[1]:
+                        if st.button("Cancel", key=f"workspace_quote_cancel_{row_num}", width="stretch"):
+                            st.session_state.pop(f"workspace_quote_picker_{row_num}", None)
+                            st.session_state.pop(f"workspace_quote_options_{row_num}", None)
+                            st.session_state.pop(f"workspace_quote_editing_{row_num}", None)
+                            _rerun_workspace("Edit")
                 else:
+                    _qcols = st.columns(3, gap="small")
                     with _qcols[0]:
                         if st.button("Use this", key=f"workspace_quote_use_{row_num}", width="stretch", type="primary"):
                             if update_quote is not None:
@@ -4339,11 +4347,15 @@ def _copy_tabs(
                             st.session_state.pop(f"workspace_quote_options_{row_num}", None)
                             st.session_state["workspace_success"] = f"Row {row_num}: quote saved."
                             _rerun_workspace("Edit")
-                with _qcols[1]:
-                    if st.button("Cancel", key=f"workspace_quote_cancel_{row_num}", width="stretch"):
-                        st.session_state.pop(f"workspace_quote_picker_{row_num}", None)
-                        st.session_state.pop(f"workspace_quote_options_{row_num}", None)
-                        _rerun_workspace("Edit")
+                    with _qcols[1]:
+                        if st.button("Edit Quote", key=f"workspace_quote_edit_btn_{row_num}", width="stretch"):
+                            st.session_state[f"workspace_quote_editing_{row_num}"] = True
+                            _rerun_workspace("Edit")
+                    with _qcols[2]:
+                        if st.button("Cancel", key=f"workspace_quote_cancel_{row_num}", width="stretch"):
+                            st.session_state.pop(f"workspace_quote_picker_{row_num}", None)
+                            st.session_state.pop(f"workspace_quote_options_{row_num}", None)
+                            _rerun_workspace("Edit")
         if (slide_text2 or "").strip():
             _render_text_slide_preview(
                 2,
