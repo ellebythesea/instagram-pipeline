@@ -4297,7 +4297,7 @@ def _copy_tabs(
                             _rerun_workspace("Edit")
                     with s1_cols[9]:
                         if st.button("Edit", key=f"workspace_quote_edit_btn_{row_num}", width="stretch"):
-                            st.session_state[f"workspace_quote_editing_{row_num}"] = not st.session_state.get(f"workspace_quote_editing_{row_num}", False)
+                            _open_workspace_slide_action_dialog(row_num, "quote")
                             _rerun_workspace("Edit")
                     with s1_cols[10]:
                         if st.button("Edit Text 1", key=f"workspace_inline_edit_text1_{row_num}", width="stretch"):
@@ -4315,34 +4315,12 @@ def _copy_tabs(
                             _rerun_workspace("Edit")
                     with s1_cols[8]:
                         if st.button("Edit", key=f"workspace_quote_edit_btn_{row_num}", width="stretch"):
-                            st.session_state[f"workspace_quote_editing_{row_num}"] = not st.session_state.get(f"workspace_quote_editing_{row_num}", False)
+                            _open_workspace_slide_action_dialog(row_num, "quote")
                             _rerun_workspace("Edit")
                     with s1_cols[9]:
                         if st.button("Edit Text 1", key=f"workspace_inline_edit_text1_{row_num}", width="stretch"):
                             _open_workspace_slide_action_dialog(row_num, "text1")
                             _rerun_workspace("Edit")
-            if st.session_state.get(f"workspace_quote_editing_{row_num}"):
-                _quote_edit_val = st.text_input(
-                    "Quote",
-                    value=slide_quote,
-                    key=f"workspace_quote_manual_{row_num}",
-                    label_visibility="collapsed",
-                    placeholder="Enter quote text…",
-                )
-                _qcols = st.columns(2, gap="small")
-                with _qcols[0]:
-                    if st.button("Update", key=f"workspace_quote_update_{row_num}", type="primary"):
-                        if update_quote is not None:
-                            update_quote(GOOGLE_SHEET_ID, row_num, _quote_edit_val.strip())
-                        st.session_state.pop(f"workspace_quote_editing_{row_num}", None)
-                        st.session_state.pop(f"workspace_quote_picker_{row_num}", None)
-                        st.session_state.pop(f"workspace_quote_options_{row_num}", None)
-                        st.session_state["workspace_success"] = f"Row {row_num}: quote saved."
-                        _rerun_workspace("Edit")
-                with _qcols[1]:
-                    if st.button("Cancel", key=f"workspace_quote_edit_cancel_{row_num}"):
-                        st.session_state.pop(f"workspace_quote_editing_{row_num}", None)
-                        _rerun_workspace("Edit")
             if st.session_state.get(f"workspace_quote_picker_{row_num}"):
                 _quote_options = st.session_state.get(f"workspace_quote_options_{row_num}", [])
                 _quote_sel = st.selectbox(
@@ -5390,7 +5368,7 @@ def _generate_quote_options_for_row(row: dict) -> list[str]:
         line = line.strip()
         if not line:
             continue
-        line = re.sub(r"^\d+[.)]\s*", "", line).strip().strip('"').strip("'").strip()
+        line = re.sub(r"^\d+[.)]\s*", "", line).strip().strip('"').strip("'").strip().rstrip(".")
         if line:
             options.append(line)
     return options[:10]
@@ -5422,7 +5400,7 @@ def _generate_quote_for_row(row: dict) -> str:
         max_tokens=120,
         temperature=0.3,
     )
-    return response.choices[0].message.content.strip().strip('"').strip("'").strip()
+    return response.choices[0].message.content.strip().strip('"').strip("'").strip().rstrip(".")
 
 
 def _write_specific_carousel_fields(row_number: int, carousel: dict[str, str]) -> None:
