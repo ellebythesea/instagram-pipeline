@@ -4420,8 +4420,8 @@ def _copy_tabs(
             )
             with st.container():
                 st.markdown('<div class="workspace-slide3-ctrl-anchor"></div>', unsafe_allow_html=True)
-                _s3_extra = (1 if _is_reel_url(source_url) else 0) + (1 if media_link else 0)
-                _s3_cols = st.columns(3 + _s3_extra, gap="small")
+                _s3_has_drive = bool(media_link)
+                _s3_cols = st.columns(3 + (1 if _s3_has_drive else 0), gap="small")
                 with _s3_cols[0]:
                     if st.button("A-", key=f"workspace_preview_{row_num}_slide3_font_down", width="stretch"):
                         st.session_state[slide_three_font_adjust_key] = max(-80, current_slide_three_font_adjust - 2)
@@ -4434,14 +4434,10 @@ def _copy_tabs(
                     if st.button("Edit Text 3", key=f"workspace_inline_edit_text3_{row_num}", width="stretch"):
                         _open_workspace_slide_action_dialog(row_num, "text3")
                         _rerun_workspace("Edit")
-                _s3_idx = 3
-                if _is_reel_url(source_url):
-                    with _s3_cols[_s3_idx]:
-                        st.link_button("Open Reel", source_url)
-                    _s3_idx += 1
-                if media_link:
-                    with _s3_cols[_s3_idx]:
-                        st.link_button("Drive", media_link)
+                if _s3_has_drive:
+                    with _s3_cols[3]:
+                        _drive_label = "Open Reel in Drive" if media_type.lower() == "reel" else "Open in Drive"
+                        st.link_button(_drive_label, media_link, width="stretch")
         if (slide_text4 or "").strip():
             _render_text_slide_preview(
                 4,
