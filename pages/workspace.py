@@ -5353,8 +5353,10 @@ def _generate_quote_options_for_row(row: dict) -> list[str]:
                 "content": (
                     "You generate pull quotes and punchy headlines for social media graphics. "
                     "Return EXACTLY 10 options, one per line, numbered 1–10. "
-                    "Mix verbatim pull quotes from the source and salacious, attention-grabbing "
-                    "rewritten headlines. Each must be under 120 characters. "
+                    "7 of the 10 must be verbatim pull quotes lifted directly from the source text — "
+                    "real sentences or phrases spoken or written in the source, unchanged. "
+                    "The remaining 3 may be salacious, attention-grabbing rewritten headlines. "
+                    "Each option must be under 120 characters. "
                     "No quotation marks, no attribution, no extra commentary — just the numbered list."
                 ),
             },
