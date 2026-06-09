@@ -2152,7 +2152,7 @@ def _render_slide_one_png(
     background_path = _download_preview_background(background_url, tmp_dir)
     handle_font_clause = f":fontfile='{_ffmpeg_filter_value(regular_font)}'" if regular_font else ""
     headline_font_clause = f":fontfile='{_ffmpeg_filter_value(bold_font)}'" if bold_font else ""
-    font_size = max(64, round((96 + int(headline_font_adjust_px)) * PREVIEW_EXPORT_FONT_SCALE))
+    font_size = max(8, round((96 + int(headline_font_adjust_px)) * PREVIEW_EXPORT_FONT_SCALE))
     y_offset = int(background_y_adjust_px)
     overlay_y = round(720 * PREVIEW_EXPORT_SCALE)
     overlay_h = round(900 * PREVIEW_EXPORT_SCALE)
@@ -4052,13 +4052,13 @@ def _render_workspace_preview_control_bar(
             with column:
                 if st.button(label, key=f"workspace_preview_{control_id}_{action}", width="stretch"):
                     if action == "font_down":
-                        st.session_state[font_adjust_key] = max(-16, current_font_adjust - 2)
+                        st.session_state[font_adjust_key] = max(-80, current_font_adjust - 2)
                     elif action == "font_up":
                         st.session_state[font_adjust_key] = min(24, current_font_adjust + 2)
                     elif action == "bg_up" and background_adjust_key is not None:
-                        st.session_state[background_adjust_key] = max(-200, current_background_adjust - 48)
+                        st.session_state[background_adjust_key] = max(-1200, current_background_adjust - 48)
                     elif action == "bg_down" and background_adjust_key is not None:
-                        st.session_state[background_adjust_key] = min(200, current_background_adjust + 48)
+                        st.session_state[background_adjust_key] = min(1200, current_background_adjust + 48)
                     elif action == "fit_toggle" and fit_toggle_key is not None:
                         st.session_state[fit_toggle_key] = not fit_toggle_current
                     st.session_state["workspace_preview_scroll_target"] = anchor_id
@@ -4237,7 +4237,7 @@ def _copy_tabs(
                         _rerun_workspace("Edit")
                 with s1_cols[2]:
                     if st.button("A-", key=f"workspace_preview_{row_num}_slide1_font_down"):
-                        st.session_state[slide_one_font_adjust_key] = max(-16, current_slide_one_font_adjust - 2)
+                        st.session_state[slide_one_font_adjust_key] = max(-80, current_slide_one_font_adjust - 2)
                         st.session_state["workspace_preview_scroll_target"] = anchor_id
                         _rerun_workspace("Edit")
                 with s1_cols[3]:
@@ -4247,12 +4247,12 @@ def _copy_tabs(
                         _rerun_workspace("Edit")
                 with s1_cols[4]:
                     if st.button("⬆", key=f"workspace_preview_{row_num}_slide1_bg_up"):
-                        st.session_state[slide_one_background_adjust_key] = max(-200, current_slide_one_background_adjust - 48)
+                        st.session_state[slide_one_background_adjust_key] = max(-1200, current_slide_one_background_adjust - 48)
                         st.session_state["workspace_preview_scroll_target"] = anchor_id
                         _rerun_workspace("Edit")
                 with s1_cols[5]:
                     if st.button("⬇", key=f"workspace_preview_{row_num}_slide1_bg_down"):
-                        st.session_state[slide_one_background_adjust_key] = min(200, current_slide_one_background_adjust + 48)
+                        st.session_state[slide_one_background_adjust_key] = min(1200, current_slide_one_background_adjust + 48)
                         st.session_state["workspace_preview_scroll_target"] = anchor_id
                         _rerun_workspace("Edit")
                 with s1_cols[6]:
