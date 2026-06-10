@@ -2678,7 +2678,7 @@ def _create_post_from_prompt(prompt: str, custom_link: str, uploaded_file, speak
             "top_comment": top_comment,
             "status": "ingested",
             "name": slide_data.get("name", ""),
-            "quote": slide_data.get("quote", ""),
+            "quote": (slide_data.get("quote") or "").strip().strip('"').strip("'").rstrip("."),
             "text1": slide_data.get("text1", ""),
             "text2": slide_data.get("text2", ""),
             "text3": slide_data.get("text3", ""),

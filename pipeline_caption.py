@@ -376,7 +376,7 @@ def carousel_slide_rules() -> str:
         "* Never repeat the same fact, quote, setup, accusation, or disclaimer across text1, text2, and text3\n\n"
 
         "Slide structure:\n"
-        "* quote = the single best verbatim pull-quote from the source. Under 120 characters. Wrap the text in straight double quotation marks (e.g. \"Your elections are crooked.\"). No attribution. This is the large-format display quote shown on slide 1. If no strong verbatim quote exists, write the most charged paraphrase in the speaker's voice, still wrapped in quotation marks.\n"
+        "* quote = the single best verbatim pull-quote from the source. Under 120 characters. No quotation marks, no attribution. This is the large-format display quote shown on slide 1. If no strong verbatim quote exists, write the most charged paraphrase in the speaker's voice.\n"
         "* text1 = slide 1 body text. This is the supporting context that appears alongside the quote. Do NOT repeat the quote in text1. Write it as the hook/framing that gives the quote meaning — the setup, the stakes, or the consequence. Under 150 chars, single paragraph.\n"
         "* text2 = quote heavy. Use the strongest exchanges, pushback, direct lines, new facts, verified context, names, dates, numbers, contradictions, or legal details only\n"
         "* text3 = broader context, stakes, political backdrop, public reaction, fallout, unanswered questions, public consequences, policy stakes, legal implications, or next steps\n"
@@ -478,7 +478,7 @@ def generate_carousel_copy_with_model(row: dict, model: str = "gpt-4o") -> dict[
 
     return {
         "name": (payload.get("name") or display_name or "").strip(),
-        "quote": (payload.get("quote") or "").strip().rstrip(".").rstrip('"').rstrip("'").rstrip(".").strip(),
+        "quote": (payload.get("quote") or "").strip().strip('"').strip("'").strip().rstrip("."),
         "text1": _single_paragraph_slide_text(payload.get("text1") or "", 350),
         "text2": _single_paragraph_slide_text(payload.get("text2") or "", 900),
         "text3": _single_paragraph_slide_text(payload.get("text3") or "", 900),
@@ -550,7 +550,7 @@ def generate_batch_carousel_copy_with_model(rows: list[dict], model: str = "gpt-
             continue
         results[row_number] = {
             "name": (item.get("name") or display_names.get(row_number) or "").strip(),
-            "quote": (item.get("quote") or "").strip().rstrip(".").rstrip('"').rstrip("'").rstrip(".").strip(),
+            "quote": (item.get("quote") or "").strip().strip('"').strip("'").strip().rstrip("."),
             "text1": _single_paragraph_slide_text(item.get("text1") or "", 350),
             "text2": _single_paragraph_slide_text(item.get("text2") or "", 900),
             "text3": _single_paragraph_slide_text(item.get("text3") or "", 900),
