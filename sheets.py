@@ -412,7 +412,12 @@ def update_ingest_result(
     """Write ingest results to cols C and E-J, default name to Q, and status to N."""
     ws = _worksheet(sheet_id)
     cleaned_username = (username or "").strip()
-    default_name = cleaned_username if not cleaned_username or cleaned_username.startswith("@") else f"@{cleaned_username}"
+    if not cleaned_username or media_type == "article":
+        default_name = cleaned_username
+    elif cleaned_username.startswith("@"):
+        default_name = cleaned_username
+    else:
+        default_name = f"@{cleaned_username}"
     _with_backoff(
         ws.batch_update,
         [
