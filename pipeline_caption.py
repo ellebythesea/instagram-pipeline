@@ -34,6 +34,9 @@ SYS_PROMPT = (
     "Include direct quotes when available. Verify names and quotes carefully. "
     "Do not refer to the source as a transcript, clip, speech, interview, or video unless that is explicitly certain. "
     "Do not write phrases like during his speech, in the transcript, in this clip, or in the video. "
+    "Do not use meta-referential language that points back to the source format — never write phrases like "
+    "the comment says, the post points out, the post notes, the caption reads, according to the post, "
+    "as the post states, or similar constructions. State facts and claims directly and assertively. "
     "Write as if you are describing the underlying event or claim directly. "
     "Avoid speculation, flourish, links, or references to Trump's current office status."
 )
@@ -372,7 +375,7 @@ def carousel_slide_rules() -> str:
         "* Collapse all whitespace into normal single spaces before returning JSON\n"
         "* No speculation or invented framing\n"
         "* Never include hashtags in slide text\n"
-        "* Never use phrases like 'the speaker,' 'the clip,' 'the transcript,' 'the video,' or 'the creator said'\n"
+        "* Never use phrases like 'the speaker,' 'the clip,' 'the transcript,' 'the video,' 'the creator said,' 'the comment says,' 'the post points out,' 'the post notes,' 'the caption reads,' 'according to the post,' or any meta-referential language pointing back to the source format\n"
         "* Never repeat the same fact, quote, setup, accusation, or disclaimer across text1, text2, and text3\n\n"
 
         "Slide structure:\n"
