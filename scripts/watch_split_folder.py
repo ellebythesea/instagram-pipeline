@@ -21,6 +21,7 @@ from split_video_minutes import VIDEO_SUFFIXES, default_split_dir, output_dir_fo
 POLL_SECONDS = 5
 STABLE_SECONDS = 10
 DEFAULT_IDLE_POLLS = 2
+FAILURE_RETRY_SECONDS = 120
 
 
 def _video_files(folder: Path) -> list[Path]:
@@ -64,6 +65,7 @@ def watch_folder(folder: Path, stop_when_idle: bool = False, idle_polls: int = D
     else:
         print("Startup pass found no unsplit existing videos.")
     seen_sizes: dict[Path, tuple[int, float]] = {}
+    failed_at: dict[Path, float] = {}
     idle_cycles = 0
 
     while True:
@@ -73,6 +75,11 @@ def watch_folder(folder: Path, stop_when_idle: bool = False, idle_polls: int = D
 
         for video_path in current_files:
             if not _needs_split(folder, video_path):
+                failed_at.pop(video_path, None)
+                continue
+
+            last_failure = failed_at.get(video_path)
+            if last_failure is not None and current_time - last_failure < FAILURE_RETRY_SECONDS:
                 continue
 
             stat = video_path.stat()
@@ -89,14 +96,18 @@ def watch_folder(folder: Path, stop_when_idle: bool = False, idle_polls: int = D
             try:
                 split_video_file(video_path, folder)
                 processed_this_cycle += 1
+                failed_at.pop(video_path, None)
             except Exception as exc:
                 print(f"Failed to split {video_path.name}: {exc}")
+                failed_at[video_path] = current_time
             finally:
                 seen_sizes.pop(video_path, None)
 
         stale = [path for path in seen_sizes if path not in current_files]
         for path in stale:
             seen_sizes.pop(path, None)
+        for path in [p for p in failed_at if p not in current_files]:
+            failed_at.pop(path, None)
 
         processed_total += processed_this_cycle
         if stop_when_idle:
