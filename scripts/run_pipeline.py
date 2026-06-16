@@ -17,7 +17,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -455,11 +454,9 @@ def step1_ingest(sheet_id: str) -> int:
         return 0
     print(f"Step 1: Ingesting {len(pending)} pending row(s)…")
     succeeded = 0
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        futures = {pool.submit(_ingest_and_caption_row, sheet_id, row): row for row in pending}
-        for future in as_completed(futures):
-            if future.result():
-                succeeded += 1
+    for row in pending:
+        if _ingest_and_caption_row(sheet_id, row):
+            succeeded += 1
     print(f"Step 1: {succeeded}/{len(pending)} row(s) ingested.")
     return len(pending)
 
