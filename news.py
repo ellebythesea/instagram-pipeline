@@ -1,16 +1,23 @@
 # news.py
 """Fetch latest news context via Serper API to enrich caption generation."""
 
+import hashlib
 import re
 import requests
 from collections import Counter
 from config import SERPER_API_KEY
+
+_news_cache: dict[str, str] = {}
 
 
 def get_latest_news_summary(transcript: str, num_results: int = 5) -> str:
     """Extract keywords from transcript, search for related news, return context string."""
     if not SERPER_API_KEY:
         return "LATEST NEWS CONTEXT:\nNo API key configured.\n\n"
+
+    cache_key = hashlib.md5(transcript.encode()).hexdigest()
+    if cache_key in _news_cache:
+        return _news_cache[cache_key]
 
     try:
         words = re.findall(r"\b\w+\b", transcript)
@@ -46,8 +53,11 @@ def get_latest_news_summary(transcript: str, num_results: int = 5) -> str:
                 f"- {it.get('title', '')} ({it.get('date', '')}): {it.get('snippet', '')}"
                 for it in items
             ]
-            return "LATEST NEWS CONTEXT:\n" + "\n".join(lines) + "\n\n"
-        return "LATEST NEWS CONTEXT:\nNo recent news found.\n\n"
+            result = "LATEST NEWS CONTEXT:\n" + "\n".join(lines) + "\n\n"
+        else:
+            result = "LATEST NEWS CONTEXT:\nNo recent news found.\n\n"
+        _news_cache[cache_key] = result
+        return result
 
     except Exception:
         return "LATEST NEWS CONTEXT:\nUnable to fetch news at this time.\n\n"

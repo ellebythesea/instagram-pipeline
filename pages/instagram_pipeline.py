@@ -4,6 +4,7 @@ import os
 import sys
 import shutil
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -321,13 +322,21 @@ if ingest_btn:
         st.caption("Photos and carousels upload their media to Drive. Reels still keep thumbnail-only ingest in this batch flow.")
         progress = st.progress(0)
 
-        for i, row in enumerate(pending):
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            futures = {pool.submit(_ingest_row, row): row for row in pending}
+            results = {}
+            for i, future in enumerate(as_completed(futures)):
+                row = futures[future]
+                results[row["row_number"]] = future.result()
+                progress.progress((i + 1) / len(pending))
+
+        for row in pending:
             row_num = row["row_number"]
             url = row["Instagram URL"]
             label = url[:60] + "..." if len(url) > 60 else url
+            result = results.get(row_num, {})
 
             with st.status(f"Row {row_num}: {label}", expanded=False) as s:
-                result = _ingest_row(row)
                 try:
                     update_ingest_result(
                         GOOGLE_SHEET_ID,
@@ -343,7 +352,6 @@ if ingest_btn:
                     )
                 except Exception as e:
                     s.update(label=f"Row {row_num}: error writing to sheet — {e}", state="error")
-                    progress.progress((i + 1) / len(pending))
                     continue
 
                 if result["status"].startswith("error"):
@@ -353,7 +361,5 @@ if ingest_btn:
                         label=f"Row {row_num}: ingested — @{result['username']} ({result['media_type']})",
                         state="complete",
                     )
-
-            progress.progress((i + 1) / len(pending))
 
         st.success(f"Done. Ingested {len(pending)} row(s).")

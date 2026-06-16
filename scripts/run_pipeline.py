@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -389,6 +390,64 @@ def _upload_split_videos(
 # Pipeline steps
 # ---------------------------------------------------------------------------
 
+def _ingest_and_caption_row(sheet_id: str, row: dict) -> bool:
+    """Ingest one row and generate its caption. Returns True on success."""
+    row_num = row["row_number"]
+    url = (row.get("Instagram URL") or "").strip()
+    print(f"  Row {row_num}: {url[:80]}")
+    result = _ingest_row(row)
+    try:
+        update_ingest_result(
+            sheet_id, row_num,
+            result["username"], result["media_type"], result["photo_count"],
+            result["media_link"], result["thumbnail_link"],
+            result["original_caption"], result["transcript"], result["status"],
+        )
+        enriched_row = {
+            **row,
+            "Source Username": result["username"],
+            "Media Type": result["media_type"],
+        }
+        inputs = _row_caption_inputs(enriched_row)
+        update_metadata(
+            sheet_id, row_num,
+            inputs["Caption Context"], inputs["Speaker Name"],
+            inputs["Required Hashtags"], inputs["Top Comment"], "",
+        )
+        if result["status"] == "ingested":
+            ingested_row = {
+                **enriched_row,
+                "Photo Count": result["photo_count"],
+                "Media Drive Link": result["media_link"],
+                "Thumbnail Drive Link": result["thumbnail_link"],
+                "Original Caption": result["original_caption"],
+                "Transcript": result["transcript"],
+                "Status": result["status"],
+                "Caption Context": inputs["Caption Context"],
+                "Speaker Name": inputs["Speaker Name"],
+                "Required Hashtags": inputs["Required Hashtags"],
+                "Top Comment": inputs["Top Comment"],
+                "Footer": "",
+            }
+            if row_ready_for_caption(ingested_row):
+                caption = generate_row_caption(ingested_row)
+                update_caption_and_metadata(
+                    sheet_id, row_num, caption, result["status"],
+                    inputs["Caption Context"], inputs["Speaker Name"],
+                    inputs["Required Hashtags"], inputs["Top Comment"], "",
+                )
+                print(f"  Row {row_num}: ingested + captioned ({result['media_type']})")
+            else:
+                print(f"  Row {row_num}: ingested ({result['media_type']}); waiting for transcript before captioning")
+            return True
+        else:
+            print(f"  Row {row_num}: {result['status']}")
+            return False
+    except Exception as e:
+        print(f"  Row {row_num}: sheet write error — {e}")
+        return False
+
+
 def step1_ingest(sheet_id: str) -> int:
     pending = get_pending_rows(sheet_id)
     if not pending:
@@ -396,59 +455,11 @@ def step1_ingest(sheet_id: str) -> int:
         return 0
     print(f"Step 1: Ingesting {len(pending)} pending row(s)…")
     succeeded = 0
-    for row in pending:
-        row_num = row["row_number"]
-        url = (row.get("Instagram URL") or "").strip()
-        print(f"  Row {row_num}: {url[:80]}")
-        result = _ingest_row(row)
-        try:
-            update_ingest_result(
-                sheet_id, row_num,
-                result["username"], result["media_type"], result["photo_count"],
-                result["media_link"], result["thumbnail_link"],
-                result["original_caption"], result["transcript"], result["status"],
-            )
-            enriched_row = {
-                **row,
-                "Source Username": result["username"],
-                "Media Type": result["media_type"],
-            }
-            inputs = _row_caption_inputs(enriched_row)
-            update_metadata(
-                sheet_id, row_num,
-                inputs["Caption Context"], inputs["Speaker Name"],
-                inputs["Required Hashtags"], inputs["Top Comment"], "",
-            )
-            if result["status"] == "ingested":
-                ingested_row = {
-                    **enriched_row,
-                    "Photo Count": result["photo_count"],
-                    "Media Drive Link": result["media_link"],
-                    "Thumbnail Drive Link": result["thumbnail_link"],
-                    "Original Caption": result["original_caption"],
-                    "Transcript": result["transcript"],
-                    "Status": result["status"],
-                    "Caption Context": inputs["Caption Context"],
-                    "Speaker Name": inputs["Speaker Name"],
-                    "Required Hashtags": inputs["Required Hashtags"],
-                    "Top Comment": inputs["Top Comment"],
-                    "Footer": "",
-                }
-                if row_ready_for_caption(ingested_row):
-                    caption = generate_row_caption(ingested_row)
-                    update_caption_and_metadata(
-                        sheet_id, row_num, caption, result["status"],
-                        inputs["Caption Context"], inputs["Speaker Name"],
-                        inputs["Required Hashtags"], inputs["Top Comment"], "",
-                    )
-                    print(f"  Row {row_num}: ingested + captioned ({result['media_type']})")
-                else:
-                    print(f"  Row {row_num}: ingested ({result['media_type']}); waiting for transcript before captioning")
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = {pool.submit(_ingest_and_caption_row, sheet_id, row): row for row in pending}
+        for future in as_completed(futures):
+            if future.result():
                 succeeded += 1
-            else:
-                print(f"  Row {row_num}: {result['status']}")
-        except Exception as e:
-            print(f"  Row {row_num}: sheet write error — {e}")
     print(f"Step 1: {succeeded}/{len(pending)} row(s) ingested.")
     return len(pending)
 

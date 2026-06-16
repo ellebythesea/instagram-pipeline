@@ -65,7 +65,7 @@ _client: gspread.Client | None = None
 _workbooks: dict[str, gspread.Spreadsheet] = {}
 _worksheets: dict[tuple[str, str], gspread.Worksheet] = {}
 _rows_cache: dict[tuple[str, str], tuple[float, list[dict]]] = {}
-_ROWS_CACHE_TTL_SECONDS = 20.0
+_ROWS_CACHE_TTL_SECONDS = 120.0
 _METADATA_SHEET_TITLE = "__workspace_meta__"
 _LAST_SCHEDULED_TIMES_KEY = "last_scheduled_times"
 _SLIDE_CTA_OPTIONS_KEY = "slide_cta_options"
@@ -506,8 +506,10 @@ def update_scheduled_times(sheet_id: str, assignments: dict[int, str]) -> None:
     if not assignments:
         return
     ws = _worksheet(sheet_id)
-    for row_number, scheduled_time in assignments.items():
-        _with_backoff(ws.update, f"P{row_number}", [[scheduled_time]])
+    _with_backoff(
+        ws.batch_update,
+        [{"range": f"P{row_number}", "values": [[scheduled_time]]} for row_number, scheduled_time in assignments.items()],
+    )
     _invalidate_rows_cache(sheet_id)
 
 
