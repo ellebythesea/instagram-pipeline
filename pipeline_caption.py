@@ -3,6 +3,7 @@
 import ast
 import json
 import re
+from urllib.parse import urlparse
 
 import openai
 
@@ -350,13 +351,28 @@ def generate_carousel_copy(row: dict) -> dict[str, str]:
     return generate_carousel_copy_with_model(row, model="gpt-4o")
 
 
+def _article_domain_name(row: dict) -> str:
+    """Extract @domain.com from the article URL, e.g. @wsj.com."""
+    url = (row.get("Instagram URL") or "").strip()
+    try:
+        host = urlparse(url).hostname or ""
+        domain = re.sub(r"^www\.", "", host).lower()
+        if domain:
+            return f"@{domain}"
+    except Exception:
+        pass
+    return (row.get("Source Username") or "").strip()
+
+
 def _carousel_display_name(row: dict) -> str:
     speaker_name = row.get("Speaker Name", "").strip()
     username = row.get("Source Username", "").strip()
     media_type = (row.get("Media Type", "") or "").strip().lower()
+    if media_type == "article":
+        return _article_domain_name(row)
     if speaker_name:
         return speaker_name
-    if media_type != "article" and username:
+    if username:
         return f"@{username.lstrip('@')}"
     return username
 
@@ -379,8 +395,8 @@ def carousel_slide_rules() -> str:
         "* Never repeat the same fact, quote, setup, accusation, or disclaimer across text1, text2, and text3\n\n"
 
         "Slide structure:\n"
-        "* quote = the single best verbatim pull-quote from the source. Under 120 characters. No quotation marks, no attribution. This is the large-format display quote shown on slide 1. If no strong verbatim quote exists, write the most charged paraphrase in the speaker's voice.\n"
-        "* text1 = slide 1 body text. This is the supporting context that appears alongside the quote. Do NOT repeat the quote in text1. Write it as the hook/framing that gives the quote meaning — the setup, the stakes, or the consequence. Under 150 chars, single paragraph.\n"
+        "* quote = the single most attention-grabbing verbatim line from the source — prioritize salacious, shocking, revealing, or damning direct quotes. Under 120 characters. No quotation marks, no attribution. This is the large-format display quote shown on slide 1. If no strong verbatim quote exists, write the most charged accurate paraphrase in the speaker's voice.\n"
+        "* text1 = slide 1 headline. Write it as a punchy, clickbait-style hook — tease what the post is about without giving everything away. It should make someone stop scrolling and want to swipe. Use plain factual language: name the person, hint at the accusation, the reveal, or the stakes. Do NOT repeat the quote. Under 150 chars, single paragraph.\n"
         "* text2 = quote heavy. Use the strongest exchanges, pushback, direct lines, new facts, verified context, names, dates, numbers, contradictions, or legal details only\n"
         "* text3 = broader context, stakes, political backdrop, public reaction, fallout, unanswered questions, public consequences, policy stakes, legal implications, or next steps\n"
         "* Assume the viewer already read previous slides. Do not restate information\n"
