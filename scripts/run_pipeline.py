@@ -156,7 +156,7 @@ def _row_caption_inputs(row: dict) -> dict:
     speaker = (row.get("Speaker Name") or "").strip()
     hashtags = (row.get("Required Hashtags") or "").strip()
     top = (row.get("Top Comment") or "").strip()
-    if _is_instagram_url(url):
+    if not top and _is_instagram_url(url):
         top = _build_watch_cta(username or speaker, url)
     elif not top and _is_article_url(url):
         top = _build_read_cta(url)
