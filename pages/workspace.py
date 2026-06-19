@@ -4088,12 +4088,11 @@ def _copy_tabs(
     thumbnail_link: str = "",
     slide_cta_options: dict[str, str] | None = None,
 ) -> None:
-    tab_labels = ["Caption", "Original"]
-    tab_labels.append("Slides")
+    tab_labels = ["Slides", "Caption", "Original"]
     content_tab_key = f"workspace_row_content_tab_{row_num}"
-    current_content_tab = st.session_state.get(content_tab_key, "Caption")
+    current_content_tab = st.session_state.get(content_tab_key, "Slides")
     if current_content_tab not in tab_labels:
-        current_content_tab = "Caption"
+        current_content_tab = "Slides"
         st.session_state[content_tab_key] = current_content_tab
     selected_content_tab = st.segmented_control(
         "Content",
