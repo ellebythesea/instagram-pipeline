@@ -483,7 +483,7 @@ def generate_carousel_copy_with_model(row: dict, model: str = "gpt-4o") -> dict[
     payload = _parse_jsonish_payload(raw)
 
     return {
-        "name": (payload.get("name") or display_name or "").strip(),
+        "name": (payload.get("name") or display_name or "").strip().lstrip("@"),
         "quote": (payload.get("quote") or "").strip().strip('"').strip("'").strip().rstrip("."),
         "text1": _single_paragraph_slide_text(payload.get("text1") or "", 350),
         "text2": _single_paragraph_slide_text(payload.get("text2") or "", 900),
@@ -555,7 +555,7 @@ def generate_batch_carousel_copy_with_model(rows: list[dict], model: str = "gpt-
         if row_number <= 0:
             continue
         results[row_number] = {
-            "name": (item.get("name") or display_names.get(row_number) or "").strip(),
+            "name": (item.get("name") or display_names.get(row_number) or "").strip().lstrip("@"),
             "quote": (item.get("quote") or "").strip().strip('"').strip("'").strip().rstrip("."),
             "text1": _single_paragraph_slide_text(item.get("text1") or "", 350),
             "text2": _single_paragraph_slide_text(item.get("text2") or "", 900),
