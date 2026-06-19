@@ -36,8 +36,9 @@ SYS_PROMPT = (
     "Do not refer to the source as a transcript, clip, speech, interview, or video unless that is explicitly certain. "
     "Do not write phrases like during his speech, in the transcript, in this clip, or in the video. "
     "Do not use meta-referential language that points back to the source format — never write phrases like "
-    "the comment says, the post points out, the post notes, the caption reads, according to the post, "
-    "as the post states, or similar constructions. State facts and claims directly and assertively. "
+    "the headline says, the headline reads, the article says, the article states, the comment says, "
+    "the post points out, the post notes, the caption reads, according to the post, as the post states, "
+    "or similar constructions. State facts and claims directly and assertively. "
     "Write as if you are describing the underlying event or claim directly. "
     "Avoid speculation, flourish, links, or references to Trump's current office status."
 )
@@ -387,8 +388,8 @@ def carousel_slide_rules() -> str:
         "* name: short lowercase account username or domain, no @ symbol\n"
         "* quote: the single most clickbait-worthy line that captures the juiciest revelation, accusation, conflict, or consequence from the content. Under 120 chars. No quotation marks, no attribution. This is the large-format display line on slide 1 — it does not need to be verbatim from the transcript. Write it to stop a scroll. If a verbatim line is genuinely the strongest choice, use it; otherwise write the most punchy, factually grounded version of the central point.\n"
         "* text1: clickbait headline. Stop-scrolling hook that names the person and teases the accusation, reveal, or stakes without repeating the quote. Under 150 chars. Single paragraph.\n"
-        "* text2: quote-heavy. Pack in the strongest direct lines, exchanges, names, dates, numbers, charges, contradictions, or legal details. Use the full space — target 450–650 chars. Only go shorter if the source is genuinely thin.\n"
-        "* text3: broader context — political backdrop, consequences, fallout, unanswered questions, policy stakes, or next steps. Use the full space — target 450–650 chars. Only go shorter if the source is genuinely thin.\n"
+        "* text2: quote-heavy. Use the strongest exchanges, pushback, direct lines, new facts, verified context, names, dates, numbers, contradictions, or legal details. Use the full space — target 450–650 chars. Only go shorter if the source is genuinely thin.\n"
+        "* text3: broader context, stakes, political backdrop, public reaction, fallout, unanswered questions, public consequences, policy stakes, legal implications, or next steps. Use the full space — target 450–650 chars. Only go shorter if the source is genuinely thin.\n"
         "* Each slide adds a new concrete detail. Never restate what appeared in a previous slide.\n"
         "* Prioritize numbers, names, dates, direct quotes, charges, rulings, dollar amounts, and locations over generic summaries.\n\n"
 
@@ -397,7 +398,7 @@ def carousel_slide_rules() -> str:
         "Use names, numbers, dates, quotes, conflicts, and consequences. Prefer concrete facts over abstract framing.\n"
         "Write facts directly. Never describe the source or the writing itself.\n"
         "When tempted to write 'the argument is' or 'the claim is' — replace it with the actual fact, quote, consequence, or verified context.\n"
-        "BANNED PHRASES: the argument is, the claim is, the warning is, the speaker says, the clip says, the video says, the post says, according to the post, the caption reads, the speaker, the transcript, the creator said, the comment says, the post points out, the post notes, this matters because, why this matters\n\n"
+        "BANNED PHRASES: the argument is, the claim is, the warning is, the headline says, the headline reads, the article says, the article states, the article reads, the speaker says, the clip says, the video says, the post says, according to the post, the caption reads, the speaker, the transcript, the creator said, the comment says, the post points out, the post notes, this matters because, why this matters\n\n"
 
         "QUOTES\n"
         "For text2 and text3: pull verbatim quotes from the transcript first. Do not invent, paraphrase as a quote, or attribute anything not said verbatim in the transcript. Each slide should include at least one direct quote when available. Prioritize text1 and text2 for direct quotes; text3 may rely more on context when it explains the stakes better.\n"

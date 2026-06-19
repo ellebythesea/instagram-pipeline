@@ -197,8 +197,9 @@ SYS_PROMPT = (
     "Do not refer to the source as a transcript, clip, speech, interview, or video unless that is explicitly certain. "
     "Do not write phrases like during his speech, in the transcript, in this clip, or in the video. "
     "Do not use meta-referential language that points back to the source format — never write phrases like "
-    "the comment says, the post points out, the post notes, the caption reads, according to the post, "
-    "as the post states, or similar constructions. State facts and claims directly and assertively. "
+    "the headline says, the headline reads, the article says, the article states, the comment says, "
+    "the post points out, the post notes, the caption reads, according to the post, as the post states, "
+    "or similar constructions. State facts and claims directly and assertively. "
     "Write as if you are describing the underlying event or claim directly. "
     "Do not use first-person narrative."
 )
