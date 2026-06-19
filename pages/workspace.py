@@ -1579,7 +1579,7 @@ def _visible_rows_with_target(rows: list[dict], limit: int, target_row_number: s
 
 def _render_editor_grid(editor_rows: list[dict], selected_row_num: int | None = None) -> None:
     cards = []
-    for row in editor_rows:
+    for i, row in enumerate(editor_rows):
         row_num = row.get("row_number")
         username = _cell_text(row.get("Source Username")).strip().lstrip("@")
         media_type = _cell_text(row.get("Media Type")).strip().lower() or "post"
@@ -1590,7 +1590,12 @@ def _render_editor_grid(editor_rows: list[dict], selected_row_num: int | None = 
             for label, title in _grid_badges(row)
         )
         label = f"@{username}" if username and media_type != "article" else (username or f"Row {row_num}")
-        href = f"?workspace_row={row_num}#workspace-row-{row_num}"
+        if i == 0:
+            href = "?"
+            extra_attrs = ' title="Refresh workspace"'
+        else:
+            href = f"?workspace_row={row_num}#workspace-row-{row_num}"
+            extra_attrs = ""
         if image_url:
             media_html = f'<img src="{html.escape(image_url)}" alt="{html.escape(label)}" loading="lazy" decoding="async">'
         else:
@@ -1601,7 +1606,7 @@ def _render_editor_grid(editor_rows: list[dict], selected_row_num: int | None = 
             )
         cards.append(
             f"""
-            <a class="workspace-grid-card{selected_class}" href="{html.escape(href)}">
+            <a class="workspace-grid-card{selected_class}" href="{html.escape(href)}"{extra_attrs}>
               {media_html}
               <div class="workspace-grid-badges">{badge_html}</div>
               <div class="workspace-grid-meta">{html.escape(label)} · {html.escape(media_type)}</div>
@@ -4090,17 +4095,15 @@ def _copy_tabs(
 ) -> None:
     tab_labels = ["Slides", "Caption", "Original"]
     content_tab_key = f"workspace_row_content_tab_{row_num}"
-    current_content_tab = st.session_state.get(content_tab_key, "Slides")
-    if current_content_tab not in tab_labels:
-        current_content_tab = "Slides"
-        st.session_state[content_tab_key] = current_content_tab
+    if content_tab_key not in st.session_state or st.session_state[content_tab_key] not in tab_labels:
+        st.session_state[content_tab_key] = "Slides"
     selected_content_tab = st.segmented_control(
         "Content",
         tab_labels,
         key=content_tab_key,
         label_visibility="collapsed",
         width="stretch",
-    ) or "Caption"
+    ) or "Slides"
     original_preview = _build_original_caption_preview(
         original_caption,
         username,
