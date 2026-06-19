@@ -352,13 +352,13 @@ def generate_carousel_copy(row: dict) -> dict[str, str]:
 
 
 def _article_domain_name(row: dict) -> str:
-    """Extract @domain.com from the article URL, e.g. @wsj.com."""
+    """Extract domain.com from the article URL, e.g. thehill.com."""
     url = (row.get("Instagram URL") or "").strip()
     try:
         host = urlparse(url).hostname or ""
         domain = re.sub(r"^www\.", "", host).lower()
         if domain:
-            return f"@{domain}"
+            return domain
     except Exception:
         pass
     return (row.get("Source Username") or "").strip()
