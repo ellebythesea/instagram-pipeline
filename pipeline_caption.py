@@ -385,7 +385,7 @@ def carousel_slide_rules() -> str:
 
         "FIELDS\n"
         "* name: short lowercase account username or domain, no @ symbol\n"
-        "* quote: most attention-grabbing verbatim line from the transcript. Under 120 chars. No quotation marks, no attribution. If no strong verbatim line exists, write the most charged accurate paraphrase in the speaker's voice.\n"
+        "* quote: the single most clickbait-worthy line that captures the juiciest revelation, accusation, conflict, or consequence from the content. Under 120 chars. No quotation marks, no attribution. This is the large-format display line on slide 1 — it does not need to be verbatim from the transcript. Write it to stop a scroll. If a verbatim line is genuinely the strongest choice, use it; otherwise write the most punchy, factually grounded version of the central point.\n"
         "* text1: clickbait headline. Stop-scrolling hook that names the person and teases the accusation, reveal, or stakes without repeating the quote. Under 150 chars. Single paragraph.\n"
         "* text2: quote-heavy. Pack in the strongest direct lines, exchanges, names, dates, numbers, charges, contradictions, or legal details. Use the full space — target 450–650 chars. Only go shorter if the source is genuinely thin.\n"
         "* text3: broader context — political backdrop, consequences, fallout, unanswered questions, policy stakes, or next steps. Use the full space — target 450–650 chars. Only go shorter if the source is genuinely thin.\n"
@@ -400,7 +400,7 @@ def carousel_slide_rules() -> str:
         "BANNED PHRASES: the argument is, the claim is, the warning is, the speaker says, the clip says, the video says, the post says, according to the post, the caption reads, the speaker, the transcript, the creator said, the comment says, the post points out, the post notes, this matters because, why this matters\n\n"
 
         "QUOTES\n"
-        "Pull verbatim quotes from the transcript first. Do not invent, paraphrase as a quote, or attribute anything not said verbatim. Each slide should include at least one direct quote when available. Prioritize text1 and text2 for direct quotes; text3 may rely more on context when it explains the stakes better.\n"
+        "For text2 and text3: pull verbatim quotes from the transcript first. Do not invent, paraphrase as a quote, or attribute anything not said verbatim in the transcript. Each slide should include at least one direct quote when available. Prioritize text1 and text2 for direct quotes; text3 may rely more on context when it explains the stakes better.\n"
         "For notable public figures — politicians, executives, celebrities, activists, experts, anyone whose direct words carry weight — pack each slide with as much verbatim content from the transcript as the character limit allows. Use their exact words rather than paraphrases whenever possible.\n\n"
 
         "FORMATTING\n"
@@ -411,7 +411,7 @@ def carousel_slide_rules() -> str:
         "* No markdown or commentary outside JSON\n\n"
 
         "QUALITY CHECK\n"
-        "Before returning: quote is verbatim, text1 under 150 chars, text2 and text3 are 450–650 chars, no banned phrases, no repeated facts across slides, valid JSON with straight double quotes.\n"
+        "Before returning: quote is under 120 chars and scroll-stopping, text1 under 150 chars, text2 and text3 are 450–650 chars with verbatim quotes from transcript, no banned phrases, no repeated facts across slides, valid JSON with straight double quotes.\n"
     )
 
 
