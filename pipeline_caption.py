@@ -387,9 +387,10 @@ def carousel_slide_rules() -> str:
         "* name: short lowercase account username or domain, no @ symbol\n"
         "* quote: most attention-grabbing verbatim line from the transcript. Under 120 chars. No quotation marks, no attribution. If no strong verbatim line exists, write the most charged accurate paraphrase in the speaker's voice.\n"
         "* text1: clickbait headline. Stop-scrolling hook that names the person and teases the accusation, reveal, or stakes without repeating the quote. Under 150 chars. Single paragraph.\n"
-        "* text2: quote-heavy. Pack in the strongest direct lines, exchanges, names, dates, numbers, charges, contradictions, or legal details. Target 450–650 chars. Only go shorter if the source is genuinely thin.\n"
-        "* text3: broader context — political backdrop, consequences, fallout, unanswered questions, policy stakes, or next steps. Target 450–650 chars. Only go shorter if the source is genuinely thin.\n"
-        "* Each slide adds a new concrete detail. Never restate what appeared in a previous slide.\n\n"
+        "* text2: quote-heavy. Pack in the strongest direct lines, exchanges, names, dates, numbers, charges, contradictions, or legal details. Use the full space — target 450–650 chars. Only go shorter if the source is genuinely thin.\n"
+        "* text3: broader context — political backdrop, consequences, fallout, unanswered questions, policy stakes, or next steps. Use the full space — target 450–650 chars. Only go shorter if the source is genuinely thin.\n"
+        "* Each slide adds a new concrete detail. Never restate what appeared in a previous slide.\n"
+        "* Prioritize numbers, names, dates, direct quotes, charges, rulings, dollar amounts, and locations over generic summaries.\n\n"
 
         "STYLE\n"
         "Write like a viral political news account. Direct, confident, factual, conversational.\n"
@@ -399,7 +400,8 @@ def carousel_slide_rules() -> str:
         "BANNED PHRASES: the argument is, the claim is, the warning is, the speaker says, the clip says, the video says, the post says, according to the post, the caption reads, the speaker, the transcript, the creator said, the comment says, the post points out, the post notes, this matters because, why this matters\n\n"
 
         "QUOTES\n"
-        "Pull verbatim quotes from the transcript first. Do not invent, paraphrase as a quote, or attribute anything not said verbatim. Each slide should include at least one direct quote when available. For notable public figures, maximize verbatim quotes across all slides.\n\n"
+        "Pull verbatim quotes from the transcript first. Do not invent, paraphrase as a quote, or attribute anything not said verbatim. Each slide should include at least one direct quote when available. Prioritize text1 and text2 for direct quotes; text3 may rely more on context when it explains the stakes better.\n"
+        "For notable public figures — politicians, executives, celebrities, activists, experts, anyone whose direct words carry weight — pack each slide with as much verbatim content from the transcript as the character limit allows. Use their exact words rather than paraphrases whenever possible.\n\n"
 
         "FORMATTING\n"
         "* Single continuous paragraph per field — no line breaks, no \\n, no \\r, no unicode line separators\n"
