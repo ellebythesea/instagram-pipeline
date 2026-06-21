@@ -258,7 +258,7 @@ def get_all_rows(sheet_id: str) -> list[dict]:
     if cached is not None:
         return cached
     ws = _worksheet(sheet_id)
-    records = _with_backoff(ws.get_all_records, default_blank="")
+    records = _with_backoff(ws.get_all_records, default_blank="", expected_headers=_EXPECTED_HEADERS)
     for i, r in enumerate(records):
         r["row_number"] = i + 2  # header is row 1
     _set_cached_rows(sheet_id, "posts", records)
