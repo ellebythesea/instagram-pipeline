@@ -1,7 +1,7 @@
 """Google Sheets helper — read rows and write pipeline results.
 
-Column order is fixed per spec. Headers are used for reads (get_all_records),
-column letter ranges are used for writes since ranges are inherently positional.
+Column order is fixed per spec. Rows are read positionally using _EXPECTED_HEADERS
+so duplicate or misnamed sheet headers cannot corrupt field mapping.
 
 Sheet layout:
   A  Instagram URL      B  Required Hashtags  C  Source Username
@@ -258,9 +258,12 @@ def get_all_rows(sheet_id: str) -> list[dict]:
     if cached is not None:
         return cached
     ws = _worksheet(sheet_id)
-    records = _with_backoff(ws.get_all_records, default_blank="", expected_headers=_EXPECTED_HEADERS)
-    for i, r in enumerate(records):
-        r["row_number"] = i + 2  # header is row 1
+    all_values = _with_backoff(ws.get_all_values)
+    records = []
+    for i, row in enumerate(all_values[1:]):  # skip header row
+        record = {key: (row[j] if j < len(row) else "") for j, key in enumerate(_EXPECTED_HEADERS)}
+        record["row_number"] = i + 2
+        records.append(record)
     _set_cached_rows(sheet_id, "posts", records)
     return [row.copy() for row in records]
 
