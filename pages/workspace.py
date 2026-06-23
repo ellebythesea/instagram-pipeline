@@ -70,8 +70,83 @@ generate_batch_carousel_copy_with_model = getattr(
 
 MODE_OPTIONS = [
     "Create a Post",
+    "Crop Video",
     "Generate headline",
 ]
+
+# ---------------------------------------------------------------------------
+# Video crop helpers
+# ---------------------------------------------------------------------------
+
+def _crop_ffmpeg_path() -> str:
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return "ffmpeg"
+
+
+def _crop_ffprobe_path() -> str:
+    try:
+        import imageio_ffmpeg
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+        probe = exe.replace("ffmpeg", "ffprobe")
+        if os.path.exists(probe):
+            return probe
+    except Exception:
+        pass
+    return "ffprobe"
+
+
+def _crop_video_to_bytes(src_path: str, ratio_w: int, ratio_h: int) -> bytes:
+    result = subprocess.run(
+        [
+            _crop_ffprobe_path(), "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=width,height",
+            "-of", "csv=p=0",
+            src_path,
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        raise RuntimeError(f"Could not read video dimensions: {result.stderr}")
+    parts = result.stdout.strip().split(",")
+    w, h = int(parts[0]), int(parts[1])
+
+    target = ratio_w / ratio_h
+    if w / h > target:
+        new_w = int(h * ratio_w / ratio_h)
+        new_h = h
+    else:
+        new_w = w
+        new_h = int(w * ratio_h / ratio_w)
+    new_w -= new_w % 2
+    new_h -= new_h % 2
+    x = (w - new_w) // 2
+    y = (h - new_h) // 2
+
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as out_f:
+        out_path = out_f.name
+    try:
+        cmd = [
+            _crop_ffmpeg_path(), "-y", "-i", src_path,
+            "-vf", f"crop={new_w}:{new_h}:{x}:{y}",
+            "-c:v", "libx264", "-crf", "18", "-preset", "fast",
+            "-c:a", "copy",
+            out_path,
+        ]
+        proc = subprocess.run(cmd, capture_output=True)
+        if proc.returncode != 0:
+            raise RuntimeError(proc.stderr.decode(errors="replace"))
+        with open(out_path, "rb") as f:
+            return f.read()
+    finally:
+        try:
+            os.unlink(out_path)
+        except Exception:
+            pass
 
 ORG_HASHTAG_OPTIONS = [
     "",
@@ -3015,7 +3090,7 @@ def _render_workspace_home_action_dialog() -> None:
         st.caption(mode_help[mode])
 
     selected_org_hashtag = ""
-    if mode != "Create a Post":
+    if mode not in {"Create a Post", "Crop Video"}:
         default_link = _clean_home_links()[0] if _clean_home_links() else ""
         if "workspace_home_dialog_link" not in st.session_state:
             st.session_state["workspace_home_dialog_link"] = default_link
@@ -3149,6 +3224,51 @@ def _render_workspace_home_action_dialog() -> None:
                 _render_candidate_output_card("Slide 3", text3, "workspace_home_candidate_article_slide3")
                 _render_candidate_output_card("Generated Caption", caption_text, "workspace_home_candidate_article_caption")
                 st.html(_copy_button_html("Copy All", copy_all_text, "workspace_home_candidate_article_copy_all", primary=True))
+    elif mode == "Crop Video":
+        _CROP_RATIOS = {
+            "4:5  (Instagram portrait)": (4, 5),
+            "9:16 (Stories / Reels)":    (9, 16),
+            "1:1  (Square)":             (1, 1),
+            "16:9 (Landscape)":          (16, 9),
+        }
+        uploaded = st.file_uploader(
+            "Upload video",
+            type=["mp4", "mov", "avi", "mkv", "m4v"],
+            key="workspace_crop_video_upload",
+        )
+        ratio_label = st.radio(
+            "Crop to",
+            list(_CROP_RATIOS.keys()),
+            horizontal=True,
+            key="workspace_crop_video_ratio",
+        )
+        if uploaded and st.button("Crop video", key="workspace_crop_video_submit", type="primary", width="stretch"):
+            rw, rh = _CROP_RATIOS[ratio_label]
+            suffix = os.path.splitext(uploaded.name)[-1] or ".mp4"
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as src_f:
+                src_path = src_f.name
+            try:
+                with open(src_path, "wb") as f:
+                    f.write(uploaded.read())
+                with st.spinner(f"Cropping to {rw}:{rh}…"):
+                    video_bytes = _crop_video_to_bytes(src_path, rw, rh)
+                base = os.path.splitext(uploaded.name)[0]
+                st.success("Done!")
+                st.download_button(
+                    label="Download cropped video",
+                    data=video_bytes,
+                    file_name=f"{base}_{rw}x{rh}.mp4",
+                    mime="video/mp4",
+                    key="workspace_crop_video_download",
+                )
+            except Exception as e:
+                st.error(f"Crop failed: {describe_error(e)}")
+            finally:
+                try:
+                    os.unlink(src_path)
+                except Exception:
+                    pass
+
     elif mode == "Create a Post":
         prompt = st.text_area(
             "Post prompt",

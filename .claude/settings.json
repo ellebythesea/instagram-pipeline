@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/usr/bin/git commit -m 'Revert quote param from update_carousel_fields; write via update_quote *)",
+      "Bash(/usr/bin/git commit -m 'Reduce slide 1 headline font size to ~12px equivalent *)",
+      "Bash(/usr/bin/git commit -m 'Quote display and generation improvements *)",
+      "Bash(/usr/bin/git commit -m 'Default slide 1 headline font +6px \\(3 A+ presses\\) *)",
+      "Bash(/usr/bin/git commit -m 'Reorder slide 1 controls: quote A-/A+, text A-/A+, bg Up/Down, Fit *)",
+      "Bash(/usr/bin/git commit -m 'Quote marks in prompt value but stripped from preview; Edit quote below slide 1 *)",
+      "Bash(/usr/bin/git commit -m 'Show quote marks in preview if present in quote field *)",
+      "Bash(/usr/bin/git commit -m 'Bump slide 1 text default down 2 sizes \\(+6 → +2px\\) *)",
+      "Bash(git -C /Users/lisamollica/Documents/GitHub/instagram-pipeline status)",
+      "Bash(git -C /Users/lisamollica/Documents/GitHub/instagram-pipeline log --oneline -3)",
+      "Bash(git -C /Users/lisamollica/Documents/GitHub/instagram-pipeline diff pages/workspace.py utils/styles.py --stat)",
+      "Bash(git -C /Users/lisamollica/Documents/GitHub/instagram-pipeline add pages/workspace.py utils/styles.py)",
+      "Bash(git -C /Users/lisamollica/Documents/GitHub/instagram-pipeline commit -m ' *)",
+      "Bash(python -c \"import article_source; import pages.workspace\")",
+      "Bash(timeout 15 python -m streamlit run app.py --server.headless true)",
+      "Bash(python -m streamlit run app.py --server.headless true)",
+      "Bash(kill %1)",
+      "Bash(wait)",
+      "Bash(python -c \"import article_source\")",
+      "Bash(python -c ' *)",
+      "Bash(echo \"exit: $?\")"
+    ]
+  }
+}
