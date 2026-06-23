@@ -8,5 +8,6 @@ pg = st.navigation([
     st.Page("pages/post_editor.py", title="Post Editor", icon="✏️"),
     st.Page("pages/headlines.py", title="Headlines", icon="🗞️"),
     st.Page("pages/reel_downloader.py", title="Media Downloader", icon="🎞️"),
+    st.Page("pages/video_cropper.py", title="Video Cropper", icon="✂️"),
 ])
 pg.run()
