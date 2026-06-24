@@ -4271,7 +4271,7 @@ def _render_workspace_preview_control_bar(
                     if action == "font_down":
                         st.session_state[font_adjust_key] = max(-80, current_font_adjust - 2)
                     elif action == "font_up":
-                        st.session_state[font_adjust_key] = min(24, current_font_adjust + 2)
+                        st.session_state[font_adjust_key] = min(200, current_font_adjust + 2)
                     elif action == "bg_up" and background_adjust_key is not None:
                         st.session_state[background_adjust_key] = max(-1200, current_background_adjust - 48)
                     elif action == "bg_down" and background_adjust_key is not None:
@@ -4456,7 +4456,7 @@ def _copy_tabs(
                         _rerun_workspace("Edit")
                 with s1_cols[3]:
                     if st.button("A+", key=f"workspace_preview_{row_num}_slide1_font_up", width="stretch"):
-                        st.session_state[slide_one_font_adjust_key] = min(24, current_slide_one_font_adjust + 2)
+                        st.session_state[slide_one_font_adjust_key] = min(200, current_slide_one_font_adjust + 2)
                         st.session_state["workspace_preview_scroll_target"] = anchor_id
                         _rerun_workspace("Edit")
                 with s1_cols[4]:
@@ -4607,7 +4607,7 @@ def _copy_tabs(
                         _rerun_workspace("Edit")
                 with _s2_cols[1]:
                     if st.button("A+", key=f"workspace_preview_{row_num}_slide2_font_up", width="stretch"):
-                        st.session_state[slide_two_font_adjust_key] = min(24, current_slide_two_font_adjust + 2)
+                        st.session_state[slide_two_font_adjust_key] = min(200, current_slide_two_font_adjust + 2)
                         _rerun_workspace("Edit")
                 with _s2_cols[2]:
                     if st.button("Edit Text 2", key=f"workspace_inline_edit_text2_{row_num}", width="stretch"):
@@ -4652,7 +4652,7 @@ def _copy_tabs(
                         _rerun_workspace("Edit")
                 with _s3_cols[1]:
                     if st.button("A+", key=f"workspace_preview_{row_num}_slide3_font_up", width="stretch"):
-                        st.session_state[slide_three_font_adjust_key] = min(24, current_slide_three_font_adjust + 2)
+                        st.session_state[slide_three_font_adjust_key] = min(200, current_slide_three_font_adjust + 2)
                         _rerun_workspace("Edit")
                 with _s3_cols[2]:
                     if st.button("Edit Text 3", key=f"workspace_inline_edit_text3_{row_num}", width="stretch"):
