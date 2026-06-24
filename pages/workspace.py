@@ -2802,6 +2802,16 @@ def _create_post_from_prompt(prompt: str, custom_link: str, uploaded_file, speak
     slide_data = _parse_slide_json(prompt)
     top_comment = _encode_top_comment(_build_link_cta(custom_link), pinned=False) if custom_link else ""
 
+    # Derive default name from link domain (e.g. "newyorktimes.com") for non-Instagram URLs.
+    link_domain = ""
+    if custom_link and not _is_instagram_url(custom_link):
+        try:
+            _parsed = urlparse(custom_link.strip())
+            _host = _parsed.netloc or _parsed.path
+            link_domain = _host.removeprefix("www.").split("/")[0].strip().lower()
+        except Exception:
+            pass
+
     if uploaded_file is not None:
         file_name = uploaded_file.name or "upload"
         ext = os.path.splitext(file_name)[-1].lower()
@@ -2824,19 +2834,20 @@ def _create_post_from_prompt(prompt: str, custom_link: str, uploaded_file, speak
 
     if slide_data:
         caption_context = slide_data.get("generated_caption") or slide_data.get("caption") or ""
+        _row_name = slide_data.get("name", "").strip() or link_domain
         append_manual_post_row(GOOGLE_SHEET_ID, {
             "url": custom_link,
             "caption_context": caption_context,
             "original_caption": caption_context,
             "transcript": transcript,
-            "source_username": slide_data.get("name", ""),
+            "source_username": _row_name,
             "speaker_name": speaker_name,
             "media_type": media_type,
             "media_link": media_link,
             "thumbnail_link": thumbnail_link,
             "top_comment": top_comment,
             "status": "ingested",
-            "name": slide_data.get("name", ""),
+            "name": _row_name,
             "quote": (slide_data.get("quote") or "").strip().strip('"').strip("'").rstrip("."),
             "text1": slide_data.get("text1", ""),
             "text2": slide_data.get("text2", ""),
@@ -2852,12 +2863,14 @@ def _create_post_from_prompt(prompt: str, custom_link: str, uploaded_file, speak
             "caption_context": prompt,
             "original_caption": prompt,
             "transcript": transcript,
+            "source_username": link_domain,
             "speaker_name": speaker_name,
             "media_type": media_type,
             "media_link": media_link,
             "thumbnail_link": thumbnail_link,
             "top_comment": top_comment,
             "status": "ingested",
+            "name": link_domain,
         })
 
     all_rows = _run_with_sheet_quota_countdown(
