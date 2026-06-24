@@ -1088,6 +1088,9 @@ delete_sheet_row = sheet_ops.delete_row
 get_fundraising_links = getattr(sheet_ops, "get_fundraising_links", lambda _sheet_id: [])
 get_slide_cta_options = getattr(sheet_ops, "get_slide_cta_options", lambda _sheet_id: {})
 update_slide_cta_option = getattr(sheet_ops, "update_slide_cta_option", lambda _sheet_id, _row_number, _option: None)
+get_original_thumbnails = getattr(sheet_ops, "get_original_thumbnails", lambda _sheet_id: {})
+save_original_thumbnail = getattr(sheet_ops, "save_original_thumbnail", lambda _sheet_id, _row_number, _link: None)
+clear_original_thumbnail = getattr(sheet_ops, "clear_original_thumbnail", lambda _sheet_id, _row_number: None)
 if hasattr(sheet_ops, "get_last_scheduled_times"):
     get_last_scheduled_times = sheet_ops.get_last_scheduled_times
 else:
@@ -2224,6 +2227,10 @@ def _blur_row_thumbnail(row: dict, sigma: int = 30) -> str:
     if not thumb_link:
         raise RuntimeError("No thumbnail link on this row.")
 
+    # Persist original before overwriting so Unblur can restore it.
+    save_original_thumbnail(GOOGLE_SHEET_ID, row["row_number"], thumb_link)
+    st.session_state.setdefault("workspace_original_thumbnails", {})[str(row["row_number"])] = thumb_link
+
     row_num = row["row_number"]
     screenshots_folder_id = get_or_create_subfolder(
         GOOGLE_DRIVE_FOLDER_ID,
@@ -2264,6 +2271,27 @@ def _blur_row_thumbnail(row: dict, sigma: int = 30) -> str:
         return thumbnail_link
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def _unblur_row_thumbnail(row: dict) -> str:
+    """Restore the pre-blur thumbnail and remove the stored original link."""
+    if update_thumbnail_link is None:
+        raise RuntimeError("Thumbnail link updates are not supported in this build.")
+
+    row_num = row["row_number"]
+    originals = get_original_thumbnails(GOOGLE_SHEET_ID)
+    original_link = originals.get(str(row_num), "").strip()
+    if not original_link:
+        raise RuntimeError("No original thumbnail stored for this row.")
+
+    update_thumbnail_link(GOOGLE_SHEET_ID, row_num, original_link)
+    clear_original_thumbnail(GOOGLE_SHEET_ID, row_num)
+
+    # Refresh session-state cache so the button toggles immediately.
+    if "workspace_original_thumbnails" in st.session_state:
+        st.session_state["workspace_original_thumbnails"].pop(str(row_num), None)
+
+    return original_link
 
 
 def _render_slide_one_png(
@@ -4477,13 +4505,20 @@ def _copy_tabs(
                             _open_workspace_slide_action_dialog(row_num, "text1")
                             _rerun_workspace("Edit")
                     with s1_cols[11]:
-                        if st.button("Blur", key=f"workspace_blur_thumb_{row_num}", width="stretch"):
+                        _is_blurred = bool(st.session_state.get("workspace_original_thumbnails", {}).get(str(row_num)))
+                        _blur_label = "Unblur" if _is_blurred else "Blur"
+                        if st.button(_blur_label, key=f"workspace_blur_thumb_{row_num}", width="stretch"):
                             try:
-                                with st.spinner("Blurring thumbnail…"):
-                                    _blur_row_thumbnail(row)
-                                st.session_state["workspace_success"] = f"Row {row_num}: thumbnail blurred."
+                                if _is_blurred:
+                                    with st.spinner("Restoring original…"):
+                                        _unblur_row_thumbnail(row)
+                                    st.session_state["workspace_success"] = f"Row {row_num}: original thumbnail restored."
+                                else:
+                                    with st.spinner("Blurring thumbnail…"):
+                                        _blur_row_thumbnail(row)
+                                    st.session_state["workspace_success"] = f"Row {row_num}: thumbnail blurred."
                             except Exception as _be:
-                                st.session_state["workspace_error"] = f"Row {row_num}: blur failed — {describe_error(_be)}"
+                                st.session_state["workspace_error"] = f"Row {row_num}: {'unblur' if _is_blurred else 'blur'} failed — {describe_error(_be)}"
                             _rerun_workspace("Edit")
                 else:
                     with s1_cols[7]:
@@ -4504,13 +4539,20 @@ def _copy_tabs(
                             _open_workspace_slide_action_dialog(row_num, "text1")
                             _rerun_workspace("Edit")
                     with s1_cols[10]:
-                        if st.button("Blur", key=f"workspace_blur_thumb_{row_num}", width="stretch"):
+                        _is_blurred = bool(st.session_state.get("workspace_original_thumbnails", {}).get(str(row_num)))
+                        _blur_label = "Unblur" if _is_blurred else "Blur"
+                        if st.button(_blur_label, key=f"workspace_blur_thumb_{row_num}", width="stretch"):
                             try:
-                                with st.spinner("Blurring thumbnail…"):
-                                    _blur_row_thumbnail(row)
-                                st.session_state["workspace_success"] = f"Row {row_num}: thumbnail blurred."
+                                if _is_blurred:
+                                    with st.spinner("Restoring original…"):
+                                        _unblur_row_thumbnail(row)
+                                    st.session_state["workspace_success"] = f"Row {row_num}: original thumbnail restored."
+                                else:
+                                    with st.spinner("Blurring thumbnail…"):
+                                        _blur_row_thumbnail(row)
+                                    st.session_state["workspace_success"] = f"Row {row_num}: thumbnail blurred."
                             except Exception as _be:
-                                st.session_state["workspace_error"] = f"Row {row_num}: blur failed — {describe_error(_be)}"
+                                st.session_state["workspace_error"] = f"Row {row_num}: {'unblur' if _is_blurred else 'blur'} failed — {describe_error(_be)}"
                             _rerun_workspace("Edit")
             if st.session_state.get(f"workspace_quote_picker_{row_num}"):
                 _quote_options = st.session_state.get(f"workspace_quote_options_{row_num}", [])
@@ -6828,6 +6870,13 @@ workspace_rows_error = ""
 workspace_rows: list[dict] = []
 home_notice = st.session_state.pop("workspace_home_notice", "")
 slide_cta_options: dict[str, str] = {}
+
+# Load original-thumbnail map once per session; blur/unblur update it in-place.
+if "workspace_original_thumbnails" not in st.session_state:
+    try:
+        st.session_state["workspace_original_thumbnails"] = get_original_thumbnails(GOOGLE_SHEET_ID)
+    except Exception:
+        st.session_state["workspace_original_thumbnails"] = {}
 
 if active_section_tab == "Home":
     try:

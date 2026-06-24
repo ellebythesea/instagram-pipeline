@@ -69,6 +69,7 @@ _ROWS_CACHE_TTL_SECONDS = 120.0
 _METADATA_SHEET_TITLE = "__workspace_meta__"
 _LAST_SCHEDULED_TIMES_KEY = "last_scheduled_times"
 _SLIDE_CTA_OPTIONS_KEY = "slide_cta_options"
+_ORIGINAL_THUMBNAILS_KEY = "original_thumbnails"
 _FUNDRAISING_SHEET_TITLE = "fundraising"
 _SUBSTACK_SHEET_TITLE = "substack"
 _SUBSTACK_HEADERS = [
@@ -614,6 +615,49 @@ def update_quote(sheet_id: str, row_number: int, quote: str) -> None:
     ws = _worksheet(sheet_id)
     _with_backoff(ws.update, f"Y{row_number}", [[(quote or "").strip()]])
     _invalidate_rows_cache(sheet_id)
+
+
+def get_original_thumbnails(sheet_id: str) -> dict[str, str]:
+    """Return saved pre-blur thumbnail links keyed by row number (as str)."""
+    ws = _metadata_worksheet(sheet_id)
+    records = _with_backoff(ws.get_all_records, default_blank="")
+    for record in records:
+        if (record.get("key", "") or "").strip() != _ORIGINAL_THUMBNAILS_KEY:
+            continue
+        raw = (record.get("value", "") or "").strip()
+        if not raw:
+            return {}
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
+        return {str(k): str(v) for k, v in data.items() if k and v} if isinstance(data, dict) else {}
+    return {}
+
+
+def _update_original_thumbnails(sheet_id: str, data: dict) -> None:
+    ws = _metadata_worksheet(sheet_id)
+    payload = json.dumps(data)
+    records = _with_backoff(ws.get_all_records, default_blank="")
+    for index, record in enumerate(records, start=2):
+        if (record.get("key", "") or "").strip() == _ORIGINAL_THUMBNAILS_KEY:
+            _with_backoff(ws.update, f"A{index}:B{index}", [[_ORIGINAL_THUMBNAILS_KEY, payload]])
+            return
+    _with_backoff(ws.append_row, [_ORIGINAL_THUMBNAILS_KEY, payload], value_input_option="USER_ENTERED")
+
+
+def save_original_thumbnail(sheet_id: str, row_number: int, link: str) -> None:
+    """Persist a row's pre-blur thumbnail link so Unblur can restore it."""
+    data = get_original_thumbnails(sheet_id)
+    data[str(row_number)] = link
+    _update_original_thumbnails(sheet_id, data)
+
+
+def clear_original_thumbnail(sheet_id: str, row_number: int) -> None:
+    """Remove the stored pre-blur thumbnail link after Unblur is used."""
+    data = get_original_thumbnails(sheet_id)
+    data.pop(str(row_number), None)
+    _update_original_thumbnails(sheet_id, data)
 
 
 def get_fundraising_links(sheet_id: str) -> list[dict[str, str]]:
