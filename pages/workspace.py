@@ -4409,7 +4409,7 @@ def _copy_tabs(
         ).strip()
         if _is_article:
             _article_domain = urlparse(source_url).netloc.lower().removeprefix("www.") if source_url else ""
-            slide_handle = current_speaker_name or _article_domain
+            slide_handle = current_speaker_name.lstrip("@") or _article_domain
         else:
             slide_handle = current_speaker_name or username.strip()
             if slide_handle and slide_handle == username.strip() and not slide_handle.startswith("@"):

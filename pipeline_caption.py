@@ -369,7 +369,11 @@ def _carousel_display_name(row: dict) -> str:
     speaker_name = row.get("Speaker Name", "").strip()
     username = row.get("Source Username", "").strip()
     media_type = (row.get("Media Type", "") or "").strip().lower()
-    if media_type == "article":
+    url = (row.get("Instagram URL") or "").strip()
+    _is_article_row = media_type == "article" or (
+        url.startswith("http") and "instagram.com" not in url.lower()
+    )
+    if _is_article_row:
         return _article_domain_name(row)
     if speaker_name:
         return speaker_name
