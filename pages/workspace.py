@@ -4385,10 +4385,14 @@ def _copy_tabs(
         if current_slide_two_cta not in {"more", "article", "petition", "video", "custom link", "hidden"}:
             current_slide_two_cta = "hidden"
             st.session_state[slide_two_cta_key] = current_slide_two_cta
-        current_slide_three_font_adjust = int(st.session_state.get(slide_three_font_adjust_key, -2) or -2)
-        current_slide_four_font_adjust = int(st.session_state.get(slide_four_font_adjust_key, -2) or -2)
-        current_slide_five_font_adjust = int(st.session_state.get(slide_five_font_adjust_key, -2) or -2)
-        current_slide_six_font_adjust = int(st.session_state.get(slide_six_font_adjust_key, -2) or -2)
+        _raw_s3_font = st.session_state.get(slide_three_font_adjust_key)
+        current_slide_three_font_adjust = -2 if _raw_s3_font is None else int(_raw_s3_font)
+        _raw_s4_font = st.session_state.get(slide_four_font_adjust_key)
+        current_slide_four_font_adjust = -2 if _raw_s4_font is None else int(_raw_s4_font)
+        _raw_s5_font = st.session_state.get(slide_five_font_adjust_key)
+        current_slide_five_font_adjust = -2 if _raw_s5_font is None else int(_raw_s5_font)
+        _raw_s6_font = st.session_state.get(slide_six_font_adjust_key)
+        current_slide_six_font_adjust = -2 if _raw_s6_font is None else int(_raw_s6_font)
         _known_cta_options = {"more", "article", "substack", "petition", "video", "custom link", "hidden"}
         _is_article = _is_article_url(source_url)
         default_slide_three_cta_option = "article" if (_is_article or _is_candidate_article_row(prompt_row or {})) else "hidden"
