@@ -2215,6 +2215,57 @@ def _replace_row_thumbnail_from_upload(row: dict, uploaded_file) -> str:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+def _blur_row_thumbnail(row: dict, sigma: int = 30) -> str:
+    """Download the thumbnail, apply Gaussian blur, re-upload, update sheet."""
+    if update_thumbnail_link is None:
+        raise RuntimeError("Thumbnail link updates are not supported in this build.")
+
+    thumb_link = _cell_text(row.get("Thumbnail Drive Link")).strip()
+    if not thumb_link:
+        raise RuntimeError("No thumbnail link on this row.")
+
+    row_num = row["row_number"]
+    screenshots_folder_id = get_or_create_subfolder(
+        GOOGLE_DRIVE_FOLDER_ID,
+        GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER,
+    )
+
+    tmp_dir = tempfile.mkdtemp(prefix="workspace_blur_")
+    try:
+        src_path = os.path.join(tmp_dir, "thumb_src.jpg")
+        download_drive_file(thumb_link, src_path)
+
+        out_path = os.path.join(tmp_dir, "thumb_blur.jpg")
+        ffmpeg = _crop_ffmpeg_path()
+        cmd = [
+            ffmpeg, "-y", "-i", src_path,
+            "-vf", f"gblur=sigma={sigma}",
+            "-q:v", "2",
+            out_path,
+        ]
+        proc = subprocess.run(cmd, capture_output=True)
+        if proc.returncode != 0:
+            raise RuntimeError(proc.stderr.decode(errors="replace"))
+
+        media_links = [lnk.strip() for lnk in (_cell_text(row.get("Media Drive Link")) or "").split(",") if lnk.strip()]
+        screenshot_stem = f"row_{row_num}_thumb_blur"
+        if media_links:
+            try:
+                metadata = get_drive_file_metadata(media_links[0])
+                filename = (metadata.get("name") or "").strip()
+                if filename:
+                    screenshot_stem = f"{os.path.splitext(filename)[0]}_thumb_blur"
+            except Exception:
+                pass
+
+        upload_name = f"{screenshot_stem}.jpg"
+        thumbnail_link = upload_to_drive(out_path, upload_name, screenshots_folder_id)
+        update_thumbnail_link(GOOGLE_SHEET_ID, row_num, thumbnail_link)
+        return thumbnail_link
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
 def _render_slide_one_png(
     output_path: str,
     tmp_dir: str,
@@ -4345,7 +4396,7 @@ def _copy_tabs(
             anchor_id = f"workspace-preview-ctrl-{row_num}_slide1"
             with st.container():
                 st.markdown(f'<div id="{anchor_id}" class="workspace-preview-controls-anchor workspace-slide1-ctrl-anchor"></div>', unsafe_allow_html=True)
-                _s1_col_count = 11 if slide_quote else 10
+                _s1_col_count = 12 if slide_quote else 11
                 s1_cols = st.columns(_s1_col_count, gap="small")
                 with s1_cols[0]:
                     if st.button("Q-", key=f"workspace_quote_font_down_{row_num}", width="stretch"):
@@ -4425,6 +4476,15 @@ def _copy_tabs(
                         if st.button("Edit Text 1", key=f"workspace_inline_edit_text1_{row_num}", width="stretch"):
                             _open_workspace_slide_action_dialog(row_num, "text1")
                             _rerun_workspace("Edit")
+                    with s1_cols[11]:
+                        if st.button("Blur", key=f"workspace_blur_thumb_{row_num}", width="stretch"):
+                            try:
+                                with st.spinner("Blurring thumbnail…"):
+                                    _blur_row_thumbnail(row)
+                                st.session_state["workspace_success"] = f"Row {row_num}: thumbnail blurred."
+                            except Exception as _be:
+                                st.session_state["workspace_error"] = f"Row {row_num}: blur failed — {describe_error(_be)}"
+                            _rerun_workspace("Edit")
                 else:
                     with s1_cols[7]:
                         if st.button("Quote", key=f"workspace_quote_edit_{row_num}", width="stretch"):
@@ -4442,6 +4502,15 @@ def _copy_tabs(
                     with s1_cols[9]:
                         if st.button("Edit Text 1", key=f"workspace_inline_edit_text1_{row_num}", width="stretch"):
                             _open_workspace_slide_action_dialog(row_num, "text1")
+                            _rerun_workspace("Edit")
+                    with s1_cols[10]:
+                        if st.button("Blur", key=f"workspace_blur_thumb_{row_num}", width="stretch"):
+                            try:
+                                with st.spinner("Blurring thumbnail…"):
+                                    _blur_row_thumbnail(row)
+                                st.session_state["workspace_success"] = f"Row {row_num}: thumbnail blurred."
+                            except Exception as _be:
+                                st.session_state["workspace_error"] = f"Row {row_num}: blur failed — {describe_error(_be)}"
                             _rerun_workspace("Edit")
             if st.session_state.get(f"workspace_quote_picker_{row_num}"):
                 _quote_options = st.session_state.get(f"workspace_quote_options_{row_num}", [])
