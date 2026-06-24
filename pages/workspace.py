@@ -2218,7 +2218,7 @@ def _replace_row_thumbnail_from_upload(row: dict, uploaded_file) -> str:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
-def _blur_row_thumbnail(row: dict, sigma: int = 30) -> str:
+def _blur_row_thumbnail(row: dict, sigma: int = 10) -> str:
     """Download the thumbnail, apply Gaussian blur, re-upload, update sheet."""
     if update_thumbnail_link is None:
         raise RuntimeError("Thumbnail link updates are not supported in this build.")
