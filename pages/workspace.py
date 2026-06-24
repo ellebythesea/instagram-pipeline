@@ -6190,6 +6190,12 @@ def _delete_workspace_row(row: dict) -> None:
         st.session_state["workspace_transcribe_reset_rows"] = [
             pending for pending in pending_transcribe_resets if pending != _workspace_key(row, "transcribe")
         ]
+    # Clear blur state so the button doesn't bleed onto the next row that inherits this number.
+    try:
+        clear_original_thumbnail(GOOGLE_SHEET_ID, row_number)
+    except Exception:
+        pass
+    st.session_state.get("workspace_original_thumbnails", {}).pop(str(row_number), None)
     _clear_workspace_row_state(row)
 
 
