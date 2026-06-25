@@ -385,7 +385,7 @@ def carousel_slide_rules() -> str:
         "Use reliable external context — names, dates, votes, rulings, dollar amounts — only when it materially improves accuracy. Never invent facts.\n\n"
 
         "FIELDS\n"
-        "* name: short lowercase account username or domain, no @ symbol\n"
+        "* name: for article rows (media_type: article), write a 1-2 word lowercase topic label (e.g. 'immigration', 'supreme court', 'tax cuts') — never a domain or URL. For all other rows, use the short lowercase account username or display_name hint provided, no @ symbol\n"
         "* quote: the single most clickbait-worthy line that captures the juiciest revelation, accusation, conflict, or consequence from the content. Under 120 chars. No quotation marks, no attribution. This is the large-format display line on slide 1 — it does not need to be verbatim from the transcript. Write it to stop a scroll. If a verbatim line is genuinely the strongest choice, use it; otherwise write the most punchy, factually grounded version of the central point.\n"
         "* text1: clickbait headline. Stop-scrolling hook that names the person and teases the accusation, reveal, or stakes without repeating the quote. Under 150 chars. Single paragraph.\n"
         "* text2: quote-heavy. Use the strongest exchanges, pushback, direct lines, new facts, verified context, names, dates, numbers, contradictions, or legal details. Use the full space — target 450–650 chars. Only go shorter if the source is genuinely thin.\n"
@@ -452,6 +452,7 @@ def generate_carousel_copy_with_model(row: dict, model: str = "gpt-4o") -> dict[
 
     transcript, original_caption, caption_context = _row_source_text(row)
     display_name = _carousel_display_name(row)
+    is_article = (row.get("Media Type", "") or "").strip().lower() == "article"
 
     user_parts = []
     if transcript:
@@ -464,9 +465,14 @@ def generate_carousel_copy_with_model(row: dict, model: str = "gpt-4o") -> dict[
     if row.get("Speaker Name", "").strip():
         user_parts.append(f"Featured person: {row['Speaker Name'].strip()}")
 
+    if is_article:
+        name_hint = "* For name, write a 1-2 word lowercase topic or subject label (e.g. 'immigration', 'supreme court', 'tax reform') — not a domain or username"
+    else:
+        name_hint = f"* Use this label for name when possible: {display_name or 'unknown'}"
+
     prompt = (
         _carousel_slide_prompt_instructions(include_row_numbers=False)
-        + f"\n* Use this label for name when possible: {display_name or 'unknown'}"
+        + f"\n{name_hint}"
     )
 
     response = _get_client().chat.completions.create(
@@ -505,13 +511,14 @@ def generate_batch_carousel_copy_with_model(rows: list[dict], model: str = "gpt-
         if row_number <= 0:
             continue
         transcript, original_caption, caption_context = _row_source_text(row)
-        display_name = _carousel_display_name(row)
+        _row_media_type = (row.get("Media Type", "") or "").strip().lower()
+        display_name = "" if _row_media_type == "article" else _carousel_display_name(row)
         display_names[row_number] = display_name
         blocks.append(
             "\n".join(
                 [
                     f"ROW {row_number}",
-                    f"display_name: {display_name or 'unknown'}",
+                    f"display_name: {display_name or '(use topic label)'}",
                     f"username: {(row.get('Source Username') or '').strip() or 'unknown'}",
                     f"media_type: {(row.get('Media Type') or '').strip().lower() or 'post'}",
                     f"speaker_name: {(row.get('Speaker Name') or '').strip() or '(none)'}",
