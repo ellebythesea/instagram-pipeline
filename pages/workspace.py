@@ -2832,6 +2832,9 @@ def _create_post_from_prompt(prompt: str, custom_link: str, uploaded_file, speak
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
+    if link_domain and not media_type:
+        media_type = "article"
+
     if slide_data:
         caption_context = slide_data.get("generated_caption") or slide_data.get("caption") or ""
         _row_name = slide_data.get("name", "").strip() or link_domain
