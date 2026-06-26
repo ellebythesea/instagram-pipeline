@@ -321,8 +321,10 @@ def generate_row_caption(row: dict) -> str:
             caption = f"{caption}\n\n{top_comment}"
 
     media_type = (row.get("Media Type", "") or "").strip().lower()
+    source_url = (row.get("Instagram URL") or "").strip()
+    is_instagram = "instagram.com" in source_url.lower()
 
-    if original_caption and media_type != "article":
+    if original_caption and media_type != "article" and is_instagram:
         caption = f"{caption}\n\n--\n\n{original_caption}"
 
     required_hashtags = row.get("Required Hashtags", "").strip()
@@ -332,7 +334,7 @@ def generate_row_caption(row: dict) -> str:
 
     username = row.get("Source Username", "").strip().lstrip("@")
     footer_parts = []
-    if media_type != "article" and username and username.lower() != "unknown":
+    if is_instagram and media_type != "article" and username and username.lower() != "unknown":
         footer_parts.append(f"Follow @{username} for more.")
 
     footer = DEFAULT_POST_FOOTER.strip()
