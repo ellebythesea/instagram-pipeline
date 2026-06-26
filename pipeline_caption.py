@@ -16,7 +16,7 @@ SLIDE_BODY_FONT_CQW = 5.5
 SLIDE_BODY_FONT_MAX_REM = 2.7
 
 SYS_PROMPT = (
-    "You are a sharp political analyst. Write a new short, clear social post "
+    "You are a political journalist. Write a new short, clear social post "
     "under 1300 characters using exactly two simple paragraphs based on the source material provided. "
     "Do not reproduce or rewrite the original caption — use it only as reference for facts and context.\n\n"
     "Never write the caption in first person. Do not use I, me, my, mine, we, us, our, or ours "
@@ -388,15 +388,15 @@ def carousel_slide_rules() -> str:
 
         "FIELDS\n"
         "* name: for article rows (media_type: article), write a 1-2 word lowercase topic label (e.g. 'immigration', 'supreme court', 'tax cuts') — never a domain or URL. For all other rows, use the short lowercase account username or display_name hint provided, no @ symbol\n"
-        "* quote: the single most clickbait-worthy line that captures the juiciest revelation, accusation, conflict, or consequence from the content. Under 120 chars. No quotation marks, no attribution. This is the large-format display line on slide 1 — it does not need to be verbatim from the transcript. Write it to stop a scroll. If a verbatim line is genuinely the strongest choice, use it; otherwise write the most punchy, factually grounded version of the central point.\n"
-        "* text1: clickbait headline. Stop-scrolling hook that names the person and teases the accusation, reveal, or stakes without repeating the quote. Under 150 chars. Single paragraph.\n"
+        "* quote: the single most compelling line that captures the key revelation, accusation, conflict, or consequence from the content. Under 120 chars. No quotation marks, no attribution. This is the large-format display line on slide 1 — it does not need to be verbatim from the transcript. Make it specific and factually grounded. If a verbatim line is genuinely the strongest choice, use it; otherwise write the most precise version of the central point.\n"
+        "* text1: strong opening headline that names the person and frames the accusation, reveal, or stakes without repeating the quote. Under 150 chars. Single paragraph.\n"
         "* text2: quote-heavy. Use the strongest exchanges, pushback, direct lines, new facts, verified context, names, dates, numbers, contradictions, or legal details. Use the full space — target 450–650 chars. Only go shorter if the source is genuinely thin.\n"
         "* text3: broader context, stakes, political backdrop, public reaction, fallout, unanswered questions, public consequences, policy stakes, legal implications, or next steps. Use the full space — target 450–650 chars. Only go shorter if the source is genuinely thin.\n"
         "* Each slide adds a new concrete detail. Never restate what appeared in a previous slide.\n"
         "* Prioritize numbers, names, dates, direct quotes, charges, rulings, dollar amounts, and locations over generic summaries.\n\n"
 
         "STYLE\n"
-        "Write like a viral political news account. Direct, confident, factual, conversational.\n"
+        "Write like a political news outlet. Direct, confident, factual, conversational.\n"
         "Use names, numbers, dates, quotes, conflicts, and consequences. Prefer concrete facts over abstract framing.\n"
         "Write facts directly. Never describe the source, the slides, or the writing itself. Do not narrate the structure of the carousel — write as if reporting the event, not describing a post.\n"
         "When tempted to write 'the argument is' or 'the claim is' — replace it with the actual fact, quote, consequence, or verified context.\n"
@@ -414,7 +414,7 @@ def carousel_slide_rules() -> str:
         "* No markdown or commentary outside JSON\n\n"
 
         "QUALITY CHECK\n"
-        "Before returning: quote is under 120 chars and scroll-stopping, text1 under 150 chars, text2 and text3 are 450–650 chars with verbatim quotes from transcript, no banned phrases, no repeated facts across slides, valid JSON with straight double quotes.\n"
+        "Before returning: quote is under 120 chars and specific, text1 under 150 chars, text2 and text3 are 450–650 chars with verbatim quotes from transcript, no banned phrases, no repeated facts across slides, valid JSON with straight double quotes.\n"
     )
 
 
@@ -480,7 +480,7 @@ def generate_carousel_copy_with_model(row: dict, model: str = "gpt-4o") -> dict[
     response = _get_client().chat.completions.create(
         model=model,
         messages=[
-            {"role": "system", "content": "You write concise viral political carousel copy and return valid JSON only."},
+            {"role": "system", "content": "You write concise political news carousel copy and return valid JSON only."},
             {"role": "user", "content": prompt + "\n\n" + "\n\n".join(user_parts)},
         ],
         **_completion_limit_arg(model, 500),
@@ -542,7 +542,7 @@ def generate_batch_carousel_copy_with_model(rows: list[dict], model: str = "gpt-
         messages=[
             {
                 "role": "system",
-                "content": "You write concise viral political carousel copy and return valid JSON only.",
+                "content": "You write concise political news carousel copy and return valid JSON only.",
             },
             {"role": "user", "content": prompt + "\n\n" + "\n\n---\n\n".join(blocks)},
         ],
