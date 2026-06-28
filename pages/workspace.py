@@ -2158,7 +2158,7 @@ def _preview_folder_base_name(username: str, media_link: str, row_num: int) -> t
 def _ffprobe_path() -> str:
     ffprobe_path = shutil.which("ffprobe")
     if not ffprobe_path:
-        raise RuntimeError("ffprobe is not installed or not on PATH.")
+        ffprobe_path = _crop_ffprobe_path()
     return ffprobe_path
 
 
@@ -2675,7 +2675,7 @@ def _split_video_to_folder(local_video_path: str, output_dir: str, mode: str = "
     if duration <= 0:
         raise RuntimeError("Could not determine video duration for splitting.")
 
-    ffmpeg_path = shutil.which("ffmpeg") or "ffmpeg"
+    ffmpeg_path = _crop_ffmpeg_path()
     outputs: list[str] = []
     start_seconds = 0.0
     segment_index = 0
@@ -2689,10 +2689,10 @@ def _split_video_to_folder(local_video_path: str, output_dir: str, mode: str = "
             "-loglevel",
             "error",
             "-y",
-            "-i",
-            local_video_path,
             "-ss",
             f"{start_seconds:.3f}",
+            "-i",
+            local_video_path,
             "-t",
             f"{clip_duration:.3f}",
             "-vf",
@@ -2709,7 +2709,9 @@ def _split_video_to_folder(local_video_path: str, output_dir: str, mode: str = "
             "192k",
             output_path,
         ]
-        subprocess.run(command, check=True)
+        proc = subprocess.run(command, capture_output=True)
+        if proc.returncode != 0:
+            raise RuntimeError(proc.stderr.decode(errors="replace"))
         outputs.append(output_path)
         start_seconds += 60.0
         segment_index += 1
