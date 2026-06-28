@@ -2,7 +2,7 @@
 headless = true
 runOnSave = true
 fileWatcherType = "auto"
-maxUploadSize = 2000
+maxUploadSize = 200
 
 [browser]
 gatherUsageStats = false
