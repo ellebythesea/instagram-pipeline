@@ -3387,41 +3387,36 @@ def _render_workspace_home_action_dialog() -> None:
             key="workspace_crop_video_mode",
         )
         if uploaded and st.button("Process video", key="workspace_crop_video_submit", type="primary", width="stretch"):
+            split_mode = "fit" if "Fit" in mode_label else "fill"
             suffix = os.path.splitext(uploaded.name)[-1] or ".mp4"
-            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as src_f:
-                src_path = src_f.name
+            tmp_dir = tempfile.mkdtemp(prefix="workspace_crop_")
             try:
+                src_path = os.path.join(tmp_dir, f"source{suffix}")
                 with open(src_path, "wb") as f:
                     f.write(uploaded.read())
-                label = "Cropping" if "Crop" in mode_label else "Fitting"
-                with st.spinner(f"{label} video…"):
-                    if "Crop" in mode_label:
-                        video_bytes = _crop_video_to_bytes(src_path, 4, 5)
-                    else:
-                        video_bytes = _fit_video_to_bytes(src_path)
+                seg_dir = os.path.join(tmp_dir, "segments")
+                os.makedirs(seg_dir, exist_ok=True)
+                label = "Cropping" if split_mode == "fill" else "Fitting"
+                with st.spinner(f"{label} and splitting into 60-second segments…"):
+                    segment_paths = _split_video_to_folder(src_path, seg_dir, mode=split_mode)
                 ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                mode_tag = "crop" if "Crop" in mode_label else "fit"
-                filename = f"{mode_tag}_{ts}.mp4"
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as out_f:
-                    out_path = out_f.name
-                with open(out_path, "wb") as f:
-                    f.write(video_bytes)
-                try:
-                    folder_id = get_or_create_subfolder(GOOGLE_DRIVE_FOLDER_ID, "Cropped Videos")
-                    drive_link = upload_to_drive(out_path, filename, folder_id)
-                    st.success(f"Uploaded: [{filename}]({drive_link})")
-                finally:
-                    try:
-                        os.unlink(out_path)
-                    except Exception:
-                        pass
+                folder_name = f"{'crop' if split_mode == 'fill' else 'fit'}_{ts}"
+                folder_id = get_or_create_subfolder(
+                    get_or_create_subfolder(GOOGLE_DRIVE_FOLDER_ID, "Cropped Videos"),
+                    folder_name,
+                )
+                links = []
+                for seg_path in segment_paths:
+                    seg_filename = os.path.basename(seg_path)
+                    link = upload_to_drive(seg_path, seg_filename, folder_id)
+                    links.append((seg_filename, link))
+                st.success(f"Uploaded {len(links)} segment{'s' if len(links) != 1 else ''}:")
+                for name, link in links:
+                    st.markdown(f"- [{name}]({link})")
             except Exception as e:
                 st.error(f"Failed: {describe_error(e)}")
             finally:
-                try:
-                    os.unlink(src_path)
-                except Exception:
-                    pass
+                shutil.rmtree(tmp_dir, ignore_errors=True)
 
     elif mode == "Create a Post":
         prompt = st.text_area(
