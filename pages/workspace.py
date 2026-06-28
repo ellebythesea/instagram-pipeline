@@ -148,6 +148,61 @@ def _crop_video_to_bytes(src_path: str, ratio_w: int, ratio_h: int) -> bytes:
         except Exception:
             pass
 
+def _fit_video_to_bytes(src_path: str) -> bytes:
+    """Scale video to fit within 4:5, padding sides/top with black bars."""
+    result = subprocess.run(
+        [
+            _crop_ffprobe_path(), "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=width,height",
+            "-of", "csv=p=0",
+            src_path,
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        raise RuntimeError(f"Could not read video dimensions: {result.stderr}")
+    parts = result.stdout.strip().split(",")
+    w, h = int(parts[0]), int(parts[1])
+
+    if w / h > 4 / 5:
+        out_w = w - (w % 2)
+        out_h = int(out_w * 5 / 4)
+        out_h -= out_h % 2
+    else:
+        out_h = h - (h % 2)
+        out_w = int(out_h * 4 / 5)
+        out_w -= out_w % 2
+
+    vf = (
+        f"scale={out_w}:{out_h}:force_original_aspect_ratio=decrease,"
+        f"pad={out_w}:{out_h}:(ow-iw)/2:(oh-ih)/2:black"
+    )
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as out_f:
+        out_path = out_f.name
+    try:
+        proc = subprocess.run(
+            [
+                _crop_ffmpeg_path(), "-y", "-i", src_path,
+                "-vf", vf,
+                "-c:v", "libx264", "-crf", "18", "-preset", "fast",
+                "-c:a", "copy",
+                out_path,
+            ],
+            capture_output=True,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(proc.stderr.decode(errors="replace"))
+        with open(out_path, "rb") as f:
+            return f.read()
+    finally:
+        try:
+            os.unlink(out_path)
+        except Exception:
+            pass
+
+
 ORG_HASHTAG_OPTIONS = [
     "",
     "Good Influence",
@@ -3320,44 +3375,48 @@ def _render_workspace_home_action_dialog() -> None:
                 _render_candidate_output_card("Generated Caption", caption_text, "workspace_home_candidate_article_caption")
                 st.html(_copy_button_html("Copy All", copy_all_text, "workspace_home_candidate_article_copy_all", primary=True))
     elif mode == "Crop Video":
-        _CROP_RATIOS = {
-            "4:5  (Instagram portrait)": (4, 5),
-            "9:16 (Stories / Reels)":    (9, 16),
-            "1:1  (Square)":             (1, 1),
-            "16:9 (Landscape)":          (16, 9),
-        }
         uploaded = st.file_uploader(
             "Upload video",
             type=["mp4", "mov", "avi", "mkv", "m4v"],
             key="workspace_crop_video_upload",
         )
-        ratio_label = st.radio(
-            "Crop to",
-            list(_CROP_RATIOS.keys()),
+        mode_label = st.radio(
+            "Format",
+            ["Crop to 4:5 (fill frame)", "Fit into 4:5 (letterbox)"],
             horizontal=True,
-            key="workspace_crop_video_ratio",
+            key="workspace_crop_video_mode",
         )
-        if uploaded and st.button("Crop video", key="workspace_crop_video_submit", type="primary", width="stretch"):
-            rw, rh = _CROP_RATIOS[ratio_label]
+        if uploaded and st.button("Process video", key="workspace_crop_video_submit", type="primary", width="stretch"):
             suffix = os.path.splitext(uploaded.name)[-1] or ".mp4"
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as src_f:
                 src_path = src_f.name
             try:
                 with open(src_path, "wb") as f:
                     f.write(uploaded.read())
-                with st.spinner(f"Cropping to {rw}:{rh}…"):
-                    video_bytes = _crop_video_to_bytes(src_path, rw, rh)
-                base = os.path.splitext(uploaded.name)[0]
-                st.success("Done!")
-                st.download_button(
-                    label="Download cropped video",
-                    data=video_bytes,
-                    file_name=f"{base}_{rw}x{rh}.mp4",
-                    mime="video/mp4",
-                    key="workspace_crop_video_download",
-                )
+                label = "Cropping" if "Crop" in mode_label else "Fitting"
+                with st.spinner(f"{label} video…"):
+                    if "Crop" in mode_label:
+                        video_bytes = _crop_video_to_bytes(src_path, 4, 5)
+                    else:
+                        video_bytes = _fit_video_to_bytes(src_path)
+                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                mode_tag = "crop" if "Crop" in mode_label else "fit"
+                filename = f"{mode_tag}_{ts}.mp4"
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as out_f:
+                    out_path = out_f.name
+                with open(out_path, "wb") as f:
+                    f.write(video_bytes)
+                try:
+                    folder_id = get_or_create_subfolder(GOOGLE_DRIVE_FOLDER_ID, "Cropped Videos")
+                    drive_link = upload_to_drive(out_path, filename, folder_id)
+                    st.success(f"Uploaded: [{filename}]({drive_link})")
+                finally:
+                    try:
+                        os.unlink(out_path)
+                    except Exception:
+                        pass
             except Exception as e:
-                st.error(f"Crop failed: {describe_error(e)}")
+                st.error(f"Failed: {describe_error(e)}")
             finally:
                 try:
                     os.unlink(src_path)
