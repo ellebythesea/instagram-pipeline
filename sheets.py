@@ -221,15 +221,8 @@ def _optional_worksheet(sheet_id: str, title: str) -> gspread.Worksheet | None:
 
 
 def _ensure_headers(sheet_id: str, ws: gspread.Worksheet) -> None:
-    """Restore the expected header row if it is missing or incorrect."""
-    cache_key = (sheet_id, ws.title)
-    if cache_key in _headers_checked:
-        return
-    current = _with_backoff(ws.row_values, 1)
-    normalized = current[:len(_EXPECTED_HEADERS)]
-    if normalized != _EXPECTED_HEADERS:
-        _with_backoff(ws.update, "A1:Y1", [_EXPECTED_HEADERS])
-    _headers_checked.add(cache_key)
+    """No-op: all reads use positional indexing; all writes use direct column letters."""
+    pass
 
 
 def _invalidate_rows_cache(sheet_id: str) -> None:
@@ -384,19 +377,14 @@ def update_generated_post_slides_and_status(
 ) -> None:
     """Write generated post slide fields and status to the main posts tab."""
     ws = _worksheet(sheet_id)
-    _update_row_fields_by_headers(
-        ws,
-        row_number,
-        {
-            "name": name,
-            "text1": text1,
-            "text2": text2,
-            "text3": text3,
-            "text4": text4,
-            "text5": text5,
-            "text6": text6,
-            "status": status,
-        },
+    # Q=name, R=text1, S=text2, T=text3, U=Slide CTA (skip), V=text4, W=text5, X=text6, N=status
+    _with_backoff(
+        ws.batch_update,
+        [
+            {"range": f"Q{row_number}:T{row_number}", "values": [[name, text1, text2, text3]]},
+            {"range": f"V{row_number}:X{row_number}", "values": [[text4, text5, text6]]},
+            {"range": f"N{row_number}", "values": [[status]]},
+        ],
     )
     _invalidate_rows_cache(sheet_id)
 
