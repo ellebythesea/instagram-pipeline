@@ -33,18 +33,30 @@ from config import GOOGLE_SHEET_ID
 from ingest_helpers import build_filename_prefix, upload_media_bundle
 from instagram_cookies import instagram_cookies_file
 from pipeline_caption import generate_row_caption
+from post_scraper import process_url as scrape_post
 from reel_scraper import process_url as scrape_reel
 from sheets import get_pending_rows, update_caption, update_ingest_result
 
 
+def _is_reel(url: str) -> bool:
+    return "/reel/" in url.lower() or "/reels/" in url.lower()
+
+
+def _is_instagram(url: str) -> bool:
+    return "instagram.com" in url.lower()
+
+
 def ingest_row(row: dict, cookies_path: str) -> dict:
     url = (row.get("Instagram URL") or "").strip()
-    if "/reel/" not in url.lower() and "/reels/" not in url.lower():
-        return {"status": "skipped: not a reel"}
+    if not _is_instagram(url):
+        return {"status": "skipped: not an Instagram URL"}
 
     tmp_dir = None
     try:
-        data = scrape_reel(url, cookies_path=cookies_path)
+        if _is_reel(url):
+            data = scrape_reel(url, cookies_path=cookies_path)
+        else:
+            data = scrape_post(url, cookies_path=cookies_path)
         filename_prefix = build_filename_prefix(row.get("row_number"), data["username"])
         uploaded = upload_media_bundle(data, filename_prefix=filename_prefix)
         tmp_dir = uploaded["tmp_dir"]
@@ -84,17 +96,16 @@ def main() -> None:
 
     with instagram_cookies_file(args.cookies) as cookies_path:
         pending = get_pending_rows(GOOGLE_SHEET_ID)
-        reels = [r for r in pending if "/reel/" in (r.get("Instagram URL") or "").lower()
-                 or "/reels/" in (r.get("Instagram URL") or "").lower()]
+        instagram_rows = [r for r in pending if _is_instagram(r.get("Instagram URL") or "")]
 
-        if not reels:
-            print("No pending reel rows found.")
+        if not instagram_rows:
+            print("No pending Instagram rows found.")
             return
 
-        print(f"Found {len(reels)} pending reel row(s). Using cookies: {cookies_path}\n")
+        print(f"Found {len(instagram_rows)} pending Instagram row(s). Using cookies: {cookies_path}\n")
         succeeded = 0
 
-        for row in reels:
+        for row in instagram_rows:
             row_num = row["row_number"]
             url = (row.get("Instagram URL") or "").strip()
             print(f"Row {row_num}: {url}")
@@ -130,7 +141,7 @@ def main() -> None:
             else:
                 print(f"  ✗ {status}")
 
-        print(f"\nDone: {succeeded}/{len(reels)} reel(s) ingested.")
+        print(f"\nDone: {succeeded}/{len(instagram_rows)} row(s) ingested.")
 
 
 if __name__ == "__main__":

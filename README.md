@@ -171,7 +171,7 @@ Override the cookies file location if needed:
 .venv/bin/python scripts/ingest_with_ytdlp.py --cookies /path/to/cookies.txt
 ```
 
-The script processes only pending reel rows (status = blank/pending). Non-reel rows (posts, articles) are skipped — those aren't affected by the Apify block. Re-export the cookies file when your Instagram session expires.
+The script processes all pending Instagram rows (reels, photos, and carousels). Article rows are skipped. Re-export the cookies file when your Instagram session expires.
 
 ### Google Drive OAuth token refresh
 
