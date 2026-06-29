@@ -1,6 +1,8 @@
 """Instagram post scraper — fetches photo/video URLs, caption, and metadata.
 
 Uses Instagram's private API with an authenticated session cookie.
+Falls back to Apify if the private API fails. Apify fallbacks are logged to
+stdout so you can monitor how often they're needed.
 Handles single images, carousels (mixed photo/video), and video posts.
 Swappable module: replace this file to use a different post source.
 """
@@ -74,6 +76,105 @@ def _make_session(cookies_path: str) -> requests.Session:
     return session
 
 
+def _process_url_apify(url: str) -> dict:
+    from apify_client import ApifyClient
+    from config import APIFY_API_TOKEN, APIFY_POST_ACTOR_ID
+
+    if not APIFY_API_TOKEN:
+        raise RuntimeError("APIFY_API_TOKEN is not configured.")
+    client = ApifyClient(APIFY_API_TOKEN)
+    run = client.actor(APIFY_POST_ACTOR_ID).call(
+        run_input={"directUrls": [url], "resultsType": "posts", "resultsLimit": 1},
+        timeout_secs=300,
+    )
+    if not run or run.get("status") != "SUCCEEDED":
+        raise RuntimeError(f"Apify post actor failed: {run.get('status') if run else 'no response'}")
+
+    items = list(client.dataset(run["defaultDatasetId"]).iterate_items())
+    if not items:
+        raise RuntimeError("Apify post actor returned no items")
+    item = items[0]
+
+    username = (
+        item.get("ownerUsername") or item.get("username")
+        or (item.get("owner") or {}).get("username") or "unknown"
+    )
+    original_caption = item.get("caption") or item.get("description") or ""
+    post_id = (
+        item.get("shortCode") or item.get("shortcode")
+        or item.get("id") or _extract_shortcode(url) or "unknown"
+    )
+
+    ts = item.get("timestamp") or item.get("takenAtTimestamp")
+    if ts:
+        try:
+            if isinstance(ts, (int, float)):
+                post_date = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
+            else:
+                post_date = str(ts)[:10]
+        except Exception:
+            post_date = date.today().isoformat()
+    else:
+        post_date = date.today().isoformat()
+
+    video_url = item.get("videoUrl") or item.get("videoHDUrl") or item.get("video_url")
+
+    def _build_entry(node: dict) -> dict | None:
+        vid = node.get("videoUrl") or node.get("videoHDUrl") or node.get("video_url") or node.get("videoSrc")
+        img = node.get("displayUrl") or node.get("imageUrl") or node.get("url") or node.get("thumbnailUrl")
+        if vid:
+            return {"kind": "video", "url": vid, "thumbnail_url": img or "", "ext": _ext_from_url(vid, ".mp4")}
+        if img:
+            return {"kind": "image", "url": img, "thumbnail_url": img, "ext": _ext_from_url(img, ".jpg")}
+        return None
+
+    entries: list[dict] = []
+    for group_key in ("childPosts", "sidecarChildren", "carouselMedia", "carousel_media"):
+        group = item.get(group_key)
+        if isinstance(group, list):
+            seen: set[str] = set()
+            for child in group:
+                entry = _build_entry(child)
+                if entry and entry["url"] not in seen:
+                    entries.append(entry)
+                    seen.add(entry["url"])
+            if entries:
+                break
+
+    if not entries:
+        if video_url:
+            thumb = item.get("thumbnailUrl") or item.get("displayUrl") or ""
+            entries = [{"kind": "video", "url": video_url, "thumbnail_url": thumb, "ext": _ext_from_url(video_url, ".mp4")}]
+        else:
+            single = item.get("displayUrl") or item.get("imageUrl") or item.get("url")
+            if single:
+                entries = [{"kind": "image", "url": single, "thumbnail_url": single, "ext": _ext_from_url(single, ".jpg")}]
+
+    if not entries:
+        raise RuntimeError("No media URLs in Apify post response")
+
+    media_urls = [e["url"] for e in entries]
+    media_kinds = [e["kind"] for e in entries]
+    media_extensions = [e["ext"] for e in entries]
+    thumbnail_url = next((e["thumbnail_url"] for e in entries if e["thumbnail_url"]), "")
+    photo_count = sum(1 for k in media_kinds if k == "image")
+    post_media_type = "reel" if len(entries) == 1 and entries[0]["kind"] == "video" else "photo"
+
+    return {
+        "username": username,
+        "media_type": post_media_type,
+        "media_urls": media_urls,
+        "media_kinds": media_kinds,
+        "media_extensions": media_extensions,
+        "thumbnail_url": thumbnail_url,
+        "original_caption": original_caption,
+        "transcript": "",
+        "photo_count": photo_count,
+        "post_id": post_id,
+        "post_date": post_date,
+    }
+
+
 def process_url(url: str, cookies_path: str | None = None) -> dict:
     """Scrape an Instagram post via Instagram's private API.
 
@@ -82,29 +183,35 @@ def process_url(url: str, cookies_path: str | None = None) -> dict:
         original_caption, transcript, photo_count, post_id, post_date
     Raises RuntimeError on failure.
     """
-    shortcode = _extract_shortcode(url)
-    if not shortcode:
-        raise RuntimeError(f"Could not extract shortcode from URL: {url}")
+    api_error: Exception | None = None
+    try:
+        shortcode = _extract_shortcode(url)
+        if not shortcode:
+            raise RuntimeError(f"Could not extract shortcode from URL: {url}")
 
-    with instagram_cookies_file(cookies_path) as ck_path:
-        session = _make_session(ck_path)
-        media_id = _shortcode_to_media_id(shortcode)
-        resp = session.get(
-            f"https://www.instagram.com/api/v1/media/{media_id}/info/",
-            headers={"Referer": f"https://www.instagram.com/p/{shortcode}/"},
-            timeout=30,
-        )
+        with instagram_cookies_file(cookies_path) as ck_path:
+            session = _make_session(ck_path)
+            media_id = _shortcode_to_media_id(shortcode)
+            resp = session.get(
+                f"https://www.instagram.com/api/v1/media/{media_id}/info/",
+                headers={"Referer": f"https://www.instagram.com/p/{shortcode}/"},
+                timeout=30,
+            )
 
-    if resp.status_code == 401:
-        raise RuntimeError("Instagram session expired. Update your cookies.")
-    if not resp.ok:
-        raise RuntimeError(f"Instagram API error {resp.status_code}: {resp.text[:200]}")
+        if resp.status_code == 401:
+            raise RuntimeError("Instagram session expired. Update your cookies.")
+        if not resp.ok:
+            raise RuntimeError(f"Instagram API error {resp.status_code}: {resp.text[:200]}")
 
-    data = resp.json()
-    items = data.get("items", [])
-    if not items:
-        raise RuntimeError("Instagram API returned no items")
-    item = items[0]
+        data = resp.json()
+        items = data.get("items", [])
+        if not items:
+            raise RuntimeError("Instagram API returned no items")
+        item = items[0]
+    except Exception as e:
+        api_error = e
+        print(f"[APIFY FALLBACK] post private API failed ({api_error}), falling back to Apify: {url}", flush=True)
+        return _process_url_apify(url)
 
     username = (item.get("user") or {}).get("username") or "unknown"
     original_caption = (item.get("caption") or {}).get("text") or ""
