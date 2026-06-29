@@ -3228,9 +3228,13 @@ def _fundraising_preset_map() -> dict[str, str]:
 
 @st.dialog("Update Instagram cookies")
 def _render_cookies_dialog() -> None:
-    st.caption(
-        "Paste the contents of a fresh `www.instagram.com_cookies.txt` file "
-        "(exported from Chrome using 'Get cookies.txt LOCALLY' while logged in to instagram.com)."
+    st.markdown(
+        "**How to get a fresh cookies file (desktop Chrome):**\n"
+        "1. Install the **Get cookies.txt LOCALLY** Chrome extension\n"
+        "2. Go to instagram.com and make sure you're logged in\n"
+        "3. Click the extension → Export\n"
+        "4. Open the downloaded file, select all, copy\n"
+        "5. Paste below and save"
     )
     cookies_text = st.text_area(
         "Cookies file contents",

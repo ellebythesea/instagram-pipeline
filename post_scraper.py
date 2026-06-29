@@ -1,33 +1,44 @@
-"""yt-dlp post scraper — fetches photo/video URLs, caption, and metadata.
+"""Instagram post scraper — fetches photo/video URLs, caption, and metadata.
 
-Uses an authenticated Instagram session via a cookies file.
+Uses Instagram's private API with an authenticated session cookie.
+Handles single images, carousels (mixed photo/video), and video posts.
 Swappable module: replace this file to use a different post source.
-Handles single images, carousels, and video posts.
 """
 from __future__ import annotations
 
-import json
-import os
+import http.cookiejar
 import re
-import shutil
-import subprocess
-import sys
 from datetime import date, datetime, timezone
 from urllib.parse import urlparse
 
+import requests
+
 from instagram_cookies import instagram_cookies_file
 
+_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 
-def _ytdlp_path() -> str:
-    venv_yt = os.path.join(os.path.dirname(sys.executable), "yt-dlp")
-    if os.path.exists(venv_yt):
-        return venv_yt
-    return shutil.which("yt-dlp") or "yt-dlp"
+_IG_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "X-IG-App-ID": "936619743392459",
+    "Accept": "*/*",
+    "Accept-Language": "en-US,en;q=0.9",
+}
 
 
-def _extract_post_id(url: str) -> str:
-    m = re.search(r"/(?:reel|reels|p)/([A-Za-z0-9_-]+)/?", url)
-    return m.group(1) if m else "unknown"
+def _shortcode_to_media_id(shortcode: str) -> str:
+    n = 0
+    for char in shortcode:
+        n = n * 64 + _ALPHABET.index(char)
+    return str(n)
+
+
+def _extract_shortcode(url: str) -> str:
+    m = re.search(r"/(?:p|reel|reels)/([A-Za-z0-9_-]+)/?", url)
+    return m.group(1) if m else ""
 
 
 def _ext_from_url(url: str, fallback: str) -> str:
@@ -39,131 +50,115 @@ def _ext_from_url(url: str, fallback: str) -> str:
     return ext if ext.startswith(".") else f".{ext}"
 
 
-def _pick_video_url(formats: list) -> str:
-    for fmt in formats:
-        if (
-            fmt.get("ext") == "mp4"
-            and fmt.get("protocol") == "https"
-            and not fmt.get("is_dash_periods")
-            and fmt.get("video_ext") == "mp4"
-        ):
-            return fmt["url"]
-    for fmt in formats:
-        if fmt.get("url") and fmt.get("ext") == "mp4" and fmt.get("protocol") == "https":
-            return fmt["url"]
-    return ""
+def _best_image(candidates: list) -> str:
+    if not candidates:
+        return ""
+    return max(candidates, key=lambda c: c.get("width", 0) * c.get("height", 0)).get("url", "")
 
 
-def _parse_entry(meta: dict) -> dict | None:
-    """Turn one yt-dlp JSON object into a media entry dict."""
-    formats = meta.get("formats", [])
-    if formats:
-        video_url = _pick_video_url(formats)
-        if video_url:
-            return {
-                "kind": "video",
-                "url": video_url,
-                "thumbnail_url": meta.get("thumbnail", ""),
-                "ext": _ext_from_url(video_url, ".mp4"),
-            }
+def _best_video(versions: list) -> str:
+    if not versions:
+        return ""
+    return max(versions, key=lambda v: v.get("width", 0) * v.get("height", 0)).get("url", "")
 
-    # Direct image URL (no formats list — yt-dlp returns url at top level for images)
-    direct_url = meta.get("url", "")
-    if direct_url and meta.get("ext", "") in ("jpg", "jpeg", "png", "webp"):
-        return {
-            "kind": "image",
-            "url": direct_url,
-            "thumbnail_url": direct_url,
-            "ext": f".{meta['ext']}",
-        }
 
-    # Fallback: thumbnail as image
-    thumbnail = meta.get("thumbnail", "")
-    if thumbnail:
-        return {
-            "kind": "image",
-            "url": thumbnail,
-            "thumbnail_url": thumbnail,
-            "ext": _ext_from_url(thumbnail, ".jpg"),
-        }
-
-    return None
+def _make_session(cookies_path: str) -> requests.Session:
+    cj = http.cookiejar.MozillaCookieJar()
+    cj.load(cookies_path, ignore_discard=True, ignore_expires=True)
+    session = requests.Session()
+    session.cookies = requests.utils.cookiejar_from_dict(
+        {c.name: c.value for c in cj}
+    )
+    csrf = session.cookies.get("csrftoken", "")
+    session.headers.update({**_IG_HEADERS, "X-CSRFToken": csrf})
+    return session
 
 
 def process_url(url: str, cookies_path: str | None = None) -> dict:
-    """Scrape an Instagram post via yt-dlp.
+    """Scrape an Instagram post via Instagram's private API.
 
     Returns:
         username, media_type, media_urls, thumbnail_url,
         original_caption, transcript, photo_count, post_id, post_date
     Raises RuntimeError on failure.
     """
-    ytdlp = _ytdlp_path()
-    with instagram_cookies_file(cookies_path) as cookies_path:
-        cmd = [
-            ytdlp, "--dump-json", "--no-download", "--quiet", "--no-warnings", "--no-update",
-            "--cookies", cookies_path,
-            url,
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
+    shortcode = _extract_shortcode(url)
+    if not shortcode:
+        raise RuntimeError(f"Could not extract shortcode from URL: {url}")
 
-    stdout = result.stdout.strip()
-    if not stdout:
-        raise RuntimeError(f"yt-dlp returned no output. stderr: {result.stderr.strip()[:300]}")
+    with instagram_cookies_file(cookies_path) as ck_path:
+        session = _make_session(ck_path)
+        media_id = _shortcode_to_media_id(shortcode)
+        resp = session.get(
+            f"https://www.instagram.com/api/v1/media/{media_id}/info/",
+            headers={"Referer": f"https://www.instagram.com/p/{shortcode}/"},
+            timeout=30,
+        )
 
-    # Carousels produce one JSON object per line; collect all of them.
-    json_lines = [line for line in stdout.splitlines() if line.startswith("{")]
-    if not json_lines:
-        raise RuntimeError(f"yt-dlp output had no JSON: {stdout[:200]}")
+    if resp.status_code == 401:
+        raise RuntimeError("Instagram session expired. Update your cookies.")
+    if not resp.ok:
+        raise RuntimeError(f"Instagram API error {resp.status_code}: {resp.text[:200]}")
 
-    first = json.loads(json_lines[0])
+    data = resp.json()
+    items = data.get("items", [])
+    if not items:
+        raise RuntimeError("Instagram API returned no items")
+    item = items[0]
 
-    username = first.get("channel") or first.get("uploader_id") or "unknown"
-    original_caption = first.get("description", "")
-    post_id = first.get("id") or first.get("display_id") or _extract_post_id(url)
+    username = (item.get("user") or {}).get("username") or "unknown"
+    original_caption = (item.get("caption") or {}).get("text") or ""
+    post_id = item.get("code") or shortcode
 
-    ts = first.get("timestamp")
+    ts = item.get("taken_at")
     if ts:
         post_date = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
     else:
-        upload_date = first.get("upload_date", "")
-        if len(upload_date) == 8:
-            post_date = f"{upload_date[:4]}-{upload_date[4:6]}-{upload_date[6:]}"
-        else:
-            post_date = date.today().isoformat()
+        post_date = date.today().isoformat()
 
+    media_type_code = item.get("media_type", 1)  # 1=image 2=video 8=carousel
     entries: list[dict] = []
-    seen_urls: set[str] = set()
-    for line in json_lines:
-        meta = json.loads(line)
-        entry = _parse_entry(meta)
-        if entry and entry["url"] not in seen_urls:
-            entries.append(entry)
-            seen_urls.add(entry["url"])
+
+    def _add_image(node: dict) -> None:
+        img = _best_image((node.get("image_versions2") or {}).get("candidates", []))
+        if img:
+            entries.append({"kind": "image", "url": img, "thumbnail_url": img, "ext": ".jpg"})
+
+    def _add_video(node: dict) -> None:
+        vid = _best_video(node.get("video_versions", []))
+        thumb = _best_image((node.get("image_versions2") or {}).get("candidates", []))
+        if vid:
+            entries.append({"kind": "video", "url": vid, "thumbnail_url": thumb, "ext": ".mp4"})
+
+    if media_type_code == 8:  # carousel
+        for child in item.get("carousel_media", []):
+            if child.get("media_type") == 2:
+                _add_video(child)
+            else:
+                _add_image(child)
+    elif media_type_code == 2:  # single video
+        _add_video(item)
+    else:  # single image
+        _add_image(item)
 
     if not entries:
-        raise RuntimeError("yt-dlp: no usable media URLs found in post response")
+        raise RuntimeError("No media URLs found in Instagram API response")
 
     media_urls = [e["url"] for e in entries]
     media_kinds = [e["kind"] for e in entries]
     media_extensions = [e["ext"] for e in entries]
-
-    thumbnail_url = (
-        next((e["thumbnail_url"] for e in entries if e["kind"] == "image" and e["thumbnail_url"]), "")
-        or entries[0]["thumbnail_url"]
-    )
-
+    thumbnail_url = next((e["thumbnail_url"] for e in entries if e["thumbnail_url"]), "")
     photo_count = sum(1 for k in media_kinds if k == "image")
 
     if len(entries) == 1 and entries[0]["kind"] == "video":
-        media_type = "reel"
+        post_media_type = "reel"
         photo_count = 0
     else:
-        media_type = "photo"
+        post_media_type = "photo"
 
     return {
         "username": username,
-        "media_type": media_type,
+        "media_type": post_media_type,
         "media_urls": media_urls,
         "media_kinds": media_kinds,
         "media_extensions": media_extensions,
