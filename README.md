@@ -155,6 +155,24 @@ The local transcription script auto-detects the synced media folder from common 
 
 These are the local scripts in `scripts/` and what they do.
 
+### Ingest reels via yt-dlp (when Apify is blocked)
+
+When Instagram is blocking Apify's scrapers, use this script to ingest pending reel rows using yt-dlp and your Chrome session instead.
+
+**One-time setup:** Install the Chrome extension **"Get cookies.txt LOCALLY"**, navigate to instagram.com while logged in, click the extension, and export. Save the file to the repo root as `www.instagram.com_cookies.txt` (it's gitignored).
+
+```bash
+.venv/bin/python scripts/ingest_with_ytdlp.py
+```
+
+Override the cookies file location if needed:
+
+```bash
+.venv/bin/python scripts/ingest_with_ytdlp.py --cookies /path/to/cookies.txt
+```
+
+The script processes only pending reel rows (status = blank/pending). Non-reel rows (posts, articles) are skipped — those aren't affected by the Apify block. Re-export the cookies file when your Instagram session expires.
+
 ### Google Drive OAuth token refresh
 
 If Drive uploads start failing because the OAuth token expired or refresh stopped working, regenerate `GOOGLE_OAUTH_TOKEN_JSON`.
