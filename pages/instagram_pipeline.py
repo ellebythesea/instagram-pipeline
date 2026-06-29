@@ -13,6 +13,9 @@ import streamlit as st
 from config import (
     GOOGLE_SHEET_ID,
     OPENAI_API_KEY,
+    SECRET_MANAGER_PROJECT_ID,
+    SECRET_MANAGER_SECRET_NAMES,
+    _secret_manager_client,
 )
 from ingest_helpers import upload_media_bundle
 from pipeline_caption import generate_row_caption
@@ -363,3 +366,41 @@ if ingest_btn:
                     )
 
         st.success(f"Done. Ingested {len(pending)} row(s).")
+
+st.divider()
+
+with st.expander("🔑 Update Instagram cookies"):
+    st.caption(
+        "Paste the contents of a fresh `www.instagram.com_cookies.txt` file here "
+        "(exported from Chrome using the 'Get cookies.txt LOCALLY' extension while "
+        "logged in to instagram.com). This replaces the cookies stored in Secret Manager."
+    )
+    cookies_text = st.text_area(
+        "Cookies file contents",
+        height=160,
+        placeholder="# Netscape HTTP Cookie File\n# https://curl.se/rfc/cookie_spec.html\n...",
+        label_visibility="collapsed",
+    )
+    if st.button("Save cookies to Secret Manager", type="primary", use_container_width=True):
+        if not cookies_text.strip():
+            st.error("Paste the cookies file contents before saving.")
+        elif "instagram.com" not in cookies_text:
+            st.error("This doesn't look like an instagram.com cookies file. Check the contents.")
+        elif not SECRET_MANAGER_PROJECT_ID:
+            st.error("SECRET_MANAGER_PROJECT_ID is not configured — cannot reach Secret Manager.")
+        else:
+            try:
+                from google.cloud import secretmanager as _sm
+                client = _secret_manager_client()
+                if client is None:
+                    st.error("Could not connect to Secret Manager. Check service account credentials.")
+                else:
+                    secret_name = SECRET_MANAGER_SECRET_NAMES.get("INSTAGRAM_COOKIES", "instagram-cookies")
+                    if isinstance(secret_name, tuple):
+                        secret_name = secret_name[0]
+                    parent = f"projects/{SECRET_MANAGER_PROJECT_ID}/secrets/{secret_name}"
+                    payload = _sm.SecretPayload(data=cookies_text.strip().encode("utf-8"))
+                    client.add_secret_version(request={"parent": parent, "payload": payload})
+                    st.success("Cookies updated in Secret Manager. The new session will be used on the next ingest.")
+            except Exception as e:
+                st.error(f"Failed to update Secret Manager: {e}")
