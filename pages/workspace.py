@@ -4442,6 +4442,20 @@ def _copy_tabs(
         if st.button("Add custom link", key=f"workspace_caption_link_open_{row_num}", width="stretch"):
             st.session_state["workspace_link_dialog_row"] = row_num
             _rerun_workspace("Edit")
+        if prompt_row:
+            st.markdown("<div style='padding-top:100px'></div>", unsafe_allow_html=True)
+            if st.button(
+                "Delete row",
+                key=f"workspace_caption_delete_{row_num}",
+                width="stretch",
+            ):
+                try:
+                    _delete_workspace_row(prompt_row)
+                except Exception as e:
+                    st.session_state["workspace_error"] = f"Row {row_num}: could not delete row - {describe_error(e)}"
+                else:
+                    st.session_state["workspace_success"] = f"Row {row_num}: deleted from the sheet."
+                _rerun_workspace("Edit")
     elif selected_content_tab == "Original":
         _tab_copy_preview(original_preview)
         if is_instagram:
