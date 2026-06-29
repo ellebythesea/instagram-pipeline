@@ -230,6 +230,16 @@ def _archive_orphaned_media(media_root: Path, rows: list[dict], service, dry_run
                 if path.name.endswith("_segments")
                 else path.name
             )
+            # Never archive a segments folder while the source video is still
+            # present locally — the Drive API lookup may have failed for that
+            # row, making the stem absent from active_stems even though the
+            # video is live. Archiving here would cause a re-split next run.
+            source_exists = any(
+                (media_root / f"{stem}{ext}").exists()
+                for ext in {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm"}
+            )
+            if source_exists:
+                continue
             if stem not in active_stems and _canonical_media_key(stem) not in active_keys:
                 orphan_paths.append(("segments", path))
 
