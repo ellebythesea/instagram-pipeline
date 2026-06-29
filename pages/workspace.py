@@ -28,7 +28,10 @@ from config import (
     GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER,
     GOOGLE_SHEET_ID,
     OPENAI_API_KEY,
+    SECRET_MANAGER_PROJECT_ID,
+    SECRET_MANAGER_SECRET_NAMES,
     SERPER_API_KEY,
+    _secret_manager_client,
 )
 from caption import transcribe_video
 from drive import (
@@ -3221,6 +3224,43 @@ def _fundraising_preset_map() -> dict[str, str]:
         if label and top_comment and label not in mapping:
             mapping[label] = top_comment
     return mapping
+
+
+@st.dialog("Update Instagram cookies")
+def _render_cookies_dialog() -> None:
+    st.caption(
+        "Paste the contents of a fresh `www.instagram.com_cookies.txt` file "
+        "(exported from Chrome using 'Get cookies.txt LOCALLY' while logged in to instagram.com)."
+    )
+    cookies_text = st.text_area(
+        "Cookies file contents",
+        height=200,
+        placeholder="# Netscape HTTP Cookie File\n# https://curl.se/rfc/cookie_spec.html\n...",
+        label_visibility="collapsed",
+    )
+    if st.button("Save to Secret Manager", type="primary", use_container_width=True):
+        if not cookies_text.strip():
+            st.error("Paste the cookies file contents before saving.")
+        elif "instagram.com" not in cookies_text:
+            st.error("This doesn't look like an instagram.com cookies file.")
+        elif not SECRET_MANAGER_PROJECT_ID:
+            st.error("SECRET_MANAGER_PROJECT_ID is not configured.")
+        else:
+            try:
+                from google.cloud import secretmanager as _sm
+                client = _secret_manager_client()
+                if client is None:
+                    st.error("Could not connect to Secret Manager. Check service account credentials.")
+                else:
+                    secret_name = SECRET_MANAGER_SECRET_NAMES.get("INSTAGRAM_COOKIES", "instagram-cookies")
+                    if isinstance(secret_name, tuple):
+                        secret_name = secret_name[0]
+                    parent = f"projects/{SECRET_MANAGER_PROJECT_ID}/secrets/{secret_name}"
+                    payload = _sm.SecretPayload(data=cookies_text.strip().encode("utf-8"))
+                    client.add_secret_version(request={"parent": parent, "payload": payload})
+                    st.success("Saved. New session will be used on the next ingest.")
+            except Exception as e:
+                st.error(f"Failed: {e}")
 
 
 @st.dialog("Workspace action", on_dismiss=_dismiss_workspace_home_action_dialog)
@@ -7004,6 +7044,9 @@ if active_section_tab == "Home":
             if st.button(action_mode, key=f"workspace_home_action_{action_mode}", width="stretch"):
                 _open_workspace_home_action_dialog(action_mode)
                 _rerun_workspace("Home")
+
+        if st.button("Update cookies", key="workspace_open_cookies_dialog", width="stretch"):
+            _render_cookies_dialog()
 
     # Show success/error feedback below the action buttons
     success_message = st.session_state.pop("workspace_success", "")
