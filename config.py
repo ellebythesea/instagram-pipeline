@@ -130,6 +130,7 @@ SECRET_MANAGER_SECRET_NAMES: dict[str, str | tuple[str, ...]] = {
     "GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER": str(_runtime_secret("SECRET_MANAGER_GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER_NAME", "google-screenshots-subfolder") or "google-screenshots-subfolder"),
     "APIFY_REEL_ACTOR_ID": str(_runtime_secret("SECRET_MANAGER_APIFY_REEL_ACTOR_ID_NAME", "apify-reel-actor-id") or "apify-reel-actor-id"),
     "APIFY_POST_ACTOR_ID": str(_runtime_secret("SECRET_MANAGER_APIFY_POST_ACTOR_ID_NAME", "apify-post-actor-id") or "apify-post-actor-id"),
+    "INSTAGRAM_COOKIES": str(_runtime_secret("SECRET_MANAGER_INSTAGRAM_COOKIES_NAME", "instagram-cookies") or "instagram-cookies"),
 }
 
 
@@ -216,6 +217,7 @@ DEFAULT_POST_FOOTER = _get_secret(
 APIFY_API_TOKEN = _get_secret("APIFY_API_TOKEN")
 APIFY_REEL_ACTOR_ID = _get_secret("APIFY_REEL_ACTOR_ID", "xMc5Ga1oCONPmWJIa")
 APIFY_POST_ACTOR_ID = _get_secret("APIFY_POST_ACTOR_ID", "apify/instagram-scraper")
+INSTAGRAM_COOKIES = _get_secret("INSTAGRAM_COOKIES")
 GOOGLE_SHEET_ID = _get_secret("GOOGLE_SHEET_ID")
 GOOGLE_WORKSHEET_NAME = _get_secret("GOOGLE_WORKSHEET_NAME")
 GOOGLE_DRIVE_FOLDER_ID = _get_secret("GOOGLE_DRIVE_FOLDER_ID")

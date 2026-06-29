@@ -378,6 +378,7 @@ Optional secret names:
 - `google-screenshots-subfolder`
 - `apify-reel-actor-id`
 - `apify-post-actor-id`
+- `instagram-cookies` — contents of a Netscape cookies file exported from Chrome while logged in to instagram.com; used by yt-dlp for authenticated scraping when no local `www.instagram.com_cookies.txt` is present
 
 ### Bootstrap credential
 
