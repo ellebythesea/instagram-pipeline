@@ -3384,18 +3384,33 @@ def _render_cookies_dialog() -> None:
 
 @st.dialog("Election Post", width="large", on_dismiss=_dismiss_election_post_dialog)
 def _render_election_post_dialog() -> None:
-    st.caption(
-        "Enter the names of the candidates (one per line or comma-separated). "
-        "The app will resolve the race and build a prompt you can paste into ChatGPT. "
-        "Paste the JSON result back into Create a Post."
-    )
-
-    candidate_input = st.text_area(
+    candidate_input = st.text_input(
         "Candidates",
         key="workspace_election_post_candidates",
-        placeholder="e.g.\nJane Smith\nJohn Doe",
-        height=120,
+        placeholder="e.g. Jane Smith, John Doe",
     ).strip()
+
+    if st.button(
+        "Build Prompt",
+        key="workspace_election_post_build",
+        type="primary",
+        width="stretch",
+        disabled=not candidate_input,
+    ):
+        try:
+            with st.spinner("Resolving race…"):
+                candidate_names = _extract_candidate_names_from_input(candidate_input)
+                candidate_result = _resolve_candidate_comparison(candidate_names)
+            if candidate_result.get("could_not_resolve"):
+                st.session_state["workspace_election_post_error"] = (
+                    "Could not resolve a clear election from those names. "
+                    "Try adding the office or state (e.g. 'Jane Smith Colorado Senate')."
+                )
+            else:
+                st.session_state["workspace_election_post_resolved"] = candidate_result
+        except Exception as e:
+            st.session_state["workspace_election_post_error"] = describe_error(e)
+        st.rerun()
 
     error = st.session_state.pop("workspace_election_post_error", None)
     if error:
@@ -3426,31 +3441,39 @@ def _render_election_post_dialog() -> None:
                 f"{resolved.get('race_name', '')}, "
                 f"{resolved.get('election_date', '')}"
             )
-        prompt_text = _build_election_post_prompt(resolved)
-        st.caption("Copy this prompt into ChatGPT, then paste the JSON result into Create a Post:")
-        st.code(prompt_text, language=None)
 
-    if st.button(
-        "Build Prompt",
-        key="workspace_election_post_build",
-        type="primary",
-        width="stretch",
-        disabled=not candidate_input,
-    ):
-        try:
-            with st.spinner("Resolving race…"):
-                candidate_names = _extract_candidate_names_from_input(candidate_input)
-                candidate_result = _resolve_candidate_comparison(candidate_names)
-            if candidate_result.get("could_not_resolve"):
-                st.session_state["workspace_election_post_error"] = (
-                    "Could not resolve a clear election from those names. "
-                    "Try adding the office or state (e.g. 'Jane Smith Colorado Senate')."
-                )
-            else:
-                st.session_state["workspace_election_post_resolved"] = candidate_result
-        except Exception as e:
-            st.session_state["workspace_election_post_error"] = describe_error(e)
-        st.rerun()
+        json_paste = st.text_area(
+            "Paste JSON result from ChatGPT",
+            key="workspace_election_post_json_paste",
+            height=150,
+            placeholder='{"name": "...", "quote": "...", "text1": "...", ...}',
+        ).strip()
+        if st.button(
+            "Create Post",
+            key="workspace_election_post_create",
+            type="primary",
+            width="stretch",
+            disabled=not json_paste,
+        ):
+            try:
+                slide_data = _parse_slide_json(json_paste)
+                if not slide_data:
+                    st.error("That doesn't look like valid slide JSON. Paste the full JSON object from ChatGPT.")
+                else:
+                    source_url = _cell_text(slide_data.get("source_url", "")).strip()
+                    with st.spinner("Creating post…"):
+                        row_num = _create_post_from_prompt(json_paste, source_url, None)
+                    _close_election_post_dialog(clear_inputs=True)
+                    st.session_state["workspace_home_notice"] = f"Election post created as row {row_num}."
+                    st.session_state["workspace_selected_row_num"] = row_num
+                    st.query_params["workspace_row"] = str(row_num)
+                    _rerun_workspace("Home")
+            except Exception as e:
+                st.error(f"Could not create post: {describe_error(e)}")
+
+        prompt_text = _build_election_post_prompt(resolved)
+        st.caption("Copy this prompt into ChatGPT:")
+        st.code(prompt_text, language=None)
 
     if st.button("Cancel", key="workspace_election_post_cancel", width="stretch"):
         _close_election_post_dialog(clear_inputs=True)
