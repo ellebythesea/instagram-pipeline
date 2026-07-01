@@ -433,13 +433,13 @@ ELECTION_POST_PROMPT_TEMPLATE = textwrap.dedent(
 
     text1 — Introduces the race and reinforces the tension from the quote. Name both candidates. Set the stakes. Under 350 chars.
 
-    text2, text3, text4, text5 — Each slide covers one major issue voters are weighing in this race. For each:
+    text2, text3, text4, text5 — Each slide covers one major issue voters are weighing in this race. These should be the meatiest slides. For each:
     * Start with the issue name (e.g. "Abortion:", "Immigration:", "Economy:")
     * Go deep — don't just say candidates disagree; show HOW they disagree with specifics
-    * Include at least one hard number, dollar figure, vote record, polling stat, or direct quote if you can find one
+    * Include at least one hard number, dollar figure, vote record, polling stat, or direct quote — search for real figures
     * Use sources: legislation voted on, fundraising data, polling margins, campaign finance numbers, verified quotes from debates or ads
     * The goal is that a voter who reads this slide knows something concrete, not just a vibe
-    * Under 500 chars each. One paragraph, no newlines.
+    * Up to 800 chars each. One paragraph, no newlines.
 
     text6 — Election logistics: the exact election date, registration or mail-in ballot deadline if known, and where voters can look up polling place or registration status. Under 400 chars.
 
