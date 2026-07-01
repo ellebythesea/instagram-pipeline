@@ -403,6 +403,66 @@ SUBSTACK_CANDIDATE_ARTICLE_PROMPT_TEMPLATE = textwrap.dedent(
     """
 )
 
+ELECTION_POST_PROMPT_TEMPLATE = textwrap.dedent(
+    """\
+    Return ONLY valid JSON — a single object with no markdown and no commentary outside the JSON.
+
+    Use web search to research this race before writing. Pull from Ballotpedia, local news, major outlets, and campaign sites. Cite facts and figures only if you can verify them.
+
+    Race:
+    [RACE_INFO]
+
+    Today's date: [TODAY]
+
+    Your output must be a single JSON object with these exact keys:
+    name, quote, text1, text2, text3, text4, text5, text6, generated_caption, source_url
+
+    Rules:
+    * No markdown
+    * No em dashes
+    * No paragraph breaks or escaped newlines (no \\n) inside any field — each field is one unbroken paragraph
+    * No hashtags anywhere
+    * Straight double quotes only — no smart quotes, no escaped quotes inside values
+    * No speculation; only verified, sourced facts
+
+    Field instructions:
+
+    name — Short label for the election. Format: "[Jurisdiction] [Office]" (e.g. "Colorado Senate", "NY-21 Congressional", "Georgia Governor"). Under 40 chars. This is the headline/speaker label shown on the post.
+
+    quote — The single sharpest tension or decision voters face in this race. Not a slogan. Make it specific to these two candidates and this moment — what is the real choice being made? Under 200 chars. No attribution. No nested quotes. Should feel non-templated.
+
+    text1 — Introduces the race and reinforces the tension from the quote. Name both candidates. Set the stakes. Under 350 chars.
+
+    text2, text3, text4, text5 — Each slide covers one major issue voters are weighing in this race. For each:
+    * Start with the issue name (e.g. "Abortion:", "Immigration:", "Economy:")
+    * Go deep — don't just say candidates disagree; show HOW they disagree with specifics
+    * Include at least one hard number, dollar figure, vote record, polling stat, or direct quote if you can find one
+    * Use sources: legislation voted on, fundraising data, polling margins, campaign finance numbers, verified quotes from debates or ads
+    * The goal is that a voter who reads this slide knows something concrete, not just a vibe
+    * Under 500 chars each. One paragraph, no newlines.
+
+    text6 — Election logistics: the exact election date, registration or mail-in ballot deadline if known, and where voters can look up polling place or registration status. Under 400 chars.
+
+    generated_caption — Concise Instagram caption naming the candidates and race, mentioning this is a breakdown carousel, and noting one or two key contrasts. Under 900 chars. No standard footer (appended separately by the app). No hashtags.
+
+    source_url — The single best URL for a voter wanting to understand this race. Prefer Ballotpedia, a local news race overview, or a major outlet's dedicated race page. Raw URL only.
+
+    Output example (keys only — fill in real content):
+    {
+      "name": "...",
+      "quote": "...",
+      "text1": "...",
+      "text2": "...",
+      "text3": "...",
+      "text4": "...",
+      "text5": "...",
+      "text6": "...",
+      "generated_caption": "...",
+      "source_url": "..."
+    }
+    """
+)
+
 
 def _get_client() -> openai.OpenAI:
     global _client
@@ -1129,6 +1189,44 @@ def _call_openai_candidate_article(article_body: str, substack_url: str) -> dict
         raise ValueError("OpenAI response was missing one or more slide fields.")
     return result
 
+
+def _build_election_post_prompt(candidate_result: dict) -> str:
+    """Build the ChatGPT prompt for a 6-slide election post from a resolved candidate comparison."""
+    race_groups = candidate_result.get("race_groups") or []
+    candidate_names = [
+        _cell_text(name).strip()
+        for name in (candidate_result.get("candidate_names") or [])
+        if _cell_text(name).strip()
+    ]
+
+    race_lines = []
+    for group in race_groups:
+        group_names = ", ".join(
+            _cell_text(n).strip() for n in (group.get("candidate_names") or [])
+            if _cell_text(n).strip()
+        )
+        parts = [
+            _cell_text(group.get("race_name")).strip(),
+            _cell_text(group.get("office")).strip(),
+            _cell_text(group.get("jurisdiction")).strip(),
+            _cell_text(group.get("election_date")).strip(),
+        ]
+        race_lines.append(f"- {group_names}: {' | '.join(p for p in parts if p)}")
+    if not race_lines:
+        race_name = _cell_text(candidate_result.get("race_name")).strip()
+        election_date = _cell_text(candidate_result.get("election_date")).strip()
+        race_lines.append(
+            f"- {', '.join(candidate_names)}: {' | '.join(p for p in [race_name, election_date] if p)}"
+        )
+    race_info = "\n".join(race_lines)
+
+    return (
+        ELECTION_POST_PROMPT_TEMPLATE
+        .replace("[RACE_INFO]", race_info)
+        .replace("[TODAY]", _today_eastern_label())
+    )
+
+
 get_all_rows = sheet_ops.get_all_rows
 get_pending_rows = sheet_ops.get_pending_rows
 update_caption = sheet_ops.update_caption
@@ -1353,6 +1451,23 @@ def _close_workspace_home_action_dialog(clear_inputs: bool = False) -> None:
 
 def _dismiss_workspace_home_action_dialog() -> None:
     _close_workspace_home_action_dialog(clear_inputs=True)
+
+
+def _open_election_post_dialog() -> None:
+    st.session_state["workspace_election_post_dialog"] = True
+
+
+def _close_election_post_dialog(clear_inputs: bool = False) -> None:
+    st.session_state.pop("workspace_election_post_dialog", None)
+    if clear_inputs:
+        st.session_state.pop("workspace_election_post_candidates", None)
+        st.session_state.pop("workspace_election_post_result", None)
+        st.session_state.pop("workspace_election_post_error", None)
+        st.session_state.pop("workspace_election_post_resolved", None)
+
+
+def _dismiss_election_post_dialog() -> None:
+    _close_election_post_dialog(clear_inputs=True)
 
 
 def _open_workspace_slides_dialog() -> None:
@@ -3265,6 +3380,81 @@ def _render_cookies_dialog() -> None:
                     st.success("Saved. New session will be used on the next ingest.")
             except Exception as e:
                 st.error(f"Failed: {e}")
+
+
+@st.dialog("Election Post", width="large", on_dismiss=_dismiss_election_post_dialog)
+def _render_election_post_dialog() -> None:
+    st.caption(
+        "Enter the names of the candidates (one per line or comma-separated). "
+        "The app will resolve the race and build a prompt you can paste into ChatGPT. "
+        "Paste the JSON result back into Create a Post."
+    )
+
+    candidate_input = st.text_area(
+        "Candidates",
+        key="workspace_election_post_candidates",
+        placeholder="e.g.\nJane Smith\nJohn Doe",
+        height=120,
+    ).strip()
+
+    error = st.session_state.pop("workspace_election_post_error", None)
+    if error:
+        st.error(error)
+
+    resolved = st.session_state.get("workspace_election_post_resolved")
+    if resolved:
+        race_groups = resolved.get("race_groups") or []
+        if race_groups:
+            st.markdown("**Resolved race:**")
+            for group in race_groups:
+                g_names = ", ".join(
+                    _cell_text(n).strip() for n in (group.get("candidate_names") or [])
+                    if _cell_text(n).strip()
+                )
+                parts = [
+                    _cell_text(group.get("race_name")).strip(),
+                    _cell_text(group.get("election_date")).strip(),
+                ]
+                st.markdown(f"- {g_names}: {', '.join(p for p in parts if p)}")
+        elif not resolved.get("could_not_resolve"):
+            names_str = ", ".join(
+                _cell_text(n).strip() for n in (resolved.get("candidate_names") or [])
+                if _cell_text(n).strip()
+            )
+            st.markdown(
+                f"**Resolved:** {names_str}, "
+                f"{resolved.get('race_name', '')}, "
+                f"{resolved.get('election_date', '')}"
+            )
+        prompt_text = _build_election_post_prompt(resolved)
+        st.caption("Copy this prompt into ChatGPT, then paste the JSON result into Create a Post:")
+        st.code(prompt_text, language=None)
+
+    if st.button(
+        "Build Prompt",
+        key="workspace_election_post_build",
+        type="primary",
+        width="stretch",
+        disabled=not candidate_input,
+    ):
+        try:
+            with st.spinner("Resolving race…"):
+                candidate_names = _extract_candidate_names_from_input(candidate_input)
+                candidate_result = _resolve_candidate_comparison(candidate_names)
+            if candidate_result.get("could_not_resolve"):
+                st.session_state["workspace_election_post_error"] = (
+                    "Could not resolve a clear election from those names. "
+                    "Try adding the office or state (e.g. 'Jane Smith Colorado Senate')."
+                )
+            else:
+                st.session_state["workspace_election_post_resolved"] = candidate_result
+        except Exception as e:
+            st.session_state["workspace_election_post_error"] = describe_error(e)
+        st.rerun()
+
+    if st.button("Cancel", key="workspace_election_post_cancel", width="stretch"):
+        _close_election_post_dialog(clear_inputs=True)
+        _rerun_workspace("Home")
 
 
 @st.dialog("Workspace action", on_dismiss=_dismiss_workspace_home_action_dialog)
@@ -7034,6 +7224,8 @@ if active_section_tab == "Home":
         _render_workspace_home_action_dialog()
     if st.session_state.get("workspace_slides_dialog"):
         _render_workspace_slides_dialog(workspace_rows, workspace_rows_error)
+    if st.session_state.get("workspace_election_post_dialog"):
+        _render_election_post_dialog()
 
     with st.popover("App actions", use_container_width=True):
         if st.button(
@@ -7062,6 +7254,10 @@ if active_section_tab == "Home":
             if st.button(action_mode, key=f"workspace_home_action_{action_mode}", width="stretch"):
                 _open_workspace_home_action_dialog(action_mode)
                 _rerun_workspace("Home")
+
+        if st.button("Election Post", key="workspace_open_election_post_dialog", width="stretch"):
+            _open_election_post_dialog()
+            _rerun_workspace("Home")
 
         if st.button("Update cookies", key="workspace_open_cookies_dialog", width="stretch"):
             _render_cookies_dialog()
