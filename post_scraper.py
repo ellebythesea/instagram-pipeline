@@ -210,6 +210,9 @@ def process_url(url: str, cookies_path: str | None = None) -> dict:
         item = items[0]
     except Exception as e:
         api_error = e
+        from config import APIFY_API_TOKEN
+        if not APIFY_API_TOKEN:
+            raise RuntimeError(f"Instagram private API failed to scrape post: {api_error}") from api_error
         print(f"[APIFY FALLBACK] post private API failed ({api_error}), falling back to Apify: {url}", flush=True)
         return _process_url_apify(url)
 

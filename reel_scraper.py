@@ -194,5 +194,8 @@ def process_url(url: str, include_transcript: bool = False, cookies_path: str | 
     except Exception as e:
         ytdlp_error = e
 
+    from config import APIFY_API_TOKEN
+    if not APIFY_API_TOKEN:
+        raise RuntimeError(f"yt-dlp failed to scrape reel: {ytdlp_error}") from ytdlp_error
     print(f"[APIFY FALLBACK] reel yt-dlp failed ({ytdlp_error}), falling back to Apify: {url}", flush=True)
     return _process_url_apify(url)
