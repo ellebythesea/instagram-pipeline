@@ -1453,6 +1453,21 @@ def _dismiss_workspace_home_action_dialog() -> None:
     _close_workspace_home_action_dialog(clear_inputs=True)
 
 
+def _open_video_post_dialog() -> None:
+    st.session_state["workspace_video_post_dialog"] = True
+
+
+def _close_video_post_dialog(clear_inputs: bool = False) -> None:
+    st.session_state.pop("workspace_video_post_dialog", None)
+    if clear_inputs:
+        st.session_state.pop("workspace_video_post_upload", None)
+        st.session_state.pop("workspace_video_post_speaker", None)
+
+
+def _dismiss_video_post_dialog() -> None:
+    _close_video_post_dialog(clear_inputs=True)
+
+
 def _open_election_post_dialog() -> None:
     st.session_state["workspace_election_post_dialog"] = True
 
@@ -3380,6 +3395,106 @@ def _render_cookies_dialog() -> None:
                     st.success("Saved. New session will be used on the next ingest.")
             except Exception as e:
                 st.error(f"Failed: {e}")
+
+
+@st.dialog("Video Post", width="large", on_dismiss=_dismiss_video_post_dialog)
+def _render_video_post_dialog() -> None:
+    uploaded = st.file_uploader(
+        "Upload video",
+        type=["mp4", "mov"],
+        key="workspace_video_post_upload",
+        accept_multiple_files=False,
+    )
+    speaker_name = st.text_input(
+        "Speaker name",
+        key="workspace_video_post_speaker",
+        placeholder="e.g. Bernie Sanders",
+    ).strip()
+
+    if st.button(
+        "Create Post",
+        key="workspace_video_post_submit",
+        type="primary",
+        width="stretch",
+        disabled=not (uploaded and speaker_name),
+    ):
+        if not GOOGLE_DRIVE_FOLDER_ID:
+            st.error("GOOGLE_DRIVE_FOLDER_ID is not configured.")
+            return
+        tmp_dir = tempfile.mkdtemp(prefix="workspace_video_post_")
+        try:
+            suffix = os.path.splitext(uploaded.name)[-1].lower() or ".mp4"
+            src_path = os.path.join(tmp_dir, f"source{suffix}")
+            with open(src_path, "wb") as f:
+                f.write(uploaded.getbuffer())
+
+            with st.spinner("Transcribing…"):
+                transcript = (transcribe_video(src_path) or "").strip()
+
+            file_name = uploaded.name or f"video{suffix}"
+            with st.spinner("Uploading to Drive…"):
+                media_link = upload_to_drive(src_path, file_name, GOOGLE_DRIVE_FOLDER_ID)
+
+            append_manual_post_row(GOOGLE_SHEET_ID, {
+                "url": "",
+                "caption_context": transcript,
+                "original_caption": "",
+                "transcript": transcript,
+                "source_username": speaker_name,
+                "speaker_name": speaker_name,
+                "media_type": "reel",
+                "media_link": media_link,
+                "thumbnail_link": "",
+                "top_comment": "",
+                "status": "ingested",
+                "name": speaker_name,
+            })
+
+            all_rows = _run_with_sheet_quota_countdown(
+                lambda: get_all_rows(GOOGLE_SHEET_ID),
+                "Video post paused (sheet quota):",
+            )
+            new_row = all_rows[-1] if all_rows else None
+            row_num = new_row["row_number"] if new_row else None
+
+            if row_num and new_row:
+                with st.spinner("Generating caption…"):
+                    try:
+                        if row_ready_for_caption(new_row):
+                            caption = generate_row_caption(new_row)
+                            update_caption(GOOGLE_SHEET_ID, row_num, caption, "done")
+                        else:
+                            update_status(GOOGLE_SHEET_ID, row_num, "done")
+                    except Exception:
+                        update_status(GOOGLE_SHEET_ID, row_num, "done")
+
+            if row_num and media_link:
+                with st.spinner("Cropping and splitting video…"):
+                    username_clean = re.sub(r"[^\w\-]", "_", speaker_name.lower())
+                    preview_folder_id, _, _ = _ensure_preview_folder(
+                        row_num, username_clean, speaker_name, media_link
+                    )
+                    seg_dir = os.path.join(tmp_dir, "segments")
+                    os.makedirs(seg_dir, exist_ok=True)
+                    segment_paths = _split_video_to_folder(src_path, seg_dir, mode="fill")
+                    for seg_path in segment_paths:
+                        upload_to_drive(seg_path, os.path.basename(seg_path), preview_folder_id)
+
+            _close_video_post_dialog(clear_inputs=True)
+            if row_num:
+                st.session_state["workspace_home_notice"] = f"Video post created as row {row_num}."
+                st.session_state["workspace_selected_row_num"] = row_num
+                st.query_params["workspace_row"] = str(row_num)
+            _rerun_workspace("Home")
+
+        except Exception as e:
+            st.error(f"Could not create video post: {describe_error(e)}")
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    if st.button("Cancel", key="workspace_video_post_cancel", width="stretch"):
+        _close_video_post_dialog(clear_inputs=True)
+        _rerun_workspace("Home")
 
 
 @st.dialog("Election Post", width="large", on_dismiss=_dismiss_election_post_dialog)
@@ -7247,6 +7362,8 @@ if active_section_tab == "Home":
         _render_workspace_home_action_dialog()
     if st.session_state.get("workspace_slides_dialog"):
         _render_workspace_slides_dialog(workspace_rows, workspace_rows_error)
+    if st.session_state.get("workspace_video_post_dialog"):
+        _render_video_post_dialog()
     if st.session_state.get("workspace_election_post_dialog"):
         _render_election_post_dialog()
 
@@ -7277,6 +7394,10 @@ if active_section_tab == "Home":
             if st.button(action_mode, key=f"workspace_home_action_{action_mode}", width="stretch"):
                 _open_workspace_home_action_dialog(action_mode)
                 _rerun_workspace("Home")
+
+        if st.button("Video Post", key="workspace_open_video_post_dialog", width="stretch"):
+            _open_video_post_dialog()
+            _rerun_workspace("Home")
 
         if st.button("Election Post", key="workspace_open_election_post_dialog", width="stretch"):
             _open_election_post_dialog()
