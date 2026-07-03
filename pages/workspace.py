@@ -6718,8 +6718,6 @@ def _write_carousel_fields(row_number: int, row: dict) -> None:
 
 
 def _row_ready_for_chatgpt(row: dict) -> bool:
-    if not _cell_text(row.get("Instagram URL")).strip():
-        return False
     status = _cell_text(row.get("Status")).strip().lower()
     if status.startswith("error") or status == "slides":
         return False
