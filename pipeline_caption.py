@@ -173,6 +173,17 @@ def _row_source_text(row: dict) -> tuple[str, str, str]:
     return transcript, original_caption, caption_context
 
 
+def _row_source_text_for_slides(row: dict) -> tuple[str, str, str]:
+    """Relaxed content check for slide generation: accepts Generated Caption as a fallback source."""
+    transcript = row.get("Transcript", "").strip()
+    original_caption = row.get("Original Caption", "").strip()
+    caption_context = row.get("Caption Context", "").strip()
+    generated_caption = row.get("Generated Caption", "").strip()
+    if not transcript and not original_caption and not caption_context and not generated_caption:
+        raise ValueError("No content available for slide generation (need transcript, caption context, original caption, or generated caption).")
+    return transcript, original_caption, caption_context
+
+
 def _completion_limit_arg(model: str, token_limit: int) -> dict:
     normalized = (model or "").strip().lower()
     if normalized.startswith("gpt-5") or normalized.startswith("o"):
@@ -451,7 +462,7 @@ def generate_carousel_copy_with_model(row: dict, model: str = "gpt-4o") -> dict[
     if not OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY is not configured.")
 
-    transcript, original_caption, caption_context = _row_source_text(row)
+    transcript, original_caption, caption_context = _row_source_text_for_slides(row)
     display_name = _carousel_display_name(row)
     is_article = (row.get("Media Type", "") or "").strip().lower() == "article"
 
@@ -462,6 +473,9 @@ def generate_carousel_copy_with_model(row: dict, model: str = "gpt-4o") -> dict[
         user_parts.append(f"ORIGINAL SOURCE TEXT:\n{original_caption}")
     if caption_context:
         user_parts.append(f"ADDITIONAL CONTEXT:\n{caption_context}")
+    generated_caption = (row.get("Generated Caption") or "").strip()
+    if generated_caption:
+        user_parts.append(f"GENERATED CAPTION:\n{generated_caption}")
 
     if row.get("Speaker Name", "").strip():
         user_parts.append(f"Featured person: {row['Speaker Name'].strip()}")
@@ -511,7 +525,7 @@ def generate_batch_carousel_copy_with_model(rows: list[dict], model: str = "gpt-
         row_number = int(row.get("row_number") or 0)
         if row_number <= 0:
             continue
-        transcript, original_caption, caption_context = _row_source_text(row)
+        transcript, original_caption, caption_context = _row_source_text_for_slides(row)
         _row_media_type = (row.get("Media Type", "") or "").strip().lower()
         display_name = "" if _row_media_type == "article" else _carousel_display_name(row)
         display_names[row_number] = display_name
