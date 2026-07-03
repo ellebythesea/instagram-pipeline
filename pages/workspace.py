@@ -1667,6 +1667,33 @@ def _workspace_row_state_keys(row: dict) -> list[str]:
     return _workspace_row_state_keys_for_token(_row_state_token(row))
 
 
+def _clear_row_num_keyed_state(row_num: int) -> None:
+    """Clear all UI state that is keyed by row position rather than content identity."""
+    for key in [
+        f"workspace_row_content_tab_{row_num}",
+        f"workspace_row_slides_prompt_{row_num}",
+        f"workspace_slide_preview_font_adjust_{row_num}",
+        f"workspace_slide_preview_background_adjust_{row_num}",
+        f"workspace_slide_preview_fit_mode_{row_num}",
+        f"workspace_slide_two_preview_font_adjust_{row_num}",
+        f"workspace_slide_two_cta_row_{row_num}",
+        f"workspace_slide_three_preview_font_adjust_{row_num}",
+        f"workspace_slide_three_cta_row_{row_num}",
+        f"workspace_slide_four_preview_font_adjust_{row_num}",
+        f"workspace_slide_five_preview_font_adjust_{row_num}",
+        f"workspace_slide_six_preview_font_adjust_{row_num}",
+        f"workspace_slide_merge_row_{row_num}",
+        f"workspace_slide_merge_original_t3_{row_num}",
+        f"workspace_slide_quote_show_{row_num}",
+        f"workspace_slide_quote_font_adjust_{row_num}",
+        f"workspace_preview_upload_links_{row_num}",
+        f"workspace_quote_picker_{row_num}",
+        f"workspace_quote_options_{row_num}",
+    ]:
+        st.session_state.pop(key, None)
+    st.session_state.get("workspace_original_thumbnails", {}).pop(str(row_num), None)
+
+
 def _sync_workspace_row_state(row: dict) -> None:
     identity_key = _workspace_stable_row_key(row, "identity")
     token_key = _workspace_stable_row_key(row, "state_token")
@@ -1684,6 +1711,7 @@ def _sync_workspace_row_state(row: dict) -> None:
         for token in tokens_to_clear:
             for key in _workspace_row_state_keys_for_token(token):
                 st.session_state.pop(key, None)
+        _clear_row_num_keyed_state(row["row_number"])
     st.session_state[speaker_key] = _cell_text(row.get("Speaker Name")).strip()
     st.session_state[identity_key] = current_identity
     st.session_state[token_key] = current_token
@@ -1701,6 +1729,7 @@ def _clear_workspace_row_state(row: dict) -> None:
     for token in tokens_to_clear:
         for key in _workspace_row_state_keys_for_token(token):
             st.session_state.pop(key, None)
+    _clear_row_num_keyed_state(row["row_number"])
     st.session_state.pop(identity_key, None)
     st.session_state.pop(token_key, None)
 
