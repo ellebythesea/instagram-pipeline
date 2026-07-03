@@ -3435,6 +3435,27 @@ def _render_video_post_dialog() -> None:
             with st.spinner("Uploading to Drive…"):
                 media_link = upload_to_drive(src_path, file_name, GOOGLE_DRIVE_FOLDER_ID)
 
+            thumbnail_link = ""
+            try:
+                duration_s = _video_duration_seconds(src_path)
+                capture_s = min(5.0, max(0.0, duration_s - 0.25)) if duration_s > 0 else 0.0
+                thumb_name = f"{os.path.splitext(file_name)[0]}_thumb_{int(round(capture_s))}s.jpg"
+                thumb_path = os.path.join(tmp_dir, thumb_name)
+                subprocess.run(
+                    [
+                        _crop_ffmpeg_path(), "-hide_banner", "-loglevel", "error",
+                        "-y", "-ss", f"{capture_s:.3f}", "-i", src_path,
+                        "-frames:v", "1", thumb_path,
+                    ],
+                    check=True,
+                )
+                screenshots_folder_id = get_or_create_subfolder(
+                    GOOGLE_DRIVE_FOLDER_ID, GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER
+                )
+                thumbnail_link = upload_to_drive(thumb_path, thumb_name, screenshots_folder_id)
+            except Exception:
+                pass
+
             append_manual_post_row(GOOGLE_SHEET_ID, {
                 "url": "",
                 "caption_context": transcript,
@@ -3444,7 +3465,7 @@ def _render_video_post_dialog() -> None:
                 "speaker_name": speaker_name,
                 "media_type": "reel",
                 "media_link": media_link,
-                "thumbnail_link": "",
+                "thumbnail_link": thumbnail_link,
                 "top_comment": "",
                 "status": "ingested",
                 "name": speaker_name,
