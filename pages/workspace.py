@@ -429,9 +429,9 @@ ELECTION_POST_PROMPT_TEMPLATE = textwrap.dedent(
 
     name — Short label for the election. Format: "[Jurisdiction] [Office]" (e.g. "Colorado Senate", "NY-21 Congressional", "Georgia Governor"). Under 40 chars. This is the headline/speaker label shown on the post.
 
-    quote — The single sharpest tension or decision voters face in this race. Not a slogan. Make it specific to these two candidates and this moment — what is the real choice being made? Under 200 chars. No attribution. No nested quotes. Should feel non-templated.
+    quote — The single sharpest tension or decision voters face in this race. Not a slogan. Make it specific to these two candidates and this moment — what is the real choice being made? Under 120 chars. No attribution. No nested quotes. Should feel non-templated.
 
-    text1 — Introduces the race and reinforces the tension from the quote. Name both candidates. Set the stakes. Under 350 chars.
+    text1 — Introduces the race and reinforces the tension from the quote. Name both candidates. Set the stakes. Under 150 chars.
 
     text2, text3, text4, text5 — Each slide covers one major issue voters are weighing in this race. These should be the meatiest slides. For each:
     * Start with the issue name (e.g. "Abortion:", "Immigration:", "Economy:")
