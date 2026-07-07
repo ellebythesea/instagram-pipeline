@@ -19,6 +19,14 @@ from instagram_cookies import instagram_cookies_file
 
 _ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 
+_INVISIBLE_CHARS_RE = re.compile(r"[\u200b\u200c\u200d\u200e\u200f\u2060\ufeff]")
+
+
+def _strip_invisible_chars(text: str) -> str:
+    """Drop zero-width/invisible Unicode chars (e.g. WORD JOINER) some captions use to block auto-linking."""
+    return _INVISIBLE_CHARS_RE.sub("", text or "")
+
+
 _IG_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -99,7 +107,7 @@ def _process_url_apify(url: str) -> dict:
         item.get("ownerUsername") or item.get("username")
         or (item.get("owner") or {}).get("username") or "unknown"
     )
-    original_caption = item.get("caption") or item.get("description") or ""
+    original_caption = _strip_invisible_chars(item.get("caption") or item.get("description") or "")
     post_id = (
         item.get("shortCode") or item.get("shortcode")
         or item.get("id") or _extract_shortcode(url) or "unknown"
@@ -217,7 +225,7 @@ def process_url(url: str, cookies_path: str | None = None) -> dict:
         return _process_url_apify(url)
 
     username = (item.get("user") or {}).get("username") or "unknown"
-    original_caption = (item.get("caption") or {}).get("text") or ""
+    original_caption = _strip_invisible_chars((item.get("caption") or {}).get("text") or "")
     post_id = item.get("code") or shortcode
 
     ts = item.get("taken_at")

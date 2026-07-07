@@ -1110,8 +1110,16 @@ def _is_candidate_article_row(row: dict) -> bool:
     )
 
 
+_INVISIBLE_CHARS_RE = re.compile(r"[\u200b\u200c\u200d\u200e\u200f\u2060\ufeff]")
+
+
+def _strip_invisible_chars(text: str) -> str:
+    """Drop zero-width/invisible Unicode chars (e.g. WORD JOINER) some captions use to block auto-linking."""
+    return _INVISIBLE_CHARS_RE.sub("", text or "")
+
+
 def _extract_first_url(value: str) -> str:
-    text = _cell_text(value).strip()
+    text = _strip_invisible_chars(_cell_text(value).strip())
     if not text:
         return ""
     match = re.search(r"https?://\S+", text)
@@ -2393,6 +2401,8 @@ def _refresh_row_thumbnail_from_video(row: dict, offset_seconds: float = 5.0) ->
         subprocess.run(command, check=True)
         thumbnail_link = upload_to_drive(screenshot_path, screenshot_name, screenshots_folder_id)
         update_thumbnail_link(GOOGLE_SHEET_ID, row_num, thumbnail_link)
+        clear_original_thumbnail(GOOGLE_SHEET_ID, row_num)
+        st.session_state.get("workspace_original_thumbnails", {}).pop(str(row_num), None)
         return thumbnail_link
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -2430,6 +2440,8 @@ def _replace_row_thumbnail_from_upload(row: dict, uploaded_file) -> str:
             f.write(uploaded_file.getbuffer())
         thumbnail_link = upload_to_drive(screenshot_path, screenshot_name, screenshots_folder_id)
         update_thumbnail_link(GOOGLE_SHEET_ID, row_num, thumbnail_link)
+        clear_original_thumbnail(GOOGLE_SHEET_ID, row_num)
+        st.session_state.get("workspace_original_thumbnails", {}).pop(str(row_num), None)
         return thumbnail_link
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -3143,9 +3155,10 @@ def _is_https_url(value: str) -> bool:
 
 
 def _clean_public_url(link: str) -> str:
-    parsed = urlparse((link or "").strip())
+    link = _strip_invisible_chars((link or "").strip())
+    parsed = urlparse(link)
     if not parsed.scheme or not parsed.netloc:
-        return (link or "").strip()
+        return link
     return f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
 
 

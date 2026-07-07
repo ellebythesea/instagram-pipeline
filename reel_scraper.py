@@ -18,6 +18,13 @@ from urllib.parse import urlparse
 
 from instagram_cookies import instagram_cookies_file
 
+_INVISIBLE_CHARS_RE = re.compile(r"[\u200b\u200c\u200d\u200e\u200f\u2060\ufeff]")
+
+
+def _strip_invisible_chars(text: str) -> str:
+    """Drop zero-width/invisible Unicode chars (e.g. WORD JOINER) some captions use to block auto-linking."""
+    return _INVISIBLE_CHARS_RE.sub("", text or "")
+
 
 def _ytdlp_path() -> str:
     venv_yt = os.path.join(os.path.dirname(sys.executable), "yt-dlp")
@@ -97,7 +104,7 @@ def _process_url_apify(url: str) -> dict:
         item.get("thumbnailUrl") or item.get("thumbnail_url")
         or item.get("displayUrl") or item.get("previewUrl") or ""
     )
-    original_caption = item.get("caption") or item.get("description") or ""
+    original_caption = _strip_invisible_chars(item.get("caption") or item.get("description") or "")
     post_id = (
         item.get("shortCode") or item.get("shortcode")
         or item.get("id") or _extract_post_id(url)
@@ -160,7 +167,7 @@ def process_url(url: str, include_transcript: bool = False, cookies_path: str | 
         meta = json.loads(json_line)
 
         username = meta.get("channel") or meta.get("uploader_id") or "unknown"
-        original_caption = meta.get("description", "")
+        original_caption = _strip_invisible_chars(meta.get("description", ""))
         post_id = meta.get("id") or meta.get("display_id") or _extract_post_id(url)
         thumbnail_url = meta.get("thumbnail", "")
 

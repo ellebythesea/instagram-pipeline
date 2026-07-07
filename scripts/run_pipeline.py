@@ -127,12 +127,16 @@ def _article_thumbnail_link(image_url: str, row_number: int | str | None, userna
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+_INVISIBLE_CHARS_RE = re.compile(r"[\u200b\u200c\u200d\u200e\u200f\u2060\ufeff]")
+
+
 def _clean_public_url(link: str) -> str:
     from urllib.parse import urlparse
 
-    parsed = urlparse((link or "").strip())
+    link = _INVISIBLE_CHARS_RE.sub("", (link or "").strip())
+    parsed = urlparse(link)
     if not parsed.scheme or not parsed.netloc:
-        return (link or "").strip()
+        return link
     return f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
 
 
