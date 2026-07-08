@@ -648,6 +648,25 @@ def clear_original_thumbnail(sheet_id: str, row_number: int) -> None:
     _update_original_thumbnails(sheet_id, data)
 
 
+def shift_original_thumbnails_after_delete(sheet_id: str, deleted_row_number: int) -> None:
+    """Re-key the blur map after a row deletion.
+
+    Removes the deleted row's entry and shifts all higher row numbers down by 1
+    so blur state stays aligned with the sheet after rows renumber.
+    """
+    data = get_original_thumbnails(sheet_id)
+    data.pop(str(deleted_row_number), None)
+    shifted = {}
+    for k, v in data.items():
+        try:
+            n = int(k)
+        except ValueError:
+            shifted[k] = v
+            continue
+        shifted[str(n - 1) if n > deleted_row_number else k] = v
+    _update_original_thumbnails(sheet_id, shifted)
+
+
 def get_fundraising_links(sheet_id: str) -> list[dict[str, str]]:
     """Return fundraising top-comment presets from the optional worksheet.
 

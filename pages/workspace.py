@@ -1255,6 +1255,7 @@ update_slide_cta_option = getattr(sheet_ops, "update_slide_cta_option", lambda _
 get_original_thumbnails = getattr(sheet_ops, "get_original_thumbnails", lambda _sheet_id: {})
 save_original_thumbnail = getattr(sheet_ops, "save_original_thumbnail", lambda _sheet_id, _row_number, _link: None)
 clear_original_thumbnail = getattr(sheet_ops, "clear_original_thumbnail", lambda _sheet_id, _row_number: None)
+shift_original_thumbnails_after_delete = getattr(sheet_ops, "shift_original_thumbnails_after_delete", lambda _sheet_id, _row_number: None)
 if hasattr(sheet_ops, "get_last_scheduled_times"):
     get_last_scheduled_times = sheet_ops.get_last_scheduled_times
 else:
@@ -6718,12 +6719,18 @@ def _delete_workspace_row(row: dict) -> None:
         st.session_state["workspace_transcribe_reset_rows"] = [
             pending for pending in pending_transcribe_resets if pending != _workspace_key(row, "transcribe")
         ]
-    # Clear blur state so the button doesn't bleed onto the next row that inherits this number.
+    # Re-key the blur map: remove the deleted row's entry and shift all higher row numbers
+    # down by 1 so blur state stays aligned with the sheet after rows renumber.
     try:
-        clear_original_thumbnail(GOOGLE_SHEET_ID, row_number)
+        shift_original_thumbnails_after_delete(GOOGLE_SHEET_ID, row_number)
     except Exception:
         pass
-    st.session_state.get("workspace_original_thumbnails", {}).pop(str(row_number), None)
+    session_thumbs = st.session_state.get("workspace_original_thumbnails", {})
+    session_thumbs.pop(str(row_number), None)
+    st.session_state["workspace_original_thumbnails"] = {
+        str(int(k) - 1) if k.isdigit() and int(k) > row_number else k: v
+        for k, v in session_thumbs.items()
+    }
     _clear_workspace_row_state(row)
 
 
