@@ -4054,10 +4054,9 @@ def _render_workspace_slides_dialog(workspace_rows: list[dict], workspace_rows_e
     if slides_notice:
         st.caption(slides_notice)
 
-    pasted_results = st.text_area(
+    pasted_results = st.text_input(
         "Paste slide results",
         key="workspace_slides_results",
-        height=100,
         placeholder='[{"row_number":2,"name":"...","text1":"...","text2":"...","text3":"..."}]',
     )
     if st.button("Apply slide results", key="workspace_slides_apply", type="primary", width="stretch"):
@@ -4093,10 +4092,9 @@ def _render_workspace_post_slides_dialog(row: dict) -> None:
     row_num = row["row_number"]
     st.caption(f"Row {row_num}. Pasted results will be applied to this post.")
 
-    pasted_results = st.text_area(
+    pasted_results = st.text_input(
         "Paste slide results",
         key="workspace_post_slides_results",
-        height=100,
         placeholder='[{"row_number":2,"name":"...","text1":"...","text2":"...","text3":"..."}]',
     )
     if st.button(
@@ -4142,10 +4140,9 @@ def _render_workspace_generic_slides_dialog(row: dict) -> None:
         "Paste the result below and click Create new post."
     )
 
-    pasted_results = st.text_area(
+    pasted_results = st.text_input(
         "Paste slide results",
         key="workspace_generic_slides_results",
-        height=100,
         placeholder='[{"row_number":2,"name":"...","text1":"...","text2":"...","text3":"...","generated_caption":"..."}]',
     )
     if st.button(
