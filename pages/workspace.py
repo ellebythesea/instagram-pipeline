@@ -3627,10 +3627,9 @@ def _render_election_post_dialog() -> None:
                 f"{resolved.get('election_date', '')}"
             )
 
-        json_paste = st.text_area(
+        json_paste = st.text_input(
             "Paste JSON result from ChatGPT",
             key="workspace_election_post_json_paste",
-            height=150,
             placeholder='{"name": "...", "quote": "...", "text1": "...", ...}',
         ).strip()
         if st.button(
@@ -3863,10 +3862,9 @@ def _render_workspace_home_action_dialog() -> None:
                 shutil.rmtree(tmp_dir, ignore_errors=True)
 
     elif mode == "Create a Post":
-        prompt = st.text_area(
+        prompt = st.text_input(
             "Post prompt",
             key="workspace_home_create_post_prompt",
-            height=150,
             placeholder="Write your post content, talking points, or key message…",
         ).strip()
         st.text_input(
@@ -4224,11 +4222,11 @@ def _render_workspace_slide_action_dialog(row: dict) -> None:
         st.session_state["workspace_slide_dialog_value"] = current_values[action]
 
     st.caption(dialog_labels[action])
-    if action == "speaker":
+    if action in ("speaker", "prompt", "custom_link"):
         st.text_input(
             dialog_labels[action],
             key="workspace_slide_dialog_value",
-            placeholder="Add context (e.g. speaker name)",
+            placeholder="Add context (e.g. speaker name)" if action == "speaker" else "",
             label_visibility="collapsed",
         )
     else:
@@ -8083,10 +8081,9 @@ if active_section_tab == "Substack":
                                 st.markdown(f"**Slide {_sb_slide_num}**")
                                 st.code(_sb_post.get(f"text{_sb_slide_num}", ""), language=None)
                         if _sb_post_status not in {"row created", "posted"}:
-                            _sb_slide_results = st.text_area(
+                            _sb_slide_results = st.text_input(
                                 "Paste slide results",
                                 key=f"ws_sb_slide_results_{_sb_post_row_number}",
-                                height=110,
                                 placeholder=(
                                     f'[{{"row_number":{_sb_post_row_number},"name":"...",'
                                     '"text1":"...","text2":"...","text3":"...",'
