@@ -137,6 +137,28 @@ def _decode_top_comment(value: str) -> tuple[str, bool]:
     return cleaned, False
 
 
+def _is_bare_url(value: str) -> bool:
+    text = (value or "").strip()
+    if not text or " " in text or "\n" in text:
+        return False
+    parsed = urlparse(text)
+    return parsed.scheme in ("http", "https") and bool(parsed.netloc)
+
+
+def _clean_public_url(link: str) -> str:
+    parsed = urlparse((link or "").strip())
+    if not parsed.scheme or not parsed.netloc:
+        return (link or "").strip()
+    return f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+
+
+def _expand_bare_url_top_comment(value: str) -> str:
+    """A Top Comment cell that's just a bare URL becomes the standard link CTA."""
+    if not _is_bare_url(value):
+        return value
+    return f"Comment LINK (on instagram) and we will DM you the link to {_clean_public_url(value)}"
+
+
 def _row_media_type(row: dict) -> str:
     return (row.get("Media Type") or "").strip().lower()
 
@@ -321,6 +343,7 @@ def generate_row_caption(row: dict) -> str:
     caption = response.choices[0].message.content.strip()
 
     top_comment, pin_top_comment = _decode_top_comment(row.get("Top Comment", ""))
+    top_comment = _expand_bare_url_top_comment(top_comment)
     if top_comment:
         caption = _strip_top_comment_paragraphs(caption, top_comment)
         original_caption = _strip_top_comment_paragraphs(original_caption, top_comment)

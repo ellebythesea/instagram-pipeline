@@ -3256,7 +3256,12 @@ def _apply_top_comment_to_caption(
     row_num: int,
     speaker_name: str,
     top_comment: str,
-) -> None:
+) -> bool:
+    """Save the Top Comment and, if a caption already exists, splice the CTA into it.
+
+    Returns True if the generated caption itself was updated, False if only
+    the Top Comment field was saved (e.g. no caption exists yet to update).
+    """
     current_context = st.session_state.get(_workspace_key(row, "context"), row.get("Caption Context", "")).strip()
     current_speaker = st.session_state.get(_workspace_speaker_key(row), speaker_name).strip()
     current_hashtags = st.session_state.get(_workspace_key(row, "hashtags"), row.get("Required Hashtags", "")).strip()
@@ -3332,6 +3337,7 @@ def _apply_top_comment_to_caption(
         if caption:
             update_caption(GOOGLE_SHEET_ID, row_num, caption, current_status)
     st.session_state[_workspace_key(row, "top")] = top_comment
+    return bool(caption)
 
 
 def _current_row_caption_inputs(row: dict) -> dict:
@@ -4333,11 +4339,17 @@ def _render_workspace_link_dialog(row: dict) -> None:
         )
         top_comment = _encode_top_comment(addition, pinned=False)
         try:
-            _apply_top_comment_to_caption(row, row_num, speaker_name, top_comment)
+            caption_updated = _apply_top_comment_to_caption(row, row_num, speaker_name, top_comment)
         except Exception as e:
             st.session_state["workspace_error"] = f"Row {row_num}: could not save link CTA - {describe_error(e)}"
         else:
-            st.session_state["workspace_success"] = f"Row {row_num}: link CTA saved to generated caption."
+            if caption_updated:
+                st.session_state["workspace_success"] = f"Row {row_num}: link CTA saved to generated caption."
+            else:
+                st.session_state["workspace_success"] = (
+                    f"Row {row_num}: link CTA saved. No caption exists yet, "
+                    "so it will be included the next time one is generated."
+                )
         _close_workspace_link_dialog(row)
         _rerun_workspace("Edit")
 
