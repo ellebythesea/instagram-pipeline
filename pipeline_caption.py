@@ -413,6 +413,15 @@ def _carousel_display_name(row: dict) -> str:
     return username
 
 
+def _ensure_username_at_prefix(text: str, username: str) -> str:
+    """Prepend @ to any bare mention of the row's handle the model forgot to prefix."""
+    handle = (username or "").strip().lstrip("@")
+    if not handle or not text:
+        return text
+    pattern = re.compile(rf"(?<!@)\b{re.escape(handle)}\b", re.IGNORECASE)
+    return pattern.sub(f"@{handle}", text)
+
+
 def carousel_slide_rules() -> str:
     """Canonical slide generation rules shared by all carousel prompt builders."""
     return (
@@ -433,7 +442,7 @@ def carousel_slide_rules() -> str:
         "Use names, numbers, dates, quotes, conflicts, and consequences. Prefer concrete facts over abstract framing.\n"
         "Write facts directly. Never describe the source, the slides, or the writing itself. Do not narrate the structure of the carousel — write as if reporting the event, not describing a post.\n"
         "When tempted to write 'the argument is' or 'the claim is' — replace it with the actual fact, quote, consequence, or verified context.\n"
-        "ATTRIBUTION: Name the person or account behind the content only once across the whole carousel — use their name from speaker_name when provided, otherwise the @username handle. Prefer reporting-style attribution: 'As reported by @username', '@username reported that', 'According to @username'. Use 'says'/'argues'/'claims' only occasionally as variety. Every later reference to them must NOT repeat the name or handle: use 'he'/'she' if their gender is known, otherwise 'they' (e.g. 'they reported', 'they added'), or just state the fact/quote with no attribution at all. Never use 'the video', 'the reel', 'the clip', 'the speaker', 'the creator', or 'the account' as a stand-in for a person or source.\n"
+        "ATTRIBUTION: Name the person or account behind the content only once across the whole carousel — use the display_name value provided, copied exactly as given (it already includes the @ symbol when it's a handle, e.g. '@grahamformaine' — do not strip it, and do not substitute the separate username field, which is deliberately given without @). Prefer reporting-style attribution: 'As reported by @username', '@username reported that', 'According to @username'. Use 'says'/'argues'/'claims' only occasionally as variety. Every later reference to them must NOT repeat the name or handle: use 'he'/'she' if their gender is known, otherwise 'they' (e.g. 'they reported', 'they added'), or just state the fact/quote with no attribution at all. Never use 'the video', 'the reel', 'the clip', 'the speaker', 'the creator', or 'the account' as a stand-in for a person or source.\n"
         "BANNED PHRASES: the argument is, the claim is, the warning is, the headline says, the headline reads, the article says, the article states, the article reads, the speaker says, the clip says, the video says, the reel says, the post says, according to the post, according to the video, the caption reads, the speaker, the transcript, the creator said, the comment says, the post points out, the post notes, this matters because, why this matters, the carousel, the carousel opens, the carousel begins, the first slide, the second slide, the third slide, the opening slide, opens with, this slide, the post opens, the video, the reel, the clip\n\n"
 
         "QUOTES\n"
@@ -527,12 +536,17 @@ def generate_carousel_copy_with_model(row: dict, model: str = "gpt-4o") -> dict[
     raw = response.choices[0].message.content.strip()
     payload = _parse_jsonish_payload(raw)
 
+    username = row.get("Source Username", "").strip()
+    quote = (payload.get("quote") or "").strip().strip('"').strip("'").strip().rstrip(".")
+    text1 = _single_paragraph_slide_text(payload.get("text1") or "", 350)
+    text2 = _single_paragraph_slide_text(payload.get("text2") or "", 900)
+    text3 = _single_paragraph_slide_text(payload.get("text3") or "", 900)
     return {
         "name": (payload.get("name") or display_name or "").strip().lstrip("@"),
-        "quote": (payload.get("quote") or "").strip().strip('"').strip("'").strip().rstrip("."),
-        "text1": _single_paragraph_slide_text(payload.get("text1") or "", 350),
-        "text2": _single_paragraph_slide_text(payload.get("text2") or "", 900),
-        "text3": _single_paragraph_slide_text(payload.get("text3") or "", 900),
+        "quote": _ensure_username_at_prefix(quote, username),
+        "text1": _ensure_username_at_prefix(text1, username),
+        "text2": _ensure_username_at_prefix(text2, username),
+        "text3": _ensure_username_at_prefix(text3, username),
     }
 
 
@@ -545,6 +559,7 @@ def generate_batch_carousel_copy_with_model(rows: list[dict], model: str = "gpt-
 
     blocks: list[str] = []
     display_names: dict[int, str] = {}
+    usernames: dict[int, str] = {}
     for row in rows:
         row_number = int(row.get("row_number") or 0)
         if row_number <= 0:
@@ -553,6 +568,7 @@ def generate_batch_carousel_copy_with_model(rows: list[dict], model: str = "gpt-
         _row_media_type = (row.get("Media Type", "") or "").strip().lower()
         display_name = "" if _row_media_type == "article" else _carousel_display_name(row)
         display_names[row_number] = display_name
+        usernames[row_number] = (row.get("Source Username") or "").strip()
         blocks.append(
             "\n".join(
                 [
@@ -600,11 +616,16 @@ def generate_batch_carousel_copy_with_model(rows: list[dict], model: str = "gpt-
             continue
         if row_number <= 0:
             continue
+        row_username = usernames.get(row_number, "")
+        quote = (item.get("quote") or "").strip().strip('"').strip("'").strip().rstrip(".")
+        text1 = _single_paragraph_slide_text(item.get("text1") or "", 350)
+        text2 = _single_paragraph_slide_text(item.get("text2") or "", 900)
+        text3 = _single_paragraph_slide_text(item.get("text3") or "", 900)
         results[row_number] = {
             "name": (item.get("name") or display_names.get(row_number) or "").strip().lstrip("@"),
-            "quote": (item.get("quote") or "").strip().strip('"').strip("'").strip().rstrip("."),
-            "text1": _single_paragraph_slide_text(item.get("text1") or "", 350),
-            "text2": _single_paragraph_slide_text(item.get("text2") or "", 900),
-            "text3": _single_paragraph_slide_text(item.get("text3") or "", 900),
+            "quote": _ensure_username_at_prefix(quote, row_username),
+            "text1": _ensure_username_at_prefix(text1, row_username),
+            "text2": _ensure_username_at_prefix(text2, row_username),
+            "text3": _ensure_username_at_prefix(text3, row_username),
         }
     return results
