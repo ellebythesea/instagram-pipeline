@@ -3,7 +3,7 @@
 import ast
 import json
 import re
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import openai
 
@@ -149,7 +149,9 @@ def _clean_public_url(link: str) -> str:
     parsed = urlparse((link or "").strip())
     if not parsed.scheme or not parsed.netloc:
         return (link or "").strip()
-    return f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+    ref = parse_qs(parsed.query).get("ref", [None])[0]
+    suffix = f"?ref={ref}" if ref else ""
+    return f"{parsed.scheme}://{parsed.netloc}{parsed.path}{suffix}"
 
 
 def _expand_bare_url_top_comment(value: str) -> str:

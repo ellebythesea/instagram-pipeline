@@ -131,13 +131,15 @@ _INVISIBLE_CHARS_RE = re.compile(r"[\u200b\u200c\u200d\u200e\u200f\u2060\ufeff]"
 
 
 def _clean_public_url(link: str) -> str:
-    from urllib.parse import urlparse
+    from urllib.parse import parse_qs, urlparse
 
     link = _INVISIBLE_CHARS_RE.sub("", (link or "").strip())
     parsed = urlparse(link)
     if not parsed.scheme or not parsed.netloc:
         return link
-    return f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+    ref = parse_qs(parsed.query).get("ref", [None])[0]
+    suffix = f"?ref={ref}" if ref else ""
+    return f"{parsed.scheme}://{parsed.netloc}{parsed.path}{suffix}"
 
 
 def _build_watch_cta(username: str, link: str) -> str:

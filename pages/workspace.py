@@ -3160,7 +3160,9 @@ def _clean_public_url(link: str) -> str:
     parsed = urlparse(link)
     if not parsed.scheme or not parsed.netloc:
         return link
-    return f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+    ref = parse_qs(parsed.query).get("ref", [None])[0]
+    suffix = f"?ref={ref}" if ref else ""
+    return f"{parsed.scheme}://{parsed.netloc}{parsed.path}{suffix}"
 
 
 def _build_link_cta(link: str) -> str:
