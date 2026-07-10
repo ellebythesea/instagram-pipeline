@@ -7716,8 +7716,7 @@ if active_section_tab == "Home":
                         if link.strip()
                     ]
                     menu_nonce = st.session_state.get(menu_nonce_key, 0)
-                    menu_label_with_nonce = f"Post actions{chr(0x200B) * menu_nonce}"
-                    with st.popover(menu_label_with_nonce, use_container_width=True):
+                    with st.popover("Post actions", key=f"post_actions_popover_{row_num}_{menu_nonce}", use_container_width=True):
                         st.text_input(
                             "Add context",
                             key=context_key,
