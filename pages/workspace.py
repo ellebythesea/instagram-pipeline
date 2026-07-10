@@ -5143,7 +5143,7 @@ def _copy_tabs(
                     if st.button("Edit Text 2", key=f"workspace_inline_edit_text2_{row_num}", width="stretch"):
                         _open_workspace_slide_action_dialog(row_num, "text2")
                         _rerun_workspace("Edit")
-            with st.popover("Slide 2 actions", use_container_width=True):
+            with st.popover("Slide 2 actions" + chr(0x200B) * st.session_state.get("_workspace_rerun_nonce", 0), use_container_width=True):
                 if st.button("More link", key=f"workspace_row_slides_s2cta_more_{row_num}", width="stretch"):
                     st.session_state[slide_two_cta_key] = "more"
                     _rerun_workspace("Edit")
@@ -5234,7 +5234,7 @@ def _copy_tabs(
                 slide_six_font_adjust_key,
                 current_slide_six_font_adjust,
             )
-        with st.popover("Slide actions", use_container_width=True):
+        with st.popover("Slide actions" + chr(0x200B) * st.session_state.get("_workspace_rerun_nonce", 0), use_container_width=True):
             if st.button("Generate prompt", key=f"workspace_row_slides_build_{row_num}", width="stretch"):
                 base_row = prompt_row or {}
                 effective_row = {
@@ -6335,6 +6335,8 @@ def _rerun_workspace(tab: str | None = None) -> None:
         if tab in {"Edit", "Grid"}:
             tab = "Home"
         st.session_state["_workspace_pending_tab"] = tab
+    # Increment a global nonce so every popover label changes and Streamlit re-renders them closed.
+    st.session_state["_workspace_rerun_nonce"] = st.session_state.get("_workspace_rerun_nonce", 0) + 1
     st.rerun()
 
 
@@ -7450,7 +7452,7 @@ if active_section_tab == "Home":
     if st.session_state.get("workspace_election_post_dialog"):
         _render_election_post_dialog()
 
-    with st.popover("App actions", use_container_width=True):
+    with st.popover("App actions" + chr(0x200B) * st.session_state.get("_workspace_rerun_nonce", 0), use_container_width=True):
         if st.button(
             "⚡ Run all",
             key="workspace_run_all",
@@ -7459,7 +7461,7 @@ if active_section_tab == "Home":
             type="primary",
         ):
             st.session_state["workspace_run_all_pending"] = True
-            st.rerun()
+            _rerun_workspace()
 
         if st.button(
             "Refresh results",
