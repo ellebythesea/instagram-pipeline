@@ -3183,10 +3183,11 @@ def _build_watch_cta(username: str, link: str) -> str:
 def _slide_three_cta_text(option: str, top_comment: str) -> str:
     normalized = (option or "more").strip().lower()
     cta_text_by_option = {
-        "article": "Say LINK for the article",
+        "article": "Say LINK to read",
         "substack": "Say LINK for the Substack",
-        "petition": "Say LINK for the petition",
-        "video": "Say LINK for the video",
+        "petition": "Say LINK to sign the petition",
+        "video": "Say LINK to watch",
+        "act": "Say LINK to act",
         "more": "Say LINK for more",
         "custom link": "Say LINK for more",
     }
@@ -4911,7 +4912,7 @@ def _copy_tabs(
         current_slide_five_font_adjust = -2 if _raw_s5_font is None else int(_raw_s5_font)
         _raw_s6_font = st.session_state.get(slide_six_font_adjust_key)
         current_slide_six_font_adjust = -2 if _raw_s6_font is None else int(_raw_s6_font)
-        _known_cta_options = {"more", "article", "substack", "petition", "video", "custom link", "hidden"}
+        _known_cta_options = {"more", "act", "article", "substack", "petition", "video", "custom link", "hidden"}
         _is_article = _is_article_url(source_url)
         default_slide_three_cta_option = "article" if (_is_article or _is_candidate_article_row(prompt_row or {})) else "hidden"
         raw_sheet_cta = _cell_text((prompt_row or {}).get("Slide CTA")).strip()
@@ -5002,6 +5003,7 @@ def _copy_tabs(
                                 st.session_state[f"workspace_quote_picker_{row_num}"] = True
                             except Exception as _qe:
                                 st.session_state["workspace_error"] = f"Row {row_num}: could not generate quotes — {describe_error(_qe)}"
+                            st.session_state["workspace_preview_scroll_target"] = anchor_id
                             _rerun_workspace("Edit")
                     with s1_cols[7]:
                         fit_label = "Fill" if current_slide_one_fit_mode else "Fit"
@@ -5066,6 +5068,7 @@ def _copy_tabs(
                                 st.session_state[f"workspace_quote_picker_{row_num}"] = True
                             except Exception as _qe:
                                 st.session_state["workspace_error"] = f"Row {row_num}: could not generate quotes — {describe_error(_qe)}"
+                            st.session_state["workspace_preview_scroll_target"] = anchor_id
                             _rerun_workspace("Edit")
                     with s1_cols[7]:
                         fit_label = "Fill" if current_slide_one_fit_mode else "Fit"
@@ -5113,11 +5116,13 @@ def _copy_tabs(
                         st.session_state.pop(f"workspace_quote_picker_{row_num}", None)
                         st.session_state.pop(f"workspace_quote_options_{row_num}", None)
                         st.session_state["workspace_success"] = f"Row {row_num}: quote saved."
+                        st.session_state["workspace_preview_scroll_target"] = f"workspace-preview-ctrl-{row_num}_slide1"
                         _rerun_workspace("Edit")
                 with _qcols[1]:
                     if st.button("Cancel", key=f"workspace_quote_cancel_{row_num}"):
                         st.session_state.pop(f"workspace_quote_picker_{row_num}", None)
                         st.session_state.pop(f"workspace_quote_options_{row_num}", None)
+                        st.session_state["workspace_preview_scroll_target"] = f"workspace-preview-ctrl-{row_num}_slide1"
                         _rerun_workspace("Edit")
         if (slide_text2 or "").strip():
             _render_text_slide_preview(
@@ -5253,6 +5258,7 @@ def _copy_tabs(
                     st.session_state["workspace_success"] = f"Row {row_num}: quote generated."
                 except Exception as e:
                     st.session_state["workspace_error"] = f"Could not generate quote: {describe_error(e)}"
+                st.session_state["workspace_preview_scroll_target"] = f"workspace-preview-ctrl-{row_num}_slide1"
                 _rerun_workspace("Edit")
             slides_merged = st.session_state.get(slide_merge_key, False)
             if slides_merged:
@@ -5306,6 +5312,12 @@ def _copy_tabs(
                 _rerun_workspace("Edit")
             if st.button("Substack link", key=f"workspace_row_slides_cta_substack_{row_num}", width="stretch"):
                 _save_slide_three_cta_choice(row_num, slide_three_cta_key, "substack")
+                _rerun_workspace("Edit")
+            if st.button("Act link", key=f"workspace_row_slides_cta_act_{row_num}", width="stretch"):
+                _save_slide_three_cta_choice(row_num, slide_three_cta_key, "act")
+                _rerun_workspace("Edit")
+            if st.button("Petition link", key=f"workspace_row_slides_cta_petition_{row_num}", width="stretch"):
+                _save_slide_three_cta_choice(row_num, slide_three_cta_key, "petition")
                 _rerun_workspace("Edit")
             if st.button("Update name", key=f"workspace_row_slides_edit_speaker_{row_num}", width="stretch"):
                 _open_workspace_slide_action_dialog(row_num, "speaker")
