@@ -7500,6 +7500,9 @@ if active_section_tab == "Home":
             _open_election_post_dialog()
             _rerun_workspace("Home")
 
+        if st.button("Montage Generator", key="workspace_open_montage_generator", width="stretch"):
+            st.switch_page("pages/montage_generator.py")
+
         if st.button("Update cookies", key="workspace_open_cookies_dialog", width="stretch"):
             _render_cookies_dialog()
 
