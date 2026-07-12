@@ -168,7 +168,6 @@ if newly_uploaded_slots:
         transform["x"] = round(center_x - scaled_width / 2)
 
 st.subheader("Preview")
-st.caption("Layer order: Person 1 is placed first (back) through Person 4 last (front).")
 
 filled_slots = filled_slots_now
 selected_slot = st.session_state.get("montage_selected_slot")
@@ -176,7 +175,6 @@ if selected_slot not in filled_slots:
     selected_slot = filled_slots[0] if filled_slots else None
 
 if filled_slots:
-    st.caption("Select which person the buttons below move:")
     person_button_cols = st.columns(len(filled_slots))
     for col, slot in zip(person_button_cols, filled_slots):
         is_selected = slot == selected_slot
