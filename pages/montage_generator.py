@@ -27,10 +27,8 @@ SHADOW_COLOR = "#004B9F"
 HIGHLIGHT_COLOR = "#E9E9EE"
 CONTRAST = 2.0
 SLOT_NUMBERS = (1, 2, 3, 4)
-SLOT_CENTER_FRACTIONS = {1: 0.18, 2: 0.40, 3: 0.60, 4: 0.82}
-SECOND_PERSON_OFFSET_PX = 0.35 * CANVAS_WIDTH_PX
-MOVE_STEP_PX = 40
-ZOOM_STEP = 0.05
+MOVE_STEP_PX = 100
+ZOOM_STEP = 0.2
 
 
 def _cap_max_dimension(image: Image.Image, max_dim: int) -> Image.Image:
@@ -86,10 +84,6 @@ def _default_transform(person_width: int, person_height: int, center_x: float) -
     }
 
 
-def _transform_center_x(transform: dict) -> float:
-    return transform["x"] + (transform["width"] * transform["scale"]) / 2
-
-
 def _load_background(uploaded_file) -> Image.Image | None:
     if uploaded_file is not None:
         return Image.open(uploaded_file).convert("RGBA")
@@ -135,7 +129,6 @@ bg_upload = st.file_uploader(
 
 st.subheader("People")
 person_images: dict[int, Image.Image] = {}
-person_filenames: dict[int, str] = {}
 newly_uploaded_slots: set[int] = set()
 for slot in SLOT_NUMBERS:
     uploaded = st.file_uploader(
@@ -154,37 +147,47 @@ for slot in SLOT_NUMBERS:
         original = ImageOps.exif_transpose(Image.open(io.BytesIO(raw_bytes)))
         capped = _cap_max_dimension(original, MAX_PERSON_DIMENSION)
         st.session_state.montage_file_ids[slot] = file_id
+        # Placeholder center; overwritten below once we know how many people are filled.
         st.session_state.montage_transforms[slot] = _default_transform(
-            capped.width, capped.height, CANVAS_WIDTH_PX * SLOT_CENTER_FRACTIONS[slot]
+            capped.width, capped.height, CANVAS_WIDTH_PX / 2
         )
         newly_uploaded_slots.add(slot)
 
     processed_bytes = _process_person_image(raw_bytes, SHADOW_COLOR, HIGHLIGHT_COLOR)
     person_images[slot] = Image.open(io.BytesIO(processed_bytes)).convert("RGBA")
-    person_filenames[slot] = uploaded.name
 
-# When a second person joins, default them further right of the first
-# instead of the fixed per-slot fraction, so a two-person montage starts centered.
+# Whenever someone new joins (or replaces a photo), space everyone currently filled
+# evenly across the canvas width instead of clustering toward the left.
 filled_slots_now = sorted(person_images.keys())
-if len(filled_slots_now) == 2 and filled_slots_now[1] in newly_uploaded_slots:
-    first_slot, second_slot = filled_slots_now
-    first_transform = st.session_state.montage_transforms[first_slot]
-    second_transform = st.session_state.montage_transforms[second_slot]
-    new_center_x = _transform_center_x(first_transform) + SECOND_PERSON_OFFSET_PX
-    scaled_width_second = second_transform["width"] * second_transform["scale"]
-    second_transform["x"] = round(new_center_x - scaled_width_second / 2)
+if newly_uploaded_slots:
+    count = len(filled_slots_now)
+    for rank, slot in enumerate(filled_slots_now, start=1):
+        transform = st.session_state.montage_transforms[slot]
+        center_x = CANVAS_WIDTH_PX * (rank - 0.5) / count
+        scaled_width = transform["width"] * transform["scale"]
+        transform["x"] = round(center_x - scaled_width / 2)
 
 st.subheader("Preview")
 st.caption("Layer order: Person 1 is placed first (back) through Person 4 last (front).")
 
 filled_slots = filled_slots_now
-selected_slot = None
+selected_slot = st.session_state.get("montage_selected_slot")
+if selected_slot not in filled_slots:
+    selected_slot = filled_slots[0] if filled_slots else None
+
 if filled_slots:
-    labels = [f"{slot}-{person_filenames[slot]}" for slot in filled_slots]
-    current_label = st.session_state.get("montage_selected_person")
-    index = labels.index(current_label) if current_label in labels else 0
-    selected_label = st.selectbox("Select person to move", labels, index=index, key="montage_selected_person")
-    selected_slot = filled_slots[labels.index(selected_label)]
+    st.caption("Select which person the buttons below move:")
+    person_button_cols = st.columns(len(filled_slots))
+    for col, slot in zip(person_button_cols, filled_slots):
+        is_selected = slot == selected_slot
+        if col.button(
+            str(slot),
+            key=f"montage_select_person_{slot}",
+            width="stretch",
+            type="primary" if is_selected else "secondary",
+        ):
+            selected_slot = slot
+    st.session_state["montage_selected_slot"] = selected_slot
 else:
     st.info("Upload at least one person photo above to begin positioning.")
 
