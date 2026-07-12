@@ -9,7 +9,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import streamlit as st
 from PIL import Image, ImageOps
-from rembg import remove
 
 from utils.auth import require_auth
 from utils.styles import inject as inject_styles
@@ -55,6 +54,8 @@ def _apply_duotone(image: Image.Image, shadow_hex: str, highlight_hex: str) -> I
 
 @st.cache_data(show_spinner="Removing background...")
 def _process_person_image(image_bytes: bytes, shadow_hex: str, highlight_hex: str) -> bytes:
+    from rembg import remove  # deferred: only import rembg's heavy dependencies on first actual use
+
     image = Image.open(io.BytesIO(image_bytes))
     image = ImageOps.exif_transpose(image)
     image = _cap_max_dimension(image.convert("RGB"), MAX_PERSON_DIMENSION)
@@ -107,6 +108,10 @@ def _composite_layer(canvas: Image.Image, person_image: Image.Image, transform: 
 
 st.set_page_config(page_title="Montage Generator", page_icon="🖼️", layout="centered")
 inject_styles()
+
+if st.button("← Back to Home", key="montage_back_to_home"):
+    st.switch_page("pages/workspace.py")
+
 st.title("Montage Generator")
 st.caption(
     "Overlay up to four people (background removed, blue duotone) on a background, "
