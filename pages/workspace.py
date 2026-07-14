@@ -3082,7 +3082,7 @@ def _create_post_from_prompt(prompt: str, custom_link: str, uploaded_file, speak
             "thumbnail_link": thumbnail_link,
             "top_comment": top_comment,
             "status": "ingested",
-            "name": _row_name,
+            "name": pipeline_caption_ops.normalize_slide_name(_row_name, media_type, speaker_name),
             "quote": (slide_data.get("quote") or "").strip().strip('"').strip("'").rstrip("."),
             "text1": slide_data.get("text1", ""),
             "text2": slide_data.get("text2", ""),
@@ -3105,7 +3105,7 @@ def _create_post_from_prompt(prompt: str, custom_link: str, uploaded_file, speak
             "thumbnail_link": thumbnail_link,
             "top_comment": top_comment,
             "status": "ingested",
-            "name": link_domain,
+            "name": pipeline_caption_ops.normalize_slide_name(link_domain, media_type, speaker_name),
         })
 
     all_rows = _run_with_sheet_quota_countdown(
@@ -4106,7 +4106,7 @@ def _render_workspace_post_slides_dialog(row: dict) -> None:
         disabled=not pasted_results.strip(),
     ):
         try:
-            updated_count, issues = _apply_slide_result_to_specific_row(row_num, pasted_results)
+            updated_count, issues = _apply_slide_result_to_specific_row(row_num, pasted_results, row)
             success_message = f"Row {row_num}: slide result applied."
         except Exception as e:
             st.error(f"Could not apply slide result: {describe_error(e)}")
@@ -4926,15 +4926,21 @@ def _copy_tabs(
         current_speaker_name = _cell_text(
             st.session_state.get(f"workspace_speaker_row_{row_num}", speaker_name)
         ).strip()
-        if _is_article:
+        slide_name = _cell_text((prompt_row or {}).get("name", "")).strip()
+        is_article_row = _is_article or _cell_text(media_type).lower() == "article"
+        if is_article_row:
+            # Article: show the topic label (never an @); fall back to speaker/domain.
             _article_domain = urlparse(source_url).netloc.lower().removeprefix("www.") if source_url else ""
-            slide_handle = current_speaker_name.lstrip("@") or _article_domain
+            slide_handle = (
+                pipeline_caption_ops.normalize_slide_name(slide_name, "article")
+                or current_speaker_name.lstrip("@")
+                or _article_domain
+            )
         else:
-            if current_speaker_name:
-                slide_handle = current_speaker_name
-            else:
-                u = username.strip().lstrip("@")
-                slide_handle = f"@{u}" if u else ""
+            # Post/reel: credit the creator with an @handle (speaker, else @username).
+            slide_handle = pipeline_caption_ops.normalize_slide_name(
+                slide_name, "post", current_speaker_name, username
+            )
         last_cta_slide_number = 3
         for candidate_slide_number, candidate_text in (
             (6, slide_text6),
@@ -7234,7 +7240,9 @@ def _single_row_slide_result_json(raw_text: str, row_number: int) -> str:
     return json.dumps([selected])
 
 
-def _apply_slide_result_to_specific_row(row_number: int, raw_text: str) -> tuple[int, list[str]]:
+def _apply_slide_result_to_specific_row(
+    row_number: int, raw_text: str, row: dict | None = None
+) -> tuple[int, list[str]]:
     payload = _extract_json_payload(raw_text)
     items = payload if isinstance(payload, list) else [payload]
     dict_items = [item for item in items if isinstance(item, dict)]
@@ -7252,9 +7260,14 @@ def _apply_slide_result_to_specific_row(row_number: int, raw_text: str) -> tuple
     if selected is None:
         selected = dict_items[0]
 
-    raw_name = _cell_text(selected.get("name")).strip()
+    row = row or {}
     carousel = {
-        "name": ("@" + raw_name if raw_name and not raw_name.startswith("@") and " " not in raw_name else raw_name),
+        "name": pipeline_caption_ops.normalize_slide_name(
+            selected.get("name"),
+            _cell_text(row.get("Media Type")),
+            _cell_text(row.get("Speaker Name")),
+            _cell_text(row.get("Source Username")),
+        ),
         "quote": _cell_text(selected.get("quote")).strip().strip('"').strip("'").strip().rstrip("."),
         "text1": _single_paragraph_slide_text(selected.get("text1")),
         "text2": _single_paragraph_slide_text(selected.get("text2")),
@@ -7313,8 +7326,12 @@ def _apply_chatgpt_handoff_results(sheet_id: str, raw_text: str) -> tuple[int, l
             issues.append(f"Item {index}: row {row_number} was not found in the sheet.")
             continue
 
-        raw_name = _cell_text(item.get("name")).strip()
-        name = ("@" + raw_name if raw_name and not raw_name.startswith("@") and " " not in raw_name else raw_name)
+        name = pipeline_caption_ops.normalize_slide_name(
+            item.get("name"),
+            _cell_text(row.get("Media Type")),
+            _cell_text(row.get("Speaker Name")),
+            _cell_text(row.get("Source Username")),
+        )
         text1 = _single_paragraph_slide_text(item.get("text1"))
         text2 = _single_paragraph_slide_text(item.get("text2"))
         text3 = _single_paragraph_slide_text(item.get("text3"))
