@@ -6808,10 +6808,12 @@ def _build_chatgpt_handoff_prompt(rows: list[dict]) -> str:
         original_caption = _cell_text(working_row.get("Original Caption")).strip()
         caption_context = _cell_text(working_row.get("Caption Context")).strip()
         speaker_name = _cell_text(working_row.get("Speaker Name")).strip()
+        display_name = "" if media_type == "article" else pipeline_caption_ops._carousel_display_name(working_row)
         blocks.append(
             "\n".join(
                 [
                     f"ROW {row_num}",
+                    f"display_name: {display_name or '(use topic label)'}",
                     f"username: {username}",
                     f"media_type: {media_type}",
                     f"speaker_name: {speaker_name or '(none)'}",
