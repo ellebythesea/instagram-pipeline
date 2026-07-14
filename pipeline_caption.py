@@ -415,6 +415,31 @@ def _carousel_display_name(row: dict) -> str:
     return username
 
 
+def normalize_slide_name(
+    raw_name: str,
+    media_type: str,
+    speaker_name: str = "",
+    username: str = "",
+) -> str:
+    """Canonical slide-1 label (the 'name' column shown on the slide visual).
+
+    Articles get a short topic label and NEVER a leading '@'. Instagram posts
+    and reels get the creator's handle with exactly one leading '@' so the
+    original source is credited on the slide — the manual Speaker Name wins,
+    then the scraped @username, then whatever label was supplied.
+    """
+    raw = (raw_name or "").strip()
+    is_article = (media_type or "").strip().lower() == "article"
+    if is_article:
+        return raw.lstrip("@").strip()
+    handle = (
+        (speaker_name or "").strip()
+        or (username or "").strip()
+        or raw
+    ).lstrip("@").strip()
+    return f"@{handle}" if handle else ""
+
+
 def _ensure_username_at_prefix(text: str, username: str) -> str:
     """Prepend @ to any bare mention of the row's handle the model forgot to prefix."""
     handle = (username or "").strip().lstrip("@")
@@ -544,7 +569,12 @@ def generate_carousel_copy_with_model(row: dict, model: str = "gpt-4o") -> dict[
     text2 = _single_paragraph_slide_text(payload.get("text2") or "", 900)
     text3 = _single_paragraph_slide_text(payload.get("text3") or "", 900)
     return {
-        "name": (payload.get("name") or display_name or "").strip().lstrip("@"),
+        "name": normalize_slide_name(
+            payload.get("name") or display_name,
+            row.get("Media Type", ""),
+            row.get("Speaker Name", ""),
+            username,
+        ),
         "quote": _ensure_username_at_prefix(quote, username),
         "text1": _ensure_username_at_prefix(text1, username),
         "text2": _ensure_username_at_prefix(text2, username),
@@ -562,6 +592,8 @@ def generate_batch_carousel_copy_with_model(rows: list[dict], model: str = "gpt-
     blocks: list[str] = []
     display_names: dict[int, str] = {}
     usernames: dict[int, str] = {}
+    media_types: dict[int, str] = {}
+    speaker_names: dict[int, str] = {}
     for row in rows:
         row_number = int(row.get("row_number") or 0)
         if row_number <= 0:
@@ -571,6 +603,8 @@ def generate_batch_carousel_copy_with_model(rows: list[dict], model: str = "gpt-
         display_name = "" if _row_media_type == "article" else _carousel_display_name(row)
         display_names[row_number] = display_name
         usernames[row_number] = (row.get("Source Username") or "").strip()
+        media_types[row_number] = _row_media_type
+        speaker_names[row_number] = (row.get("Speaker Name") or "").strip()
         blocks.append(
             "\n".join(
                 [
@@ -624,7 +658,12 @@ def generate_batch_carousel_copy_with_model(rows: list[dict], model: str = "gpt-
         text2 = _single_paragraph_slide_text(item.get("text2") or "", 900)
         text3 = _single_paragraph_slide_text(item.get("text3") or "", 900)
         results[row_number] = {
-            "name": (item.get("name") or display_names.get(row_number) or "").strip().lstrip("@"),
+            "name": normalize_slide_name(
+                item.get("name") or display_names.get(row_number),
+                media_types.get(row_number, ""),
+                speaker_names.get(row_number, ""),
+                row_username,
+            ),
             "quote": _ensure_username_at_prefix(quote, row_username),
             "text1": _ensure_username_at_prefix(text1, row_username),
             "text2": _ensure_username_at_prefix(text2, row_username),
