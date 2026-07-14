@@ -3024,11 +3024,17 @@ def _parse_slide_json(prompt: str) -> dict | None:
     return data
 
 
-def _create_post_from_prompt(prompt: str, custom_link: str, uploaded_file, speaker_name: str = "") -> int:
+def _create_post_from_prompt(
+    prompt: str,
+    custom_link: str,
+    uploaded_file,
+    speaker_name: str = "",
+    media_type_hint: str = "",
+) -> int:
     """Append a new row from a manual prompt, upload media if provided, and generate a caption."""
     media_link = ""
     thumbnail_link = ""
-    media_type = ""
+    media_type = _cell_text(media_type_hint).strip().lower()
     transcript = ""
 
     slide_data = _parse_slide_json(prompt)
@@ -3649,7 +3655,9 @@ def _render_election_post_dialog() -> None:
                 else:
                     source_url = _cell_text(slide_data.get("source_url", "")).strip()
                     with st.spinner("Creating post…"):
-                        row_num = _create_post_from_prompt(json_paste, source_url, None)
+                        row_num = _create_post_from_prompt(
+                            json_paste, source_url, None, media_type_hint="article"
+                        )
                     _close_election_post_dialog(clear_inputs=True)
                     st.session_state["workspace_home_notice"] = f"Election post created as row {row_num}."
                     st.session_state["workspace_selected_row_num"] = row_num
@@ -4927,19 +4935,30 @@ def _copy_tabs(
             st.session_state.get(f"workspace_speaker_row_{row_num}", speaker_name)
         ).strip()
         slide_name = _cell_text((prompt_row or {}).get("name", "")).strip()
-        is_article_row = _is_article or _cell_text(media_type).lower() == "article"
-        if is_article_row:
-            # Article: show the topic label (never an @); fall back to speaker/domain.
+        is_article_row = (
+            _is_article
+            or _cell_text(media_type).lower() == "article"
+            or _is_candidate_article_row(prompt_row or {})
+        )
+        if current_speaker_name:
+            # A manually entered name wins and is shown exactly as typed — never
+            # force an @ onto it. Articles never carry an @, so strip a stray one.
+            slide_handle = (
+                current_speaker_name.lstrip("@").strip()
+                if is_article_row
+                else current_speaker_name
+            )
+        elif is_article_row:
+            # Article with no manual name: topic label (never an @), else domain.
             _article_domain = urlparse(source_url).netloc.lower().removeprefix("www.") if source_url else ""
             slide_handle = (
                 pipeline_caption_ops.normalize_slide_name(slide_name, "article")
-                or current_speaker_name.lstrip("@")
                 or _article_domain
             )
         else:
-            # Post/reel: credit the creator with an @handle (speaker, else @username).
+            # Post/reel with no manual name: credit the creator with an @handle.
             slide_handle = pipeline_caption_ops.normalize_slide_name(
-                slide_name, "post", current_speaker_name, username
+                slide_name, "post", "", username
             )
         last_cta_slide_number = 3
         for candidate_slide_number, candidate_text in (
