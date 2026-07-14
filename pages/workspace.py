@@ -5231,11 +5231,21 @@ def _copy_tabs(
                 link_cta_target=current_slide_three_cta,
                 link_cta_text=_slide_three_cta_text(current_slide_three_cta, top_comment),
             )
-            _render_workspace_preview_control_bar(
-                f"{row_num}_slide4",
-                slide_four_font_adjust_key,
-                current_slide_four_font_adjust,
-            )
+            with st.container():
+                st.markdown('<div class="workspace-slide4-ctrl-anchor"></div>', unsafe_allow_html=True)
+                _s4_cols = st.columns(3, gap="small")
+                with _s4_cols[0]:
+                    if st.button("A-", key=f"workspace_preview_{row_num}_slide4_font_down", width="stretch"):
+                        st.session_state[slide_four_font_adjust_key] = max(-80, current_slide_four_font_adjust - 2)
+                        _rerun_workspace("Edit")
+                with _s4_cols[1]:
+                    if st.button("A+", key=f"workspace_preview_{row_num}_slide4_font_up", width="stretch"):
+                        st.session_state[slide_four_font_adjust_key] = min(200, current_slide_four_font_adjust + 2)
+                        _rerun_workspace("Edit")
+                with _s4_cols[2]:
+                    if st.button("Edit Text 4", key=f"workspace_inline_edit_text4_{row_num}", width="stretch"):
+                        _open_workspace_slide_action_dialog(row_num, "text4")
+                        _rerun_workspace("Edit")
         if (slide_text5 or "").strip():
             _render_text_slide_preview(
                 5,
@@ -5245,11 +5255,21 @@ def _copy_tabs(
                 link_cta_target=current_slide_three_cta,
                 link_cta_text=_slide_three_cta_text(current_slide_three_cta, top_comment),
             )
-            _render_workspace_preview_control_bar(
-                f"{row_num}_slide5",
-                slide_five_font_adjust_key,
-                current_slide_five_font_adjust,
-            )
+            with st.container():
+                st.markdown('<div class="workspace-slide5-ctrl-anchor"></div>', unsafe_allow_html=True)
+                _s5_cols = st.columns(3, gap="small")
+                with _s5_cols[0]:
+                    if st.button("A-", key=f"workspace_preview_{row_num}_slide5_font_down", width="stretch"):
+                        st.session_state[slide_five_font_adjust_key] = max(-80, current_slide_five_font_adjust - 2)
+                        _rerun_workspace("Edit")
+                with _s5_cols[1]:
+                    if st.button("A+", key=f"workspace_preview_{row_num}_slide5_font_up", width="stretch"):
+                        st.session_state[slide_five_font_adjust_key] = min(200, current_slide_five_font_adjust + 2)
+                        _rerun_workspace("Edit")
+                with _s5_cols[2]:
+                    if st.button("Edit Text 5", key=f"workspace_inline_edit_text5_{row_num}", width="stretch"):
+                        _open_workspace_slide_action_dialog(row_num, "text5")
+                        _rerun_workspace("Edit")
         if (slide_text6 or "").strip():
             _render_text_slide_preview(
                 6,
@@ -5259,11 +5279,21 @@ def _copy_tabs(
                 link_cta_target=current_slide_three_cta,
                 link_cta_text=_slide_three_cta_text(current_slide_three_cta, top_comment),
             )
-            _render_workspace_preview_control_bar(
-                f"{row_num}_slide6",
-                slide_six_font_adjust_key,
-                current_slide_six_font_adjust,
-            )
+            with st.container():
+                st.markdown('<div class="workspace-slide6-ctrl-anchor"></div>', unsafe_allow_html=True)
+                _s6_cols = st.columns(3, gap="small")
+                with _s6_cols[0]:
+                    if st.button("A-", key=f"workspace_preview_{row_num}_slide6_font_down", width="stretch"):
+                        st.session_state[slide_six_font_adjust_key] = max(-80, current_slide_six_font_adjust - 2)
+                        _rerun_workspace("Edit")
+                with _s6_cols[1]:
+                    if st.button("A+", key=f"workspace_preview_{row_num}_slide6_font_up", width="stretch"):
+                        st.session_state[slide_six_font_adjust_key] = min(200, current_slide_six_font_adjust + 2)
+                        _rerun_workspace("Edit")
+                with _s6_cols[2]:
+                    if st.button("Edit Text 6", key=f"workspace_inline_edit_text6_{row_num}", width="stretch"):
+                        _open_workspace_slide_action_dialog(row_num, "text6")
+                        _rerun_workspace("Edit")
         with st.popover("Slide actions", key=f"slide_actions_popover_{row_num}_{st.session_state.get('_workspace_rerun_nonce', 0)}", use_container_width=True):
             if st.button("Generate prompt", key=f"workspace_row_slides_build_{row_num}", width="stretch"):
                 base_row = prompt_row or {}
@@ -5313,15 +5343,6 @@ def _copy_tabs(
                     st.session_state[slide_merge_key] = True
                     st.session_state[slide_merge_original_key] = original_t3
                     _rerun_workspace("Edit")
-            if (slide_text4 or "").strip() and st.button("Edit text 4", key=f"workspace_row_slides_edit_text4_{row_num}", width="stretch"):
-                _open_workspace_slide_action_dialog(row_num, "text4")
-                _rerun_workspace("Edit")
-            if (slide_text5 or "").strip() and st.button("Edit text 5", key=f"workspace_row_slides_edit_text5_{row_num}", width="stretch"):
-                _open_workspace_slide_action_dialog(row_num, "text5")
-                _rerun_workspace("Edit")
-            if (slide_text6 or "").strip() and st.button("Edit text 6", key=f"workspace_row_slides_edit_text6_{row_num}", width="stretch"):
-                _open_workspace_slide_action_dialog(row_num, "text6")
-                _rerun_workspace("Edit")
             if st.button("Link", key=f"workspace_row_slides_cta_custom_{row_num}", width="stretch"):
                 _save_slide_three_cta_choice(row_num, slide_three_cta_key, "custom link")
                 _open_workspace_slide_action_dialog(row_num, "custom_link")
