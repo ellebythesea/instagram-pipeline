@@ -409,6 +409,8 @@ ELECTION_POST_PROMPT_TEMPLATE = textwrap.dedent(
 
     Use web search to research this race before writing. Pull from Ballotpedia, local news, major outlets, and campaign sites. Cite facts and figures only if you can verify them.
 
+    This carousel is for Democratic and progressive-leaning voters who need to choose between these candidates. Help them decide by clearly contrasting where the candidates differ on the issues progressive voters care most about — do not pad the post with fundraising totals or campaign finance figures, they are not decision-relevant here.
+
     Race:
     [RACE_INFO]
 
@@ -433,12 +435,12 @@ ELECTION_POST_PROMPT_TEMPLATE = textwrap.dedent(
 
     text1 — Introduces the race and reinforces the tension from the quote. Name both candidates. Set the stakes. Under 150 chars.
 
-    text2, text3, text4, text5 — Each slide covers one major issue voters are weighing in this race. These should be the meatiest slides. For each:
+    text2, text3, text4, text5 — Four issue slides, each covering one top issue for a progressive Democratic voter deciding between these candidates. Prioritize, when relevant to this race: reproductive rights, healthcare, climate and environment, economic and labor policy, criminal justice reform, immigration, voting rights, gun safety, and LGBTQ+ rights — pick whichever four are most decision-relevant for this specific race. These should be the meatiest slides. For each:
     * Start with the issue name (e.g. "Abortion:", "Immigration:", "Economy:")
-    * Go deep — don't just say candidates disagree; show HOW they disagree with specifics
-    * Include at least one hard number, dollar figure, vote record, polling stat, or direct quote — search for real figures
-    * Use sources: legislation voted on, fundraising data, polling margins, campaign finance numbers, verified quotes from debates or ads
-    * The goal is that a voter who reads this slide knows something concrete, not just a vibe
+    * Spell out how EACH candidate would approach this issue — state each candidate's position, record, or likely approach specifically, so the contrast is explicit, not just "they disagree"
+    * Include at least one hard number, vote record, polling stat, or direct quote — search for real figures
+    * Use sources: legislation voted on or co-sponsored, public statements, endorsements from advocacy organizations, policy platforms, verified quotes from debates or ads. Do not use fundraising totals or campaign finance figures as evidence.
+    * The goal is that a voter who reads this slide knows exactly how the candidates differ on this issue, not just a vibe
     * Up to 800 chars each. One paragraph, no newlines.
 
     text6 — Election logistics: the exact election date, registration or mail-in ballot deadline if known, and where voters can look up polling place or registration status. Under 400 chars.
