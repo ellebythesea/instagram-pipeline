@@ -195,6 +195,30 @@ def _get_secret(key: str, default: str = "") -> str:
     return str(value)
 
 
+def _prefetch_secrets_parallel() -> None:
+    """Fetch all Secret Manager values concurrently so _get_secret() calls hit the cache."""
+    if not SECRET_MANAGER_PROJECT_ID or _secret_manager_client() is None:
+        return
+    all_names: set[str] = set()
+    for names in SECRET_MANAGER_SECRET_NAMES.values():
+        if isinstance(names, str):
+            if names:
+                all_names.add(names)
+        else:
+            all_names.update(n for n in names if n)
+    if not all_names:
+        return
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    with ThreadPoolExecutor(max_workers=min(len(all_names), 16)) as executor:
+        for future in as_completed({executor.submit(_secret_manager_value, name) for name in all_names}):
+            try:
+                future.result()
+            except Exception:
+                pass
+
+
+_prefetch_secrets_parallel()
+
 OPENAI_API_KEY = _get_secret("OPENAI_API_KEY")
 ANTHROPIC_API_KEY = _get_secret("ANTHROPIC_API_KEY")
 SERPER_API_KEY = _get_secret("SERPER_API_KEY")
