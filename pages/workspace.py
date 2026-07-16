@@ -1479,6 +1479,20 @@ def _dismiss_video_post_dialog() -> None:
     _close_video_post_dialog(clear_inputs=True)
 
 
+def _open_create_from_link_dialog() -> None:
+    st.session_state["workspace_create_from_link_dialog"] = True
+
+
+def _close_create_from_link_dialog(clear_inputs: bool = False) -> None:
+    st.session_state.pop("workspace_create_from_link_dialog", None)
+    if clear_inputs:
+        st.session_state.pop("workspace_create_from_link_url", None)
+
+
+def _dismiss_create_from_link_dialog() -> None:
+    _close_create_from_link_dialog(clear_inputs=True)
+
+
 def _open_election_post_dialog() -> None:
     st.session_state["workspace_election_post_dialog"] = True
 
@@ -3455,6 +3469,52 @@ def _render_cookies_dialog() -> None:
                     st.success("Saved. New session will be used on the next ingest.")
             except Exception as e:
                 st.error(f"Failed: {e}")
+
+
+@st.dialog("Create From Link", width="large", on_dismiss=_dismiss_create_from_link_dialog)
+def _render_create_from_link_dialog() -> None:
+    st.caption(
+        "Add the link as a new sheet row, download the media, pull in the username and caption, "
+        "then run the same steps as Process Post: transcribe, rewrite the caption, and build slide "
+        "text. Reels are also cut into 60-second segments in Drive."
+    )
+    url = st.text_input(
+        "Link",
+        key="workspace_create_from_link_url",
+        placeholder="https://www.instagram.com/... or https://example.com/article",
+    ).strip()
+
+    if st.button(
+        "Create Post",
+        key="workspace_create_from_link_submit",
+        type="primary",
+        width="stretch",
+        disabled=not url,
+    ):
+        try:
+            with st.spinner("Processing link end-to-end…"):
+                row_num = _process_single_url_to_editor(url)
+            with st.spinner("Splitting video into 60-second segments…"):
+                split = _split_row_video_into_segments(row_num)
+        except Exception as e:
+            st.error(f"Could not create post from link: {describe_error(e)}")
+        else:
+            if split:
+                notice = (
+                    f"Created row {row_num}: ingest, caption, slide text, "
+                    "and 60-second video segments complete."
+                )
+            else:
+                notice = f"Created row {row_num}: ingest, caption, and slide text complete."
+            st.session_state["workspace_home_notice"] = notice
+            st.session_state["workspace_selected_row_num"] = row_num
+            st.query_params["workspace_row"] = str(row_num)
+            _close_create_from_link_dialog(clear_inputs=True)
+            _rerun_workspace("Home")
+
+    if st.button("Cancel", key="workspace_create_from_link_cancel", width="stretch"):
+        _close_create_from_link_dialog(clear_inputs=True)
+        _rerun_workspace("Home")
 
 
 @st.dialog("Video Post", width="large", on_dismiss=_dismiss_video_post_dialog)
@@ -5891,6 +5951,28 @@ def _process_single_url_to_editor(url: str, required_hashtags: str = "") -> int:
     return row_num
 
 
+def _split_row_video_into_segments(row_num: int, mode: str = "fill") -> bool:
+    """Split a processed row's video into 60-second segments in its Drive preview folder.
+
+    Returns True when segments were uploaded, or False when the row has no video to
+    split (photo posts and articles), so callers can skip the step silently.
+    """
+    row = _reload_row_from_sheet(row_num)
+    if _cell_text(row.get("Media Type")).strip().lower() != "reel":
+        return False
+    media_link = next(
+        (link.strip() for link in _cell_text(row.get("Media Drive Link")).split(",") if link.strip()),
+        "",
+    )
+    if not media_link:
+        return False
+    username = _cell_text(row.get("Source Username")).strip().lstrip("@")
+    handle_text = _cell_text(row.get("Speaker Name")).strip()
+    preview_folder_id, _, _ = _ensure_preview_folder(row_num, username, handle_text, media_link)
+    _upload_split_videos(media_link, preview_folder_id, mode=mode)
+    return True
+
+
 def _ingest_row(row: dict) -> dict:
     """Process one row through ingest and return sheet fields."""
     url = row["Instagram URL"].strip()
@@ -7520,6 +7602,8 @@ if active_section_tab == "Home":
         _render_workspace_home_action_dialog()
     if st.session_state.get("workspace_slides_dialog"):
         _render_workspace_slides_dialog(workspace_rows, workspace_rows_error)
+    if st.session_state.get("workspace_create_from_link_dialog"):
+        _render_create_from_link_dialog()
     if st.session_state.get("workspace_video_post_dialog"):
         _render_video_post_dialog()
     if st.session_state.get("workspace_election_post_dialog"):
@@ -7552,6 +7636,10 @@ if active_section_tab == "Home":
             if st.button(action_mode, key=f"workspace_home_action_{action_mode}", width="stretch"):
                 _open_workspace_home_action_dialog(action_mode)
                 _rerun_workspace("Home")
+
+        if st.button("Create From Link", key="workspace_open_create_from_link_dialog", width="stretch"):
+            _open_create_from_link_dialog()
+            _rerun_workspace("Home")
 
         if st.button("Video Post", key="workspace_open_video_post_dialog", width="stretch"):
             _open_video_post_dialog()
