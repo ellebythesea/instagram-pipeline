@@ -6792,7 +6792,12 @@ def _process_next_workspace_action(for_row_number: int | None = None) -> None:
                 if is_reel:
                     st.write("Downloading reel and transcribing with Whisper…")
                     _process_post_online(row)
-                    success_message = f"Row {row_number}: processed with transcript, caption, and slide copy."
+                    st.write("Cropping video and splitting into 60-second segments…")
+                    cropped = _split_row_video_into_segments(row_number)
+                    if cropped:
+                        success_message = f"Row {row_number}: processed with transcript, caption, slide copy, and cropped 60-second segments."
+                    else:
+                        success_message = f"Row {row_number}: processed with transcript, caption, and slide copy."
                 else:
                     st.write("Extracting post text and generating caption…")
                     _process_photo_post_online(row)
