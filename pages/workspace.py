@@ -5844,6 +5844,30 @@ def _run_all_steps() -> None:
     st.session_state["workspace_success"] = "Run all complete."
 
 
+def _run_clear_orphaned_media() -> None:
+    """Move orphaned Drive files and preview folders into safe_for_deletion.
+
+    Uses the Google Drive API (not the local filesystem), so it works from any
+    device — including the phone/web app — without a mounted Google Drive.
+    """
+    with st.status("Clearing orphaned media…", expanded=True) as status_box:
+        try:
+            all_rows = _run_with_sheet_quota_countdown(
+                lambda: get_all_rows(GOOGLE_SHEET_ID),
+                "Clear orphaned media paused (sheet quota):",
+            )
+            moved = _cleanup_orphaned_preview_folders(all_rows or [])
+            if moved:
+                label = f"Moved {moved} orphaned item(s) to safe_for_deletion"
+            else:
+                label = "No orphaned media found"
+            status_box.update(label=label, state="complete")
+            st.session_state["workspace_success"] = f"{label}."
+        except Exception as e:
+            status_box.update(label=f"Clear orphaned media error: {describe_error(e)}", state="error")
+            st.session_state["workspace_error"] = f"Could not clear orphaned media: {describe_error(e)}"
+
+
 def _process_pending_rows_from_sheet() -> int:
     pending = _run_with_sheet_quota_countdown(
         lambda: get_pending_rows(GOOGLE_SHEET_ID),
@@ -7744,6 +7768,15 @@ if active_section_tab == "Home":
             _rerun_workspace("Home")
 
         if st.button(
+            "Clear orphaned media",
+            key="workspace_clear_orphaned_media",
+            width="stretch",
+            help="Move Drive files and preview folders no longer referenced by the sheet into safe_for_deletion. Works from any device.",
+        ):
+            st.session_state["workspace_clear_orphaned_pending"] = True
+            _rerun_workspace()
+
+        if st.button(
             "Refresh results",
             key="workspace_refresh_editor_rows",
             width="stretch",
@@ -7772,6 +7805,11 @@ if active_section_tab == "Home":
     # Run All executes here so status output appears below the buttons
     if st.session_state.pop("workspace_run_all_pending", False):
         _run_all_steps()
+        _rerun_workspace("Home")
+
+    # Clear orphaned media executes here so status output appears below the buttons
+    if st.session_state.pop("workspace_clear_orphaned_pending", False):
+        _run_clear_orphaned_media()
         _rerun_workspace("Home")
 
 
