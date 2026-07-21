@@ -11,6 +11,17 @@ from config import DEFAULT_POST_FOOTER, OPENAI_API_KEY
 
 PINNED_TOP_COMMENT_PREFIX = "[[TOP]] "
 
+# Typing "FFM Partner" into Required Hashtags is shorthand: force the #newsclip
+# hashtag into the caption and tack a partner credit onto the very end (a plain
+# character space, not a line break).
+FFM_PARTNER_TRIGGER = "ffm partner"
+FFM_PARTNER_HASHTAG = "#newsclip"
+FFM_PARTNER_SUFFIX = "Fighting for Michigan FFM Partner"
+
+
+def _is_ffm_partner(required_hashtags: str) -> bool:
+    return FFM_PARTNER_TRIGGER in (required_hashtags or "").lower()
+
 SLIDE_BODY_FONT_MIN_REM = 1.4
 SLIDE_BODY_FONT_CQW = 5.5
 SLIDE_BODY_FONT_MAX_REM = 2.7
@@ -363,6 +374,11 @@ def generate_row_caption(row: dict) -> str:
         caption = f"{caption}\n\n--\n\n{original_caption}"
 
     required_hashtags = row.get("Required Hashtags", "").strip()
+    ffm_partner = _is_ffm_partner(required_hashtags)
+    if ffm_partner:
+        # "FFM Partner" isn't a real hashtag, so fold in #newsclip instead and
+        # let the credit line be appended at the very end below.
+        required_hashtags = f"{FFM_PARTNER_HASHTAG} {required_hashtags}".strip()
     appended_required = []
     if required_hashtags:
         caption, appended_required = _finalize_required_hashtags(caption, required_hashtags)
@@ -381,6 +397,9 @@ def generate_row_caption(row: dict) -> str:
 
     if footer_parts:
         caption = f"{caption}\n\n{' '.join(footer_parts)}"
+
+    if ffm_partner:
+        caption = f"{caption} {FFM_PARTNER_SUFFIX}"
 
     return caption
 

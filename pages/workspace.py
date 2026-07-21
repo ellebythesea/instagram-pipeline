@@ -1493,6 +1493,20 @@ def _dismiss_create_from_link_dialog() -> None:
     _close_create_from_link_dialog(clear_inputs=True)
 
 
+def _open_clear_orphaned_media_dialog() -> None:
+    st.session_state["workspace_clear_orphaned_media_dialog"] = True
+
+
+def _close_clear_orphaned_media_dialog(clear_inputs: bool = False) -> None:
+    st.session_state.pop("workspace_clear_orphaned_media_dialog", None)
+    if clear_inputs:
+        st.session_state.pop("workspace_clear_orphaned_media_output", None)
+
+
+def _dismiss_clear_orphaned_media_dialog() -> None:
+    _close_clear_orphaned_media_dialog(clear_inputs=True)
+
+
 def _open_election_post_dialog() -> None:
     st.session_state["workspace_election_post_dialog"] = True
 
@@ -3514,6 +3528,80 @@ def _render_create_from_link_dialog() -> None:
 
     if st.button("Cancel", key="workspace_create_from_link_cancel", width="stretch"):
         _close_create_from_link_dialog(clear_inputs=True)
+        _rerun_workspace("Home")
+
+
+def _run_clear_orphaned_media(dry_run: bool) -> str:
+    """Archive orphaned local media and return the captured output log."""
+    import contextlib
+    import io
+
+    from scripts.local_transcribe_reels import (
+        _archive_orphaned_media,
+        _default_media_dir,
+    )
+
+    media_root = _default_media_dir()
+    if not media_root.exists():
+        raise FileNotFoundError(f"Media directory does not exist: {media_root}")
+
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+        print(f"Using media directory: {media_root}")
+        rows = get_all_rows(GOOGLE_SHEET_ID)
+        service = _get_service()
+        _archive_orphaned_media(media_root, rows, service, dry_run=dry_run)
+    return buffer.getvalue().strip()
+
+
+@st.dialog("Clear Orphaned Media", width="large", on_dismiss=_dismiss_clear_orphaned_media_dialog)
+def _render_clear_orphaned_media_dialog() -> None:
+    st.caption(
+        "Move local originals, segment folders, screenshots, and root images that are no longer "
+        "referenced by any sheet row into a timestamped safe_for_deletion folder in your synced "
+        "Drive media directory. Preview first to see what would move without touching anything."
+    )
+
+    col_preview, col_archive = st.columns(2)
+    with col_preview:
+        run_preview = st.button(
+            "Preview (dry run)",
+            key="workspace_clear_orphaned_media_preview",
+            width="stretch",
+        )
+    with col_archive:
+        run_archive = st.button(
+            "Archive orphaned media",
+            key="workspace_clear_orphaned_media_archive",
+            type="primary",
+            width="stretch",
+        )
+
+    if run_preview or run_archive:
+        dry_run = run_preview
+        spinner_label = (
+            "Scanning for orphaned local media…"
+            if dry_run
+            else "Archiving orphaned local media…"
+        )
+        try:
+            with st.spinner(spinner_label):
+                output = _run_clear_orphaned_media(dry_run=dry_run)
+        except Exception as e:
+            st.session_state["workspace_clear_orphaned_media_output"] = (
+                f"Could not clear orphaned media: {describe_error(e)}"
+            )
+        else:
+            st.session_state["workspace_clear_orphaned_media_output"] = (
+                output or "No output."
+            )
+
+    output = st.session_state.get("workspace_clear_orphaned_media_output")
+    if output:
+        st.code(output, language="text")
+
+    if st.button("Close", key="workspace_clear_orphaned_media_close", width="stretch"):
+        _close_clear_orphaned_media_dialog(clear_inputs=True)
         _rerun_workspace("Home")
 
 
@@ -7609,6 +7697,8 @@ if active_section_tab == "Home":
         _render_workspace_slides_dialog(workspace_rows, workspace_rows_error)
     if st.session_state.get("workspace_create_from_link_dialog"):
         _render_create_from_link_dialog()
+    if st.session_state.get("workspace_clear_orphaned_media_dialog"):
+        _render_clear_orphaned_media_dialog()
     if st.session_state.get("workspace_video_post_dialog"):
         _render_video_post_dialog()
     if st.session_state.get("workspace_election_post_dialog"):
@@ -7625,25 +7715,16 @@ if active_section_tab == "Home":
             st.session_state["workspace_run_all_pending"] = True
             _rerun_workspace()
 
-        if st.button(
-            "Refresh results",
-            key="workspace_refresh_editor_rows",
-            width="stretch",
-            help="Reload the current editor rows from the sheet and look for new results.",
-        ):
-            _rerun_workspace("Home")
-
         if st.button("Slides", key="workspace_open_slides_dialog", width="stretch"):
             _open_workspace_slides_dialog()
             _rerun_workspace("Home")
 
-        for action_mode in MODE_OPTIONS:
-            if st.button(action_mode, key=f"workspace_home_action_{action_mode}", width="stretch"):
-                _open_workspace_home_action_dialog(action_mode)
-                _rerun_workspace("Home")
-
         if st.button("Create From Link", key="workspace_open_create_from_link_dialog", width="stretch"):
             _open_create_from_link_dialog()
+            _rerun_workspace("Home")
+
+        if st.button("Create a Post", key="workspace_home_action_Create a Post", width="stretch"):
+            _open_workspace_home_action_dialog("Create a Post")
             _rerun_workspace("Home")
 
         if st.button("Video Post", key="workspace_open_video_post_dialog", width="stretch"):
@@ -7652,6 +7733,26 @@ if active_section_tab == "Home":
 
         if st.button("Election Post", key="workspace_open_election_post_dialog", width="stretch"):
             _open_election_post_dialog()
+            _rerun_workspace("Home")
+
+        if st.button("Crop Video", key="workspace_home_action_Crop Video", width="stretch"):
+            _open_workspace_home_action_dialog("Crop Video")
+            _rerun_workspace("Home")
+
+        if st.button("Generate headline", key="workspace_home_action_Generate headline", width="stretch"):
+            _open_workspace_home_action_dialog("Generate headline")
+            _rerun_workspace("Home")
+
+        if st.button(
+            "Refresh results",
+            key="workspace_refresh_editor_rows",
+            width="stretch",
+            help="Reload the current editor rows from the sheet and look for new results.",
+        ):
+            _rerun_workspace("Home")
+
+        if st.button("Clear Orphaned Media", key="workspace_open_clear_orphaned_media_dialog", width="stretch"):
+            _open_clear_orphaned_media_dialog()
             _rerun_workspace("Home")
 
         if st.button("Montage Generator", key="workspace_open_montage_generator", width="stretch"):
