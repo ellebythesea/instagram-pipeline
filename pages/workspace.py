@@ -5653,41 +5653,68 @@ def _transcribe_reel_from_drive(row: dict) -> str | None:
 SAFE_DELETE_SUBFOLDER = "safe_for_deletion"
 
 
+def _extract_instagram_shortcode(url: str) -> str:
+    """Pull the post/reel shortcode out of an Instagram URL (empty for articles)."""
+    match = re.search(
+        r"instagram\.com/(?:reel|reels|p|tv)/([A-Za-z0-9_-]+)",
+        (url or ""),
+        re.IGNORECASE,
+    )
+    return match.group(1) if match else ""
+
+
 def _cleanup_orphaned_preview_folders(all_rows: list[dict]) -> int:
-    """Move orphaned Drive files and preview subfolders into safe_for_deletion."""
+    """Move orphaned Drive files and preview subfolders into safe_for_deletion.
+
+    An item counts as orphaned ONLY when it matches no still-present row by any
+    signal: the Drive file ID, the preview-folder base name, the source media
+    filename stem, or the Instagram shortcode. Anything that matches a row that
+    is still in the sheet is left in place. When in doubt, keep it — this only
+    moves media whose row has actually been removed from the sheet.
+    """
     if not GOOGLE_DRIVE_FOLDER_ID:
         return 0
     service = _get_service()
 
-    # Collect all active Drive file IDs from every media link in the sheet.
     active_file_ids: set[str] = set()
+    active_names: set[str] = set()       # preview-folder base names + media filename stems (lowercased)
+    active_shortcodes: set[str] = set()  # lowercased Instagram shortcodes
     for row in all_rows:
-        for link in _cell_text(row.get("Media Drive Link")).split(","):
-            link = link.strip()
-            if link:
-                fid = extract_drive_file_id(link)
-                if fid:
-                    active_file_ids.add(fid)
-        for link in _cell_text(row.get("Thumbnail Drive Link")).split(","):
-            link = link.strip()
-            if link:
-                fid = extract_drive_file_id(link)
-                if fid:
-                    active_file_ids.add(fid)
-
-    # Compute expected preview subfolder names from active rows.
-    expected_folder_names: set[str] = set()
-    for row in all_rows:
+        for field in ("Media Drive Link", "Thumbnail Drive Link"):
+            for link in _cell_text(row.get(field)).split(","):
+                link = link.strip()
+                if link:
+                    fid = extract_drive_file_id(link)
+                    if fid:
+                        active_file_ids.add(fid)
+        shortcode = _extract_instagram_shortcode(_cell_text(row.get("Instagram URL")))
+        if shortcode:
+            active_shortcodes.add(shortcode.lower())
         media_link = _cell_text(row.get("Media Drive Link")).strip().split(",")[0].strip()
         if not media_link:
             continue
         username = _cell_text(row.get("Source Username")).strip().lstrip("@")
         handle_text = _cell_text(row.get("Speaker Name")).strip()
         try:
-            folder_name, _ = _preview_folder_base_name(username or handle_text, media_link, row["row_number"])
-            expected_folder_names.add(folder_name)
+            folder_name, source_filename = _preview_folder_base_name(
+                username or handle_text, media_link, row["row_number"]
+            )
+            if folder_name:
+                active_names.add(folder_name.strip().lower())
+            stem = os.path.splitext((source_filename or "").strip())[0].strip()
+            if stem:
+                active_names.add(stem.lower())
         except Exception:
             pass
+
+    def _matches_active_row(name: str) -> bool:
+        """True if this Drive item name maps to a row still present in the sheet."""
+        raw = (name or "").strip().lower()
+        base = os.path.splitext(raw)[0].strip()
+        if raw in active_names or base in active_names:
+            return True
+        # Shortcodes are ~11 unique chars; a substring match is a safe keep signal.
+        return any(code and code in raw for code in active_shortcodes)
 
     # List all items directly in the main Drive folder (files and subfolders).
     query = (
@@ -5706,14 +5733,14 @@ def _cleanup_orphaned_preview_folders(all_rows: list[dict]) -> int:
     orphan_files: list[dict] = []
     orphan_folders: list[dict] = []
     for item in all_items:
-        if item["name"] == SAFE_DELETE_SUBFOLDER:
+        if item["name"] in (SAFE_DELETE_SUBFOLDER, PREVIEW_UPLOAD_SUBFOLDER):
+            continue
+        if _matches_active_row(item["name"]):
             continue
         if item["mimeType"] == "application/vnd.google-apps.folder":
-            if item["name"] not in expected_folder_names:
-                orphan_folders.append(item)
-        else:
-            if item["id"] not in active_file_ids:
-                orphan_files.append(item)
+            orphan_folders.append(item)
+        elif item["id"] not in active_file_ids:
+            orphan_files.append(item)
 
     if not orphan_files and not orphan_folders:
         return 0
