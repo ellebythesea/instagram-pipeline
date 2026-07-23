@@ -3080,10 +3080,12 @@ def _create_post_from_prompt(
         except Exception:
             pass
 
+    uploaded_is_video = False
     if uploaded_file is not None:
         file_name = uploaded_file.name or "upload"
         ext = os.path.splitext(file_name)[-1].lower()
         is_video = ext in {".mp4", ".mov"}
+        uploaded_is_video = is_video
         media_type = "reel" if is_video else "photo"
         if not GOOGLE_DRIVE_FOLDER_ID:
             raise RuntimeError("GOOGLE_DRIVE_FOLDER_ID is not configured.")
@@ -3094,8 +3096,12 @@ def _create_post_from_prompt(
                 f.write(uploaded_file.getbuffer())
             media_link = upload_to_drive(local_path, file_name, GOOGLE_DRIVE_FOLDER_ID)
             if not is_video:
+                # A photo is used directly as the post screenshot.
                 thumbnail_link = media_link
             else:
+                # Videos are not transcribed — the user-supplied prompt is the
+                # context. The screenshot and 60-second segments are built after
+                # the row is created (see below).
                 transcript = prompt
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -3161,6 +3167,28 @@ def _create_post_from_prompt(
             update_status(GOOGLE_SHEET_ID, row_num, "done")
     except Exception:
         update_status(GOOGLE_SHEET_ID, row_num, "ingested")
+
+    # For an uploaded video, build the screenshot and 60-second segments the
+    # same way the rest of the pipeline does — without transcribing the video.
+    # These are best-effort: the post row already exists, so a failure here is
+    # surfaced as a warning rather than losing the created post.
+    if uploaded_is_video:
+        media_warnings = []
+        try:
+            _refresh_row_thumbnail_from_video(
+                _reload_row_from_sheet(row_num), offset_seconds=5.0
+            )
+        except Exception as e:
+            media_warnings.append(f"screenshot ({describe_error(e)})")
+        try:
+            _split_row_video_into_segments(row_num)
+        except Exception as e:
+            media_warnings.append(f"60-second segments ({describe_error(e)})")
+        if media_warnings:
+            st.session_state["workspace_error"] = (
+                f"Row {row_num} created, but could not finish: "
+                + "; ".join(media_warnings)
+            )
 
     return row_num
 
@@ -3836,7 +3864,7 @@ def _render_workspace_home_action_dialog() -> None:
         "Generate headline": "Pull source text from an Instagram post or article link, then return three headline options plus a footered caption.",
         "Caption this": "Generate a caption directly from an Instagram post or article link using the selected hashtag preset.",
         "Process as Candidate Article": "Paste the full article body to generate article-based slides and a caption footer.",
-        "Create a Post": "Write a prompt and optionally attach a link or media file to create a new post row with a generated caption.",
+        "Create a Post": "Write a prompt and optionally attach a link or media file to create a new post row with a generated caption. A photo becomes the post screenshot; a video is cut into 60-second segments and gets a screenshot, without being transcribed — the caption uses your prompt for context.",
     }
 
     st.caption(mode)
@@ -4043,6 +4071,11 @@ def _render_workspace_home_action_dialog() -> None:
             type=["mp4", "mov", "png", "jpg", "jpeg", "webp", "heic"],
             accept_multiple_files=False,
             key="workspace_home_create_post_media",
+        )
+        st.caption(
+            "Photo → used as the post screenshot. "
+            "Video → cut into 60-second segments and a screenshot is taken; "
+            "it is not transcribed, so the caption relies on your prompt for context."
         )
         if st.button(
             "Create Post",
