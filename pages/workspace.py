@@ -8228,7 +8228,10 @@ if active_section_tab == "Home":
                             _close_workspace_menu(row)
                             st.session_state["workspace_thumbnail_dialog_row"] = row_num
                             _rerun_workspace("Edit")
-                        if is_reel and media_links and st.button(
+                        # Show for any video row, whether it came from a reel URL or was
+                        # uploaded manually (media_type "reel" with no Instagram URL).
+                        is_video_media = (is_reel or media_type == "reel") and bool(media_links)
+                        if is_video_media and st.button(
                             "Crop video to fit",
                             key=f"workspace_menu_crop_video_fit_{row_num}",
                             width="stretch",
