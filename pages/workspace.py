@@ -879,10 +879,96 @@ def _collect_candidate_research(candidate_name: str) -> list[dict]:
     return collected[:18]
 
 
+def _expand_single_candidate_to_roster(candidate_name: str) -> list[str]:
+    """Given one candidate, find their next upcoming race and return everyone running in it.
+
+    Returns the full roster of candidate names (the input candidate plus their
+    opponent(s)), so a single-name entry can flow through the normal comparison
+    logic. Raises a helpful error if no upcoming race or opponent can be found.
+    """
+    name = _cell_text(candidate_name).strip()
+    if not name:
+        raise ValueError("Enter a candidate name.")
+
+    research = _collect_candidate_research(name)
+    if not research:
+        raise RuntimeError(f"No search results found for {name}.")
+
+    sources_json = json.dumps(research, ensure_ascii=True)
+    response = _get_client().chat.completions.create(
+        model="gpt-5.2",
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You identify the single most relevant UPCOMING election race for a "
+                    "candidate and list everyone running in that race. "
+                    "Use only the supplied search results. "
+                    "Prefer the soonest election that has not yet happened relative to "
+                    "today's date. "
+                    "Prefer Ballotpedia, official campaign sites, major local news, major "
+                    "national news, and Wikipedia. "
+                    "Return JSON only."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Candidate: {name}\n"
+                    f"Today's date: {_today_eastern_label()}\n\n"
+                    "From the search results, determine this candidate's next upcoming "
+                    "election race (the soonest one that has not yet occurred) and identify "
+                    "every candidate running in that same race, including the input "
+                    "candidate and their opponent(s).\n\n"
+                    "Return a JSON object with these keys:\n"
+                    "- could_not_resolve: boolean\n"
+                    "- candidate_names: array of strings (all candidates in the race, the "
+                    "input candidate listed first)\n"
+                    "- race_name: string\n"
+                    "- office: string\n"
+                    "- election_date: string\n"
+                    "- ambiguity_note: string\n\n"
+                    "Always include the input candidate in candidate_names. "
+                    "If you cannot confidently identify the next race or at least one "
+                    "opponent, set could_not_resolve to true.\n\n"
+                    "Search results:\n"
+                    f"{sources_json}"
+                ),
+            },
+        ],
+        max_completion_tokens=800,
+        temperature=0,
+    )
+    payload = _extract_json_object(response.choices[0].message.content or "")
+
+    roster = [
+        _cell_text(item).strip()
+        for item in (payload.get("candidate_names") or [])
+        if _cell_text(item).strip()
+    ]
+    # Make sure the entered candidate is present and listed first.
+    roster = [n for n in dict.fromkeys(roster) if n.lower() != name.lower()]
+    roster.insert(0, name)
+
+    if payload.get("could_not_resolve") or len(roster) < 2:
+        race_label = _cell_text(payload.get("race_name")).strip()
+        detail = f" for the {race_label}" if race_label else ""
+        raise ValueError(
+            f"Could not find an upcoming opponent{detail} for {name}. "
+            "Try adding the office or state (e.g. 'Jane Smith Colorado Senate'), "
+            "or enter both candidate names."
+        )
+    return roster
+
+
 def _resolve_candidate_comparison(candidate_names: list[str]) -> dict:
     cleaned_names = [name.strip() for name in candidate_names if name.strip()]
+    if len(cleaned_names) == 1:
+        # A single candidate: find their next race and who they're running against,
+        # then resolve the comparison as usual.
+        cleaned_names = _expand_single_candidate_to_roster(cleaned_names[0])
     if len(cleaned_names) < 2:
-        raise ValueError("Enter two candidate names.")
+        raise ValueError("Enter a candidate name.")
 
     search_results: list[dict] = []
     for candidate_name in cleaned_names:
@@ -946,18 +1032,16 @@ def _resolve_candidate_comparison(candidate_names: list[str]) -> dict:
     return resolved
 
 
-def _extract_candidate_names_from_input(raw_input: str) -> list[str]:
+def _extract_candidate_names_from_input(raw_input: str, min_names: int = 2) -> list[str]:
     cleaned_input = _cell_text(raw_input).strip()
     if not cleaned_input:
         return []
 
-    fallback_names = [
+    fallback_names = list(dict.fromkeys(
         part.strip(" -•\t,;")
         for part in re.split(r"[\n,;]+", cleaned_input)
         if part.strip(" -•\t,;")
-    ]
-    if len(fallback_names) >= 2:
-        fallback_names = list(dict.fromkeys(fallback_names))
+    ))
 
     response = _get_client().chat.completions.create(
         model="gpt-4o-mini",
@@ -987,14 +1071,18 @@ def _extract_candidate_names_from_input(raw_input: str) -> list[str]:
             if _cell_text(name).strip()
         ]
         candidate_names = list(dict.fromkeys(candidate_names))
-        if len(candidate_names) >= 2:
+        if len(candidate_names) >= min_names:
             return candidate_names
     except Exception:
         pass
 
-    if len(fallback_names) >= 2:
+    if len(fallback_names) >= min_names:
         return fallback_names
-    raise ValueError("Could not identify at least two candidate names from that input.")
+    raise ValueError(
+        "Could not identify a candidate name from that input."
+        if min_names <= 1
+        else "Could not identify at least two candidate names from that input."
+    )
 
 
 def _build_candidate_prompt(candidate_result: dict, donation_link: str = "") -> str:
@@ -3757,9 +3845,10 @@ def _render_video_post_dialog() -> None:
 @st.dialog("Election Post", width="large", on_dismiss=_dismiss_election_post_dialog)
 def _render_election_post_dialog() -> None:
     candidate_input = st.text_input(
-        "Candidates",
+        "Candidate(s)",
         key="workspace_election_post_candidates",
-        placeholder="e.g. Jane Smith, John Doe",
+        placeholder="e.g. Jane Smith — we'll find the race and opponent",
+        help="Enter one name and we'll find their next election and who they're running against, or list several names yourself.",
     ).strip()
 
     if st.button(
@@ -3771,7 +3860,7 @@ def _render_election_post_dialog() -> None:
     ):
         try:
             with st.spinner("Resolving race…"):
-                candidate_names = _extract_candidate_names_from_input(candidate_input)
+                candidate_names = _extract_candidate_names_from_input(candidate_input, min_names=1)
                 candidate_result = _resolve_candidate_comparison(candidate_names)
             if candidate_result.get("could_not_resolve"):
                 st.session_state["workspace_election_post_error"] = (
