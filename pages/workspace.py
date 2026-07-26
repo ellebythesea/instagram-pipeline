@@ -1581,20 +1581,6 @@ def _dismiss_create_from_link_dialog() -> None:
     _close_create_from_link_dialog(clear_inputs=True)
 
 
-def _open_clear_orphaned_media_dialog() -> None:
-    st.session_state["workspace_clear_orphaned_media_dialog"] = True
-
-
-def _close_clear_orphaned_media_dialog(clear_inputs: bool = False) -> None:
-    st.session_state.pop("workspace_clear_orphaned_media_dialog", None)
-    if clear_inputs:
-        st.session_state.pop("workspace_clear_orphaned_media_output", None)
-
-
-def _dismiss_clear_orphaned_media_dialog() -> None:
-    _close_clear_orphaned_media_dialog(clear_inputs=True)
-
-
 def _open_reel_lines_prompt_dialog() -> None:
     st.session_state["workspace_reel_lines_prompt_dialog"] = True
 
@@ -3659,29 +3645,6 @@ def _render_create_from_link_dialog() -> None:
         _rerun_workspace("Home")
 
 
-def _run_clear_orphaned_media(dry_run: bool) -> str:
-    """Archive orphaned local media and return the captured output log."""
-    import contextlib
-    import io
-
-    from scripts.local_transcribe_reels import (
-        _archive_orphaned_media,
-        _default_media_dir,
-    )
-
-    media_root = _default_media_dir()
-    if not media_root.exists():
-        raise FileNotFoundError(f"Media directory does not exist: {media_root}")
-
-    buffer = io.StringIO()
-    with contextlib.redirect_stdout(buffer):
-        print(f"Using media directory: {media_root}")
-        rows = get_all_rows(GOOGLE_SHEET_ID)
-        service = _get_service()
-        _archive_orphaned_media(media_root, rows, service, dry_run=dry_run)
-    return buffer.getvalue().strip()
-
-
 REEL_LINES_PROMPT = """Here's a reusable prompt that will produce all three deliverables in one response.
 
 ⸻
@@ -3777,57 +3740,6 @@ def _render_reel_lines_prompt_dialog() -> None:
 
     if st.button("Close", key="workspace_reel_lines_prompt_close", width="stretch"):
         _close_reel_lines_prompt_dialog()
-        _rerun_workspace("Home")
-
-
-@st.dialog("Clear Orphaned Media", width="large", on_dismiss=_dismiss_clear_orphaned_media_dialog)
-def _render_clear_orphaned_media_dialog() -> None:
-    st.caption(
-        "Move local originals, segment folders, screenshots, and root images that are no longer "
-        "referenced by any sheet row into a timestamped safe_for_deletion folder in your synced "
-        "Drive media directory. Preview first to see what would move without touching anything."
-    )
-
-    col_preview, col_archive = st.columns(2)
-    with col_preview:
-        run_preview = st.button(
-            "Preview (dry run)",
-            key="workspace_clear_orphaned_media_preview",
-            width="stretch",
-        )
-    with col_archive:
-        run_archive = st.button(
-            "Archive orphaned media",
-            key="workspace_clear_orphaned_media_archive",
-            type="primary",
-            width="stretch",
-        )
-
-    if run_preview or run_archive:
-        dry_run = run_preview
-        spinner_label = (
-            "Scanning for orphaned local media…"
-            if dry_run
-            else "Archiving orphaned local media…"
-        )
-        try:
-            with st.spinner(spinner_label):
-                output = _run_clear_orphaned_media(dry_run=dry_run)
-        except Exception as e:
-            st.session_state["workspace_clear_orphaned_media_output"] = (
-                f"Could not clear orphaned media: {describe_error(e)}"
-            )
-        else:
-            st.session_state["workspace_clear_orphaned_media_output"] = (
-                output or "No output."
-            )
-
-    output = st.session_state.get("workspace_clear_orphaned_media_output")
-    if output:
-        st.code(output, language="text")
-
-    if st.button("Close", key="workspace_clear_orphaned_media_close", width="stretch"):
-        _close_clear_orphaned_media_dialog(clear_inputs=True)
         _rerun_workspace("Home")
 
 
@@ -7982,8 +7894,6 @@ if active_section_tab == "Home":
         _render_create_from_link_dialog()
     if st.session_state.get("workspace_reel_lines_prompt_dialog"):
         _render_reel_lines_prompt_dialog()
-    if st.session_state.get("workspace_clear_orphaned_media_dialog"):
-        _render_clear_orphaned_media_dialog()
     if st.session_state.get("workspace_video_post_dialog"):
         _render_video_post_dialog()
     if st.session_state.get("workspace_election_post_dialog"):
@@ -8047,10 +7957,6 @@ if active_section_tab == "Home":
 
         if st.button("Reel Lines Prompt", key="workspace_open_reel_lines_prompt_dialog", width="stretch"):
             _open_reel_lines_prompt_dialog()
-            _rerun_workspace("Home")
-
-        if st.button("Clear Orphaned Media", key="workspace_open_clear_orphaned_media_dialog", width="stretch"):
-            _open_clear_orphaned_media_dialog()
             _rerun_workspace("Home")
 
         if st.button("Montage Generator", key="workspace_open_montage_generator", width="stretch"):
