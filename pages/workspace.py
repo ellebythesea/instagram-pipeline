@@ -7938,6 +7938,10 @@ if active_section_tab == "Home":
             _open_workspace_home_action_dialog("Generate headline")
             _rerun_workspace("Home")
 
+        if st.button("Reel Lines Prompt", key="workspace_open_reel_lines_prompt_dialog", width="stretch"):
+            _open_reel_lines_prompt_dialog()
+            _rerun_workspace("Home")
+
         if st.button(
             "Clear orphaned media",
             key="workspace_clear_orphaned_media",
@@ -7953,10 +7957,6 @@ if active_section_tab == "Home":
             width="stretch",
             help="Reload the current editor rows from the sheet and look for new results.",
         ):
-            _rerun_workspace("Home")
-
-        if st.button("Reel Lines Prompt", key="workspace_open_reel_lines_prompt_dialog", width="stretch"):
-            _open_reel_lines_prompt_dialog()
             _rerun_workspace("Home")
 
         if st.button("Montage Generator", key="workspace_open_montage_generator", width="stretch"):
