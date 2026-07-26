@@ -1581,18 +1581,16 @@ def _dismiss_create_from_link_dialog() -> None:
     _close_create_from_link_dialog(clear_inputs=True)
 
 
-def _open_clear_orphaned_media_dialog() -> None:
-    st.session_state["workspace_clear_orphaned_media_dialog"] = True
+def _open_reel_lines_prompt_dialog() -> None:
+    st.session_state["workspace_reel_lines_prompt_dialog"] = True
 
 
-def _close_clear_orphaned_media_dialog(clear_inputs: bool = False) -> None:
-    st.session_state.pop("workspace_clear_orphaned_media_dialog", None)
-    if clear_inputs:
-        st.session_state.pop("workspace_clear_orphaned_media_output", None)
+def _close_reel_lines_prompt_dialog() -> None:
+    st.session_state.pop("workspace_reel_lines_prompt_dialog", None)
 
 
-def _dismiss_clear_orphaned_media_dialog() -> None:
-    _close_clear_orphaned_media_dialog(clear_inputs=True)
+def _dismiss_reel_lines_prompt_dialog() -> None:
+    _close_reel_lines_prompt_dialog()
 
 
 def _open_election_post_dialog() -> None:
@@ -3647,77 +3645,101 @@ def _render_create_from_link_dialog() -> None:
         _rerun_workspace("Home")
 
 
-def _run_clear_orphaned_media(dry_run: bool) -> str:
-    """Archive orphaned local media and return the captured output log."""
-    import contextlib
-    import io
+REEL_LINES_PROMPT = """Here's a reusable prompt that will produce all three deliverables in one response.
 
-    from scripts.local_transcribe_reels import (
-        _archive_orphaned_media,
-        _default_media_dir,
-    )
+⸻
 
-    media_root = _default_media_dir()
-    if not media_root.exists():
-        raise FileNotFoundError(f"Media directory does not exist: {media_root}")
+You are a sharp political analyst and social media editor.
 
-    buffer = io.StringIO()
-    with contextlib.redirect_stdout(buffer):
-        print(f"Using media directory: {media_root}")
-        rows = get_all_rows(GOOGLE_SHEET_ID)
-        service = _get_service()
-        _archive_orphaned_media(media_root, rows, service, dry_run=dry_run)
-    return buffer.getvalue().strip()
+I will provide a transcript from a political interview, speech, podcast, reel, or news clip. Before writing, research any current events, public figures, legislation, legal cases, statistics, dates, or policy claims mentioned. Verify names, numbers, quotes, and context using reliable sources. Never invent facts. If something cannot be verified, stay close to the transcript.
+
+Return exactly these three sections.
+
+SECTION 1: FIVE TEXT OVERLAY OPTIONS
+
+Create 5 variations of a two line text overlay for a short vertical video.
+
+Rules:
+
+* Each variation has exactly two lines.
+* Top line: 5 to 12 words. Create curiosity and explain what the person is responding to or why viewers should watch. Do not exaggerate or mislead.
+* Bottom line: 5 to 15 words. Reveal the biggest statistic, quote, claim, or takeaway without giving away everything.
+* Sound like something that would perform well on TikTok, Instagram Reels, or X.
+* Avoid clickbait that cannot be supported by the transcript.
+* Make every variation noticeably different.
+
+Format:
+
+Option 1
+Top:
+Bottom:
+
+Option 2
+Top:
+Bottom:
+
+SECTION 2: SOCIAL CAPTION
+
+Write a social post under 1300 characters using exactly two simple paragraphs.
+
+Paragraph 1:
+
+* Maximum 250 characters.
+* Summarize the biggest takeaway.
+* Include every hashtag.
+* Use exactly 3 to 5 hashtags.
+* Prioritize the main people first.
+* Include one single word topic hashtag.
+* Include one additional relevant hashtag if needed.
+* Replace names with hashtag versions in the sentence, such as #ZohranMamdani instead of Zohran Mamdani.
+* Do not add a hashtag only line.
+
+Paragraph 2:
+
+* Add verified context.
+* Include relevant dates, statistics, names, legislation, or policy details.
+* Use direct quotes from the transcript whenever possible.
+* Attribute the source only once using the supplied speaker or interviewer if appropriate.
+* Do not speculate.
+* Do not use emojis.
+* Do not include links.
+* Do not reference Trump's current office status.
+* Write like a political news outlet.
+
+SECTION 3: FIVE HEADLINES
+
+Write 5 headline options.
+
+Rules:
+
+* Maximum 90 characters each.
+* Strong but factual.
+* Name the key person whenever possible.
+* Focus on conflict, consequence, or the biggest revelation.
+* Avoid misleading wording.
+* Avoid ALL CAPS.
+
+Style for all output:
+
+* Clear, direct, concise.
+* No markdown except the section headings and option labels.
+* No filler.
+* Prioritize facts, numbers, quotes, and verified context over opinion.
+
+Transcript:
+[PASTE TRANSCRIPT HERE]"""
 
 
-@st.dialog("Clear Orphaned Media", width="large", on_dismiss=_dismiss_clear_orphaned_media_dialog)
-def _render_clear_orphaned_media_dialog() -> None:
+@st.dialog("Reel Lines Prompt", width="large", on_dismiss=_dismiss_reel_lines_prompt_dialog)
+def _render_reel_lines_prompt_dialog() -> None:
     st.caption(
-        "Move local originals, segment folders, screenshots, and root images that are no longer "
-        "referenced by any sheet row into a timestamped safe_for_deletion folder in your synced "
-        "Drive media directory. Preview first to see what would move without touching anything."
+        "Copy this reusable prompt, then paste your transcript where indicated to generate "
+        "text overlays, a social caption, and headlines in one response."
     )
+    st.code(REEL_LINES_PROMPT, language="text")
 
-    col_preview, col_archive = st.columns(2)
-    with col_preview:
-        run_preview = st.button(
-            "Preview (dry run)",
-            key="workspace_clear_orphaned_media_preview",
-            width="stretch",
-        )
-    with col_archive:
-        run_archive = st.button(
-            "Archive orphaned media",
-            key="workspace_clear_orphaned_media_archive",
-            type="primary",
-            width="stretch",
-        )
-
-    if run_preview or run_archive:
-        dry_run = run_preview
-        spinner_label = (
-            "Scanning for orphaned local media…"
-            if dry_run
-            else "Archiving orphaned local media…"
-        )
-        try:
-            with st.spinner(spinner_label):
-                output = _run_clear_orphaned_media(dry_run=dry_run)
-        except Exception as e:
-            st.session_state["workspace_clear_orphaned_media_output"] = (
-                f"Could not clear orphaned media: {describe_error(e)}"
-            )
-        else:
-            st.session_state["workspace_clear_orphaned_media_output"] = (
-                output or "No output."
-            )
-
-    output = st.session_state.get("workspace_clear_orphaned_media_output")
-    if output:
-        st.code(output, language="text")
-
-    if st.button("Close", key="workspace_clear_orphaned_media_close", width="stretch"):
-        _close_clear_orphaned_media_dialog(clear_inputs=True)
+    if st.button("Close", key="workspace_reel_lines_prompt_close", width="stretch"):
+        _close_reel_lines_prompt_dialog()
         _rerun_workspace("Home")
 
 
@@ -7870,8 +7892,8 @@ if active_section_tab == "Home":
         _render_workspace_slides_dialog(workspace_rows, workspace_rows_error)
     if st.session_state.get("workspace_create_from_link_dialog"):
         _render_create_from_link_dialog()
-    if st.session_state.get("workspace_clear_orphaned_media_dialog"):
-        _render_clear_orphaned_media_dialog()
+    if st.session_state.get("workspace_reel_lines_prompt_dialog"):
+        _render_reel_lines_prompt_dialog()
     if st.session_state.get("workspace_video_post_dialog"):
         _render_video_post_dialog()
     if st.session_state.get("workspace_election_post_dialog"):
@@ -7933,8 +7955,8 @@ if active_section_tab == "Home":
         ):
             _rerun_workspace("Home")
 
-        if st.button("Clear Orphaned Media", key="workspace_open_clear_orphaned_media_dialog", width="stretch"):
-            _open_clear_orphaned_media_dialog()
+        if st.button("Reel Lines Prompt", key="workspace_open_reel_lines_prompt_dialog", width="stretch"):
+            _open_reel_lines_prompt_dialog()
             _rerun_workspace("Home")
 
         if st.button("Montage Generator", key="workspace_open_montage_generator", width="stretch"):
