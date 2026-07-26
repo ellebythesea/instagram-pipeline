@@ -48,8 +48,11 @@ SYS_PROMPT = (
     "Do not use meta-referential language that points back to the source format — never write phrases like "
     "the headline says, the headline reads, the article says, the article states, the comment says, "
     "the post points out, the post notes, the caption reads, according to the post, as the post states, "
+    "the supplied report says, the supplied report, the report says, the report states, "
     "or similar constructions. State facts and claims directly and assertively. "
     "Write as if you are describing the underlying event or claim directly. "
+    "If you genuinely need to attribute a fact to an article source, write 'the article reports' — "
+    "never call it 'the supplied report' or 'the report'. "
     "Avoid speculation, flourish, links, or references to Trump's current office status."
 )
 
