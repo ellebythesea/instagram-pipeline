@@ -3645,11 +3645,7 @@ def _render_create_from_link_dialog() -> None:
         _rerun_workspace("Home")
 
 
-REEL_LINES_PROMPT = """Here's a reusable prompt that will produce all three deliverables in one response.
-
-⸻
-
-You are a sharp political analyst and social media editor.
+REEL_LINES_PROMPT = """You are a sharp political analyst and social media editor.
 
 I will provide a transcript from a political interview, speech, podcast, reel, or news clip. Before writing, research any current events, public figures, legislation, legal cases, statistics, dates, or policy claims mentioned. Verify names, numbers, quotes, and context using reliable sources. Never invent facts. If something cannot be verified, stay close to the transcript.
 
