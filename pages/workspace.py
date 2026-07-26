@@ -1595,6 +1595,18 @@ def _dismiss_clear_orphaned_media_dialog() -> None:
     _close_clear_orphaned_media_dialog(clear_inputs=True)
 
 
+def _open_reel_lines_prompt_dialog() -> None:
+    st.session_state["workspace_reel_lines_prompt_dialog"] = True
+
+
+def _close_reel_lines_prompt_dialog() -> None:
+    st.session_state.pop("workspace_reel_lines_prompt_dialog", None)
+
+
+def _dismiss_reel_lines_prompt_dialog() -> None:
+    _close_reel_lines_prompt_dialog()
+
+
 def _open_election_post_dialog() -> None:
     st.session_state["workspace_election_post_dialog"] = True
 
@@ -3668,6 +3680,104 @@ def _run_clear_orphaned_media(dry_run: bool) -> str:
         service = _get_service()
         _archive_orphaned_media(media_root, rows, service, dry_run=dry_run)
     return buffer.getvalue().strip()
+
+
+REEL_LINES_PROMPT = """Here's a reusable prompt that will produce all three deliverables in one response.
+
+⸻
+
+You are a sharp political analyst and social media editor.
+
+I will provide a transcript from a political interview, speech, podcast, reel, or news clip. Before writing, research any current events, public figures, legislation, legal cases, statistics, dates, or policy claims mentioned. Verify names, numbers, quotes, and context using reliable sources. Never invent facts. If something cannot be verified, stay close to the transcript.
+
+Return exactly these three sections.
+
+SECTION 1: FIVE TEXT OVERLAY OPTIONS
+
+Create 5 variations of a two line text overlay for a short vertical video.
+
+Rules:
+
+* Each variation has exactly two lines.
+* Top line: 5 to 12 words. Create curiosity and explain what the person is responding to or why viewers should watch. Do not exaggerate or mislead.
+* Bottom line: 5 to 15 words. Reveal the biggest statistic, quote, claim, or takeaway without giving away everything.
+* Sound like something that would perform well on TikTok, Instagram Reels, or X.
+* Avoid clickbait that cannot be supported by the transcript.
+* Make every variation noticeably different.
+
+Format:
+
+Option 1
+Top:
+Bottom:
+
+Option 2
+Top:
+Bottom:
+
+SECTION 2: SOCIAL CAPTION
+
+Write a social post under 1300 characters using exactly two simple paragraphs.
+
+Paragraph 1:
+
+* Maximum 250 characters.
+* Summarize the biggest takeaway.
+* Include every hashtag.
+* Use exactly 3 to 5 hashtags.
+* Prioritize the main people first.
+* Include one single word topic hashtag.
+* Include one additional relevant hashtag if needed.
+* Replace names with hashtag versions in the sentence, such as #ZohranMamdani instead of Zohran Mamdani.
+* Do not add a hashtag only line.
+
+Paragraph 2:
+
+* Add verified context.
+* Include relevant dates, statistics, names, legislation, or policy details.
+* Use direct quotes from the transcript whenever possible.
+* Attribute the source only once using the supplied speaker or interviewer if appropriate.
+* Do not speculate.
+* Do not use emojis.
+* Do not include links.
+* Do not reference Trump's current office status.
+* Write like a political news outlet.
+
+SECTION 3: FIVE HEADLINES
+
+Write 5 headline options.
+
+Rules:
+
+* Maximum 90 characters each.
+* Strong but factual.
+* Name the key person whenever possible.
+* Focus on conflict, consequence, or the biggest revelation.
+* Avoid misleading wording.
+* Avoid ALL CAPS.
+
+Style for all output:
+
+* Clear, direct, concise.
+* No markdown except the section headings and option labels.
+* No filler.
+* Prioritize facts, numbers, quotes, and verified context over opinion.
+
+Transcript:
+[PASTE TRANSCRIPT HERE]"""
+
+
+@st.dialog("Reel Lines Prompt", width="large", on_dismiss=_dismiss_reel_lines_prompt_dialog)
+def _render_reel_lines_prompt_dialog() -> None:
+    st.caption(
+        "Copy this reusable prompt, then paste your transcript where indicated to generate "
+        "text overlays, a social caption, and headlines in one response."
+    )
+    st.code(REEL_LINES_PROMPT, language="text")
+
+    if st.button("Close", key="workspace_reel_lines_prompt_close", width="stretch"):
+        _close_reel_lines_prompt_dialog()
+        _rerun_workspace("Home")
 
 
 @st.dialog("Clear Orphaned Media", width="large", on_dismiss=_dismiss_clear_orphaned_media_dialog)
@@ -7870,6 +7980,8 @@ if active_section_tab == "Home":
         _render_workspace_slides_dialog(workspace_rows, workspace_rows_error)
     if st.session_state.get("workspace_create_from_link_dialog"):
         _render_create_from_link_dialog()
+    if st.session_state.get("workspace_reel_lines_prompt_dialog"):
+        _render_reel_lines_prompt_dialog()
     if st.session_state.get("workspace_clear_orphaned_media_dialog"):
         _render_clear_orphaned_media_dialog()
     if st.session_state.get("workspace_video_post_dialog"):
@@ -7931,6 +8043,10 @@ if active_section_tab == "Home":
             width="stretch",
             help="Reload the current editor rows from the sheet and look for new results.",
         ):
+            _rerun_workspace("Home")
+
+        if st.button("Reel Lines Prompt", key="workspace_open_reel_lines_prompt_dialog", width="stretch"):
+            _open_reel_lines_prompt_dialog()
             _rerun_workspace("Home")
 
         if st.button("Clear Orphaned Media", key="workspace_open_clear_orphaned_media_dialog", width="stretch"):
