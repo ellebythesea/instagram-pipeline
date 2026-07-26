@@ -6977,6 +6977,7 @@ def _generate_substack_caption_from_slides(
                     "Write exactly two short paragraphs before the required CTA/footer.\n"
                     "The first paragraph should summarize the main point clearly and specifically.\n"
                     "The second paragraph should add concrete context and make clear the full article covers this topic and more.\n"
+                    "If you attribute a fact to the article, write 'the article reports' — never call it 'the supplied report' or 'the report'.\n"
                     "No hashtags, no emojis, no bullet points, no markdown, no links in the body.\n"
                     "End with the exact required CTA/footer provided by the user."
                 ),
