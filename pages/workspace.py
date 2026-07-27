@@ -327,6 +327,88 @@ VOTER_GUIDE_PROMPT_TEMPLATE = textwrap.dedent(
     Then output the article, then the Tags block.
     """
 )
+ICYMI_POST_PROMPT = textwrap.dedent(
+    """\
+    MONTH: [FILL IN, e.g. August 2026]
+
+    You are helping me write the monthly installment of my column, "What You Might Have Missed." Do the research first, then write the full article. Do not ask me clarifying questions; make editorial judgment calls and note them at the end.
+
+    ## What the column is
+
+    Each month I cover the biggest decisions made by the administration, Congress, or federal agencies that affect millions of Americans, and that got buried under louder news. The organizing insight of the column is that the consequential decision is almost never the loud one. The loud one is the vote. The consequential one is the definition, the memo, the effective date, the theory of authority.
+
+    ## Research
+
+    Search the web thoroughly before writing. Do not rely on your training data for anything about the month in question. Cover, at minimum:
+
+    - Executive orders, presidential memoranda, and proclamations (check the Federal Register disposition tables directly, not just news coverage)
+    - Final rules and interim final rules published by federal agencies, especially HHS/CMS, DHS, Education, USDA, Interior, EPA, DOL
+    - Bills passed by either chamber, plus what was attached to what, plus procedural maneuvers (reconciliation, recess timing, discharge petitions)
+    - Court rulings against or in favor of federal action, including emergency docket orders
+    - Agency policy changes announced by memo rather than rulemaking
+    - Statutory provisions with effective dates that landed this month, even if the law passed years ago
+
+    Search at least 8 to 12 times across different angles. If a source looks thin or SEO-farmed, verify the claim elsewhere or drop it.
+
+    ## Selection criteria
+
+    Pick **ten** items. Prioritize:
+
+    1. Reductions in access to money, health care, food, education, housing, or legal status
+    2. Constitutional questions: war powers, speech, due process, voting, search and seizure, separation of powers
+    3. Signals of what is coming: a legal theory being tested, a precedent being set, a procedural workaround being normalized
+    4. Things where the mechanism is more alarming than the headline
+
+    Deprioritize: anything that got saturation coverage, anything symbolic with no operative effect, anything purely partisan noise. If a genuinely major item got saturation coverage but the *mechanism* was missed, include it and write about the mechanism.
+
+    If something from the last few days of the prior month had its real effect this month, include it and say so.
+
+    ## Format
+
+    Open with a short italic subhead and two or three paragraphs establishing the premise, then ten numbered items. Each item:
+
+    **## [Number]. [Headline: a declarative sentence, not a label]**
+
+    **### What was it?**
+    Tight and factual. Dates, vote counts, dollar figures, agency names. No editorializing. Six to ten sentences.
+
+    **### Why does it matter?**
+    This is the editorial section. Atlantic voice: confident, declarative, willing to make an argument. Required structure:
+    - Open by stating the strongest good-faith counterargument in its own best terms. Steelman it. Concede whatever is genuinely true about it.
+    - Then turn on the single fact that undercuts it.
+    - End on the durable stake: what this makes possible later, regardless of who is in power.
+
+    Do not strawman. If the critique of my position is sincere and widely held, say so and then answer it. A reader who disagrees with me should finish this section feeling they were taken seriously.
+
+    **### How does it affect us?**
+    Numbers and historical parallels. Rules:
+    - Lead with the number that lands hardest, not the biggest one. Ratios and per-unit costs beat ten-year totals. "$4.3 million a year to remove 31,000 people who already qualify" is better than "11.8 million over a decade."
+    - Every number needs a denominator or a comparison. A number with no scale is decoration.
+    - Include at least one historical parallel across the ten items, ideally three or four. Prefer parallels where the outcome is already known.
+    - Where useful, tell the reader how to find the local version of the number for their own state or district.
+
+    Close with a section called "## What connects these" that identifies the shared structure across the month's items, in the loud-versus-consequential frame. Two to four short paragraphs. Do not summarize the items; name the pattern.
+
+    ## Style rules
+
+    - Never use em dashes. Use colons, semicolons, periods, or restructure the sentence.
+    - Never use "delve," "tapestry," "landscape," "underscore," "it's worth noting," "in an era of," or "not just X, but Y."
+    - Short paragraphs. One-sentence paragraphs are allowed and should be used for the hardest lines.
+    - No hedging mush. If the evidence supports a claim, make it. If it doesn't, don't gesture at it.
+    - Do not caption the structure. No "This raises important questions." Just raise them.
+    - 3,500 to 4,500 words total.
+
+    ## Accuracy
+
+    Any figure that comes from your general knowledge rather than from a source you pulled during this session must be marked inline as [verify] and listed again in a closing section titled "Editor's note: figures to verify before publication," with the likely primary source named. Do not invent statistics. If you cannot find a number, write the sentence without one.
+
+    Do not attribute quotes to real people unless the quote appears in a source you retrieved.
+
+    ## Output
+
+    Write it to a markdown file named `what-you-might-have-missed-[month]-[year].md` and give me the file. In the chat, give me three or four sentences on the editorial choices you made, which item you think is the strongest, and anything you considered and cut.
+    """
+)
 VOTER_GUIDE_RESOLUTION_QUERIES = [
     ("search", '"{name}" running for office election opponent'),
     ("search", '"{name}" election race opponent'),
@@ -8780,6 +8862,17 @@ if active_section_tab == "Substack":
 
     # ── Guides ────────────────────────────────────────────────────────────
     if substack_section == "Guides":
+        guide_type = st.selectbox(
+            "Guide to create",
+            ["Election voter guide", "ICYMY post"],
+            key="workspace_guide_type",
+        )
+
+    if substack_section == "Guides" and guide_type == "ICYMY post":
+        st.caption('Copy this prompt to draft the monthly "What You Might Have Missed" column.')
+        st.code(ICYMI_POST_PROMPT, language=None)
+
+    if substack_section == "Guides" and guide_type == "Election voter guide":
         st.caption("Generate a Substack article prompt for a race by entering the candidates you want compared.")
 
         fundraising_presets = _fundraising_preset_map()
