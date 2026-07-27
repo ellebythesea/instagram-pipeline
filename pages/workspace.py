@@ -8864,7 +8864,7 @@ if active_section_tab == "Substack":
     if substack_section == "Guides":
         guide_type = st.selectbox(
             "Guide to create",
-            ["Election voter guide", "ICYMY post"],
+            ["Election voter guide", "ICYMI"],
             key="workspace_guide_type",
         )
 
