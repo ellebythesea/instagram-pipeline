@@ -389,6 +389,10 @@ ICYMI_POST_PROMPT = textwrap.dedent(
 
     Close with a section called "## What connects these" that identifies the shared structure across the month's items, in the loud-versus-consequential frame. Two to four short paragraphs. Do not summarize the items; name the pattern.
 
+    After "What connects these," add a section titled "## Sources" that lists every reference article and source you actually pulled during this session's research. Use a numbered list. For each entry, give the publication or agency name, the headline or document title, and a link where you have one. List them in a sensible order (roughly the order they support the piece). Do not pad the list with sources you did not use.
+
+    At the very end, after the Sources section and everything else, add a single short italic line acknowledging AI. Keep it light and understated: the humans did the reporting, the judgment calls, and the editing, and AI was used only as a research and drafting aid. Downplay the AI's role. One sentence, low-key, no hand-wringing or apology.
+
     ## Style rules
 
     - Never use em dashes. Use colons, semicolons, periods, or restructure the sentence.
