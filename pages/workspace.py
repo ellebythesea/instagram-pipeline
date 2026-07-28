@@ -9049,7 +9049,7 @@ if active_section_tab == "Substack":
             key="workspace_guide_type",
         )
 
-    if substack_section == "Guides" and guide_type == "ICYMY post":
+    if substack_section == "Guides" and guide_type == "ICYMI":
         st.caption('Copy this prompt to draft the monthly "What You Might Have Missed" column.')
         st.code(ICYMI_POST_PROMPT, language=None)
 
