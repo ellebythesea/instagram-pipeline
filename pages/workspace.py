@@ -1671,12 +1671,16 @@ def _open_reel_lines_prompt_dialog() -> None:
     st.session_state["workspace_reel_lines_prompt_dialog"] = True
 
 
-def _close_reel_lines_prompt_dialog() -> None:
+def _close_reel_lines_prompt_dialog(clear_inputs: bool = False) -> None:
     st.session_state.pop("workspace_reel_lines_prompt_dialog", None)
+    if clear_inputs:
+        st.session_state.pop("workspace_reel_lines_prompt_built", None)
+        st.session_state.pop("workspace_reel_lines_prompt_error", None)
+        st.session_state.pop("workspace_reel_lines_prompt_link", None)
 
 
 def _dismiss_reel_lines_prompt_dialog() -> None:
-    _close_reel_lines_prompt_dialog()
+    _close_reel_lines_prompt_dialog(clear_inputs=True)
 
 
 def _open_election_post_dialog() -> None:
@@ -3812,16 +3816,189 @@ Transcript:
 [PASTE TRANSCRIPT HERE]"""
 
 
+REEL_LINES_PROMPT_PLACEHOLDER = "[PASTE TRANSCRIPT HERE]"
+
+
+def _reel_lines_prompt_with_context(context: str) -> str:
+    """Drop gathered context into the reusable prompt in place of the placeholder."""
+    context = (context or "").strip()
+    if not context:
+        return REEL_LINES_PROMPT
+    return REEL_LINES_PROMPT.replace(REEL_LINES_PROMPT_PLACEHOLDER, context)
+
+
+def _extract_text_from_image(image_bytes: bytes, mime_type: str) -> str:
+    """Use the vision model to read any text (or describe) an uploaded image."""
+    import base64
+
+    b64 = base64.b64encode(image_bytes).decode("ascii")
+    response = _get_client().chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": (
+                            "Extract all readable text from this image exactly as it appears, "
+                            "preserving line breaks. Return only the text with no commentary. "
+                            "If the image has no readable text, describe its key visible content "
+                            "in one or two sentences."
+                        ),
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{mime_type or 'image/jpeg'};base64,{b64}"},
+                    },
+                ],
+            }
+        ],
+        temperature=0,
+    )
+    return (response.choices[0].message.content or "").strip()
+
+
+def _transcribe_uploaded_video(uploaded_file) -> str:
+    """Save an uploaded video/audio file to temp and return its Whisper transcript."""
+    suffix = os.path.splitext(uploaded_file.name)[-1].lower() or ".mp4"
+    tmp_dir = tempfile.mkdtemp(prefix="reel_lines_video_")
+    try:
+        src_path = os.path.join(tmp_dir, f"source{suffix}")
+        with open(src_path, "wb") as handle:
+            handle.write(uploaded_file.getbuffer())
+        return (transcribe_video(src_path) or "").strip()
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def _reel_lines_context_from_link(link: str) -> str:
+    """Turn a pasted link into source context: transcribe reels, read articles."""
+    link = (link or "").strip()
+    if not link:
+        return ""
+
+    if _is_reel_url(link):
+        data = process_reel_url(link, include_transcript=False)
+        media_urls = data.get("media_urls") or []
+        if not media_urls:
+            raise RuntimeError("Could not find a downloadable video for that reel link.")
+        tmp_dir = tempfile.mkdtemp(prefix="reel_lines_link_")
+        try:
+            video_path = os.path.join(tmp_dir, "reel.mp4")
+            response = requests.get(media_urls[0], timeout=120)
+            response.raise_for_status()
+            with open(video_path, "wb") as handle:
+                handle.write(response.content)
+            transcript = (transcribe_video(video_path) or "").strip()
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+        if not transcript:
+            raise RuntimeError("Could not transcribe that reel.")
+        return transcript
+
+    if _is_instagram_url(link):
+        # Non-reel Instagram post: fall back to its caption text.
+        data = process_post_url(link)
+        return (data.get("original_caption") or "").strip()
+
+    from article_source import fetch_article_source
+
+    data = fetch_article_source(link)
+    return (data.get("source_text") or data.get("summary_text") or "").strip()
+
+
+def _build_reel_lines_context(link: str, uploaded_files) -> str:
+    """Collect transcript/image text from a link and any uploaded files."""
+    sections: list[str] = []
+
+    if (link or "").strip():
+        link_context = _reel_lines_context_from_link(link)
+        if link_context:
+            sections.append(link_context)
+
+    for uploaded in uploaded_files or []:
+        file_type = (uploaded.type or "").lower()
+        name_lower = (uploaded.name or "").lower()
+        is_image = file_type.startswith("image/") or name_lower.endswith(
+            (".png", ".jpg", ".jpeg", ".webp", ".gif")
+        )
+        if is_image:
+            text = _extract_text_from_image(uploaded.getvalue(), uploaded.type or "image/jpeg")
+            if text:
+                sections.append(text)
+        else:
+            transcript = _transcribe_uploaded_video(uploaded)
+            if transcript:
+                sections.append(transcript)
+
+    return "\n\n".join(section for section in sections if section).strip()
+
+
 @st.dialog("Reel Lines Prompt", width="large", on_dismiss=_dismiss_reel_lines_prompt_dialog)
 def _render_reel_lines_prompt_dialog() -> None:
     st.caption(
-        "Copy this reusable prompt, then paste your transcript where indicated to generate "
-        "text overlays, a social caption, and headlines in one response."
+        "Copy this reusable prompt, then paste your transcript where indicated. Or add a link, "
+        "image, or video below and build a prompt with that context already filled in — reels "
+        "and videos are transcribed, images are read for their text."
     )
-    st.code(REEL_LINES_PROMPT, language="text")
+
+    link = st.text_input(
+        "Link (optional)",
+        key="workspace_reel_lines_prompt_link",
+        placeholder="https://www.instagram.com/reel/... or an article link",
+    ).strip()
+
+    uploaded_files = st.file_uploader(
+        "Image and/or video (optional)",
+        type=["png", "jpg", "jpeg", "webp", "gif", "mp4", "mov", "m4v", "webm", "m4a", "mp3", "wav"],
+        key="workspace_reel_lines_prompt_files",
+        accept_multiple_files=True,
+    )
+
+    has_input = bool(link or uploaded_files)
+
+    if has_input and st.button(
+        "Build prompt with this context",
+        key="workspace_reel_lines_prompt_build",
+        type="primary",
+        width="stretch",
+    ):
+        st.session_state.pop("workspace_reel_lines_prompt_error", None)
+        try:
+            with st.spinner("Gathering context (transcribing / reading)…"):
+                context = _build_reel_lines_context(link, uploaded_files)
+        except Exception as e:
+            st.session_state["workspace_reel_lines_prompt_error"] = describe_error(e)
+            st.session_state.pop("workspace_reel_lines_prompt_built", None)
+        else:
+            if context:
+                st.session_state["workspace_reel_lines_prompt_built"] = (
+                    _reel_lines_prompt_with_context(context)
+                )
+            else:
+                st.session_state["workspace_reel_lines_prompt_error"] = (
+                    "No text could be extracted from the provided link or files."
+                )
+                st.session_state.pop("workspace_reel_lines_prompt_built", None)
+
+    error_message = st.session_state.get("workspace_reel_lines_prompt_error")
+    if error_message:
+        st.error(f"Could not build prompt: {error_message}")
+
+    built_prompt = st.session_state.get("workspace_reel_lines_prompt_built")
+    if built_prompt:
+        st.success("Prompt built with your context — copy it below.")
+        st.code(built_prompt, language="text")
+        if st.button("Reset to blank prompt", key="workspace_reel_lines_prompt_reset", width="stretch"):
+            st.session_state.pop("workspace_reel_lines_prompt_built", None)
+            st.session_state.pop("workspace_reel_lines_prompt_error", None)
+            _rerun_workspace("Home")
+    else:
+        st.code(REEL_LINES_PROMPT, language="text")
 
     if st.button("Close", key="workspace_reel_lines_prompt_close", width="stretch"):
-        _close_reel_lines_prompt_dialog()
+        _close_reel_lines_prompt_dialog(clear_inputs=True)
         _rerun_workspace("Home")
 
 
@@ -8009,10 +8186,6 @@ if active_section_tab == "Home":
             _open_video_post_dialog()
             _rerun_workspace("Home")
 
-        if st.button("Election Post", key="workspace_open_election_post_dialog", width="stretch"):
-            _open_election_post_dialog()
-            _rerun_workspace("Home")
-
         if st.button("Crop Video", key="workspace_home_action_Crop Video", width="stretch"):
             _open_workspace_home_action_dialog("Crop Video")
             _rerun_workspace("Home")
@@ -8033,6 +8206,10 @@ if active_section_tab == "Home":
         ):
             st.session_state["workspace_clear_orphaned_pending"] = True
             _rerun_workspace()
+
+        if st.button("Election Post", key="workspace_open_election_post_dialog", width="stretch"):
+            _open_election_post_dialog()
+            _rerun_workspace("Home")
 
         if st.button(
             "Refresh results",
