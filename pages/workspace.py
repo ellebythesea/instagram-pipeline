@@ -3741,28 +3741,23 @@ I will provide a transcript from a political interview, speech, podcast, reel, o
 
 Return exactly these three sections.
 
-SECTION 1: FIVE TEXT OVERLAY OPTIONS
+SECTION 1: TEN TEXT OVERLAY OPTIONS
 
-Create 5 variations of a two line text overlay for a short vertical video.
+Create 10 variations of a single short text overlay sentence for a short vertical video. This is one quick line that sits above the video.
 
 Rules:
 
-* Each variation has exactly two lines.
-* Top line: 5 to 12 words. Create curiosity and explain what the person is responding to or why viewers should watch. Do not exaggerate or mislead.
-* Bottom line: 5 to 15 words. Reveal the biggest statistic, quote, claim, or takeaway without giving away everything.
+* Each variation is exactly one short sentence.
+* Keep it quick and punchy, roughly 5 to 12 words.
+* Create curiosity or reveal the biggest hook, statistic, quote, or takeaway. Do not exaggerate or mislead.
 * Sound like something that would perform well on TikTok, Instagram Reels, or X.
 * Avoid clickbait that cannot be supported by the transcript.
 * Make every variation noticeably different.
 
 Format:
 
-Option 1
-Top:
-Bottom:
-
-Option 2
-Top:
-Bottom:
+Option 1:
+Option 2:
 
 SECTION 2: SOCIAL CAPTION
 
