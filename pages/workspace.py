@@ -6678,7 +6678,7 @@ def _download_media_to_drive(row: dict) -> None:
 
 def _extract_image_text(row: dict) -> str:
     media_type = (row.get("Media Type", "") or "").strip().lower()
-    if media_type != "photo":
+    if media_type not in {"photo", "carousel"}:
         raise ValueError("Image text extraction is only available for photo or carousel posts.")
 
     links = [link.strip() for link in (row.get("Media Drive Link", "") or "").split(",") if link.strip()]
@@ -6734,16 +6734,31 @@ def _ensure_photo_post_source_text(row: dict) -> dict:
     if _cell_text(working_row.get("Transcript")).strip() or _cell_text(working_row.get("Caption Context")).strip():
         return working_row
 
-    row_num = working_row["row_number"]
-    if not _cell_text(working_row.get("Media Drive Link")).strip():
-        _download_media_to_drive(working_row)
-        working_row = _reload_row_from_sheet(row_num)
+    # _row_is_photo_post is URL-based, so it also matches single-video /p/ posts.
+    # Skip those up front so we don't download a video on every render only for
+    # OCR to reject it — an empty media type is allowed through so a download can
+    # resolve it below.
+    media_type = _cell_text(working_row.get("Media Type")).strip().lower()
+    if media_type and media_type not in {"photo", "carousel"}:
+        return working_row
 
-    extracted_text = _extract_image_text(working_row)
-    update_caption_context(GOOGLE_SHEET_ID, row_num, extracted_text)
-    update_transcript(GOOGLE_SHEET_ID, row_num, extracted_text)
-    working_row["Caption Context"] = extracted_text
-    working_row["Transcript"] = extracted_text
+    # Best-effort enrichment: this runs automatically while building prompts on
+    # page render, so any OCR/download failure must degrade to the un-enriched
+    # row instead of crashing the whole page. Explicit user-triggered extraction
+    # (_redo_caption_from_image_text) still surfaces errors on its own.
+    try:
+        row_num = working_row["row_number"]
+        if not _cell_text(working_row.get("Media Drive Link")).strip():
+            _download_media_to_drive(working_row)
+            working_row = _reload_row_from_sheet(row_num)
+
+        extracted_text = _extract_image_text(working_row)
+        update_caption_context(GOOGLE_SHEET_ID, row_num, extracted_text)
+        update_transcript(GOOGLE_SHEET_ID, row_num, extracted_text)
+        working_row["Caption Context"] = extracted_text
+        working_row["Transcript"] = extracted_text
+    except Exception:
+        return dict(row)
     return working_row
 
 
