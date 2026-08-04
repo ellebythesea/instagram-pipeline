@@ -3230,6 +3230,12 @@ def _parse_slide_json(prompt: str) -> dict | None:
     return data
 
 
+def _first_url_in_text(text: str) -> str:
+    """Return the first http(s) URL found anywhere in free text, or ''."""
+    match = re.search(r"https?://[^\s\"'<>)\]]+", text or "")
+    return match.group(0).rstrip(".,;)") if match else ""
+
+
 def _create_post_from_prompt(
     prompt: str,
     custom_link: str,
@@ -3244,13 +3250,29 @@ def _create_post_from_prompt(
     transcript = ""
 
     slide_data = _parse_slide_json(prompt)
-    top_comment = _encode_top_comment(_build_link_cta(custom_link), pinned=False) if custom_link else ""
+
+    # Resolve the link used for the "Comment LINK" top comment CTA. Prefer the
+    # explicit Link field, then a link field carried in pasted slide JSON, then
+    # the first URL found anywhere in the prompt text itself — so including a
+    # link in the post content is enough to get the CTA.
+    custom_link = _cell_text(custom_link).strip()
+    effective_link = custom_link
+    if not effective_link and slide_data:
+        for _link_key in ("source_url", "link", "url"):
+            _candidate = _cell_text(slide_data.get(_link_key, "")).strip()
+            if _candidate:
+                effective_link = _candidate
+                break
+    if not effective_link:
+        effective_link = _first_url_in_text(prompt)
+
+    top_comment = _encode_top_comment(_build_link_cta(effective_link), pinned=False) if effective_link else ""
 
     # Derive default name from link domain (e.g. "newyorktimes.com") for non-Instagram URLs.
     link_domain = ""
-    if custom_link and not _is_instagram_url(custom_link):
+    if effective_link and not _is_instagram_url(effective_link):
         try:
-            _parsed = urlparse(custom_link.strip())
+            _parsed = urlparse(effective_link.strip())
             _host = _parsed.netloc or _parsed.path
             link_domain = _host.removeprefix("www.").split("/")[0].strip().lower()
         except Exception:
@@ -3289,7 +3311,7 @@ def _create_post_from_prompt(
         caption_context = slide_data.get("generated_caption") or slide_data.get("caption") or ""
         _row_name = slide_data.get("name", "").strip() or link_domain
         append_manual_post_row(GOOGLE_SHEET_ID, {
-            "url": custom_link,
+            "url": effective_link,
             "caption_context": caption_context,
             "original_caption": caption_context,
             "transcript": transcript,
@@ -3312,7 +3334,7 @@ def _create_post_from_prompt(
         })
     else:
         append_manual_post_row(GOOGLE_SHEET_ID, {
-            "url": custom_link,
+            "url": effective_link,
             "caption_context": prompt,
             "original_caption": prompt,
             "transcript": transcript,

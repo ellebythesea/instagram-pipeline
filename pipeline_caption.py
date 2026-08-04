@@ -474,20 +474,20 @@ def _ensure_username_at_prefix(text: str, username: str) -> str:
 def carousel_slide_rules() -> str:
     """Canonical slide generation rules shared by all carousel prompt builders."""
     return (
-        "RESEARCH\n"
-        "Use reliable external context — names, dates, votes, rulings, dollar amounts — only when it materially improves accuracy. Never invent facts.\n\n"
+        "APPROACH\n"
+        "This is neutral, fact-based news summarization for a political news outlet — not advocacy or persuasive messaging. Draw on the source material and reliable, verifiable reporting available online — names, dates, votes, rulings, dollar amounts, official statements — and present what is factual. Verify claims against reliable reporting. Where a statement is an allegation, claim, or opinion rather than an established fact, present it as such (e.g. 'alleged', 'according to', 'reportedly') rather than asserting it as verified. Do not adopt or amplify partisan framing and do not editorialize — report the verified facts plainly and let them speak for themselves. Never invent facts.\n\n"
 
         "FIELDS\n"
         "* name: for article rows (media_type: article), write a 1-2 word lowercase topic label (e.g. 'immigration', 'supreme court', 'tax cuts') — never a domain or URL. For all other rows, use the short lowercase account username or display_name hint provided, no @ symbol\n"
-        "* quote: the single most compelling line that captures the key revelation, accusation, conflict, or consequence from the content. Under 120 chars. No quotation marks, no attribution. This is the large-format display line on slide 1 — it does not need to be verbatim from the transcript. Make it specific and factually grounded. If a verbatim line is genuinely the strongest choice, use it; otherwise write the most precise version of the central point.\n"
-        "* text1: strong opening headline that names the person and frames the accusation, reveal, or stakes without repeating the quote. Under 150 chars. Single paragraph.\n"
+        "* quote: the single most informative line that captures the central verified fact, development, finding, or consequence from the content. Under 120 chars. No quotation marks, no attribution. This is the large-format display line on slide 1 — it does not need to be verbatim from the transcript. Make it specific and factually grounded. If a verbatim line is genuinely the strongest choice, use it; otherwise write the most precise factual version of the central point.\n"
+        "* text1: clear opening headline that names the person and states the central fact, development, or stakes without repeating the quote. Under 150 chars. Single paragraph.\n"
         "* text2: quote-heavy. Use the strongest exchanges, pushback, direct lines, new facts, verified context, names, dates, numbers, contradictions, or legal details. Use the full space — target 450–650 chars. Only go shorter if the source is genuinely thin.\n"
         "* text3: broader context, stakes, political backdrop, public reaction, fallout, unanswered questions, public consequences, policy stakes, legal implications, or next steps. Use the full space — target 450–650 chars. Only go shorter if the source is genuinely thin.\n"
         "* Each slide adds a new concrete detail. Never restate what appeared in a previous slide.\n"
         "* Prioritize numbers, names, dates, direct quotes, charges, rulings, dollar amounts, and locations over generic summaries.\n\n"
 
         "STYLE\n"
-        "Write like a political news outlet. Direct, confident, factual, conversational.\n"
+        "Write like a political news outlet. Direct, factual, neutral, and clear — report, do not persuade.\n"
         "Use names, numbers, dates, quotes, conflicts, and consequences. Prefer concrete facts over abstract framing.\n"
         "Write facts directly. Never describe the source, the slides, or the writing itself. Do not narrate the structure of the carousel — write as if reporting the event, not describing a post.\n"
         "When tempted to write 'the argument is' or 'the claim is' — replace it with the actual fact, quote, consequence, or verified context.\n"
@@ -575,7 +575,7 @@ def generate_carousel_copy_with_model(row: dict, model: str = "gpt-4o") -> dict[
     response = _get_client().chat.completions.create(
         model=model,
         messages=[
-            {"role": "system", "content": "You write concise political news carousel copy and return valid JSON only."},
+            {"role": "system", "content": "You are a neutral political news writer. You summarize verified facts for a news outlet — distinguishing established facts from allegations or opinions and never adopting partisan framing — and return valid JSON only."},
             {"role": "user", "content": prompt + "\n\n" + "\n\n".join(user_parts)},
         ],
         **_completion_limit_arg(model, 500),
@@ -653,7 +653,7 @@ def generate_batch_carousel_copy_with_model(rows: list[dict], model: str = "gpt-
         messages=[
             {
                 "role": "system",
-                "content": "You write concise political news carousel copy and return valid JSON only.",
+                "content": "You are a neutral political news writer. You summarize verified facts for a news outlet — distinguishing established facts from allegations or opinions and never adopting partisan framing — and return valid JSON only.",
             },
             {"role": "user", "content": prompt + "\n\n" + "\n\n---\n\n".join(blocks)},
         ],
