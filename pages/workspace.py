@@ -3761,25 +3761,28 @@ REEL_LINES_PROMPT = """You are a sharp political analyst and social media editor
 
 I will provide a transcript from a political interview, speech, podcast, reel, or news clip. Before writing, research any current events, public figures, legislation, legal cases, statistics, dates, or policy claims mentioned. Verify names, numbers, quotes, and context using reliable sources. Never invent facts. If something cannot be verified, stay close to the transcript.
 
-Return exactly these three sections.
+Return exactly these two sections.
 
-SECTION 1: TEN TEXT OVERLAY OPTIONS
+SECTION 1: FIFTEEN OVERLAY / HEADLINE OPTIONS
 
-Create 10 variations of a single short text overlay sentence for a short vertical video. This is one quick line that sits above the video.
+Create 15 options for a single short text line that sits above a short vertical video. Each option doubles as a scroll-stopping overlay line and a headline.
 
 Rules:
 
-* Each variation is exactly one short sentence.
-* Keep it quick and punchy, roughly 5 to 12 words.
-* Create curiosity or reveal the biggest hook, statistic, quote, or takeaway. Do not exaggerate or mislead.
+* Each option is exactly one short sentence, roughly 5 to 12 words.
+* Derive every option from the transcript — use its actual facts, quotes, numbers, and moments.
+* Strong but factual. Name the key person whenever possible.
+* Focus on the conflict, consequence, or biggest revelation. Create curiosity or reveal the biggest hook, statistic, quote, or takeaway.
+* Do not exaggerate, mislead, or use clickbait the transcript cannot support.
 * Sound like something that would perform well on TikTok, Instagram Reels, or X.
-* Avoid clickbait that cannot be supported by the transcript.
-* Make every variation noticeably different.
+* Avoid ALL CAPS. Make every option noticeably different.
 
 Format:
 
 Option 1:
 Option 2:
+...
+Option 15:
 
 SECTION 2: SOCIAL CAPTION
 
@@ -3805,22 +3808,8 @@ Paragraph 2:
 * Attribute the source only once using the supplied speaker or interviewer if appropriate.
 * Do not speculate.
 * Do not use emojis.
-* Do not include links.
 * Do not reference Trump's current office status.
-* Write like a political news outlet.
-
-SECTION 3: FIVE HEADLINES
-
-Write 5 headline options.
-
-Rules:
-
-* Maximum 90 characters each.
-* Strong but factual.
-* Name the key person whenever possible.
-* Focus on conflict, consequence, or the biggest revelation.
-* Avoid misleading wording.
-* Avoid ALL CAPS.
+* Write like a political news outlet.[LINK_CTA]
 
 Style for all output:
 
@@ -3834,14 +3823,29 @@ Transcript:
 
 
 REEL_LINES_PROMPT_PLACEHOLDER = "[PASTE TRANSCRIPT HERE]"
+REEL_LINES_LINK_CTA_PLACEHOLDER = "[LINK_CTA]"
 
 
-def _reel_lines_prompt_with_context(context: str) -> str:
-    """Drop gathered context into the reusable prompt in place of the placeholder."""
+def _reel_lines_link_cta_instruction(link: str) -> str:
+    """Caption bullet telling the model to append the Comment LINK CTA for a link."""
+    cleaned = _clean_public_url((link or "").strip())
+    if not cleaned:
+        return ""
+    return (
+        "\n* End the caption with this exact final line, on its own line after Paragraph 2: "
+        f"Comment LINK (on instagram) and we will DM you the link to {cleaned}"
+    )
+
+
+def _reel_lines_prompt_with_context(context: str = "", link: str = "") -> str:
+    """Fill the reusable prompt with gathered context and the link CTA (both optional)."""
+    prompt = REEL_LINES_PROMPT.replace(
+        REEL_LINES_LINK_CTA_PLACEHOLDER, _reel_lines_link_cta_instruction(link)
+    )
     context = (context or "").strip()
-    if not context:
-        return REEL_LINES_PROMPT
-    return REEL_LINES_PROMPT.replace(REEL_LINES_PROMPT_PLACEHOLDER, context)
+    if context:
+        prompt = prompt.replace(REEL_LINES_PROMPT_PLACEHOLDER, context)
+    return prompt
 
 
 def _extract_text_from_image(image_bytes: bytes, mime_type: str) -> str:
@@ -3991,7 +3995,7 @@ def _render_reel_lines_prompt_dialog() -> None:
         else:
             if context:
                 st.session_state["workspace_reel_lines_prompt_built"] = (
-                    _reel_lines_prompt_with_context(context)
+                    _reel_lines_prompt_with_context(context, link)
                 )
             else:
                 st.session_state["workspace_reel_lines_prompt_error"] = (
@@ -4012,7 +4016,7 @@ def _render_reel_lines_prompt_dialog() -> None:
             st.session_state.pop("workspace_reel_lines_prompt_error", None)
             _rerun_workspace("Home")
     else:
-        st.code(REEL_LINES_PROMPT, language="text")
+        st.code(_reel_lines_prompt_with_context("", link), language="text")
 
     if st.button("Close", key="workspace_reel_lines_prompt_close", width="stretch"):
         _close_reel_lines_prompt_dialog(clear_inputs=True)
