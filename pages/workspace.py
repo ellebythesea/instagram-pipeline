@@ -5189,6 +5189,17 @@ def _render_slide_one_preview(
           font-family: {PREVIEW_SLIDE_FONT_FAMILY} !important;
           font-weight: {PREVIEW_SLIDE_FONT_WEIGHT} !important;
         }}
+        /* Mobile browsers (e.g. iOS Safari) auto-detect phone numbers and wrap
+           them in blue tel: links. Neutralize that so the copy stays plain
+           white text — the exported slide image is unaffected either way. */
+        .workspace-slide-preview-copy a,
+        .workspace-slide-preview-copy a[href^="tel:"] {{
+          color: #ffffff !important;
+          -webkit-text-fill-color: #ffffff !important;
+          text-decoration: none !important;
+          pointer-events: none;
+          cursor: text;
+        }}
       </style>
       <div style="font-size: 0.82rem; font-weight: 500; color: #475569; margin-bottom: 0.5rem;">
         Slide 1 preview
@@ -5304,6 +5315,17 @@ def _render_text_slide_preview(
         .workspace-text-slide-preview-copy {{
           font-family: {PREVIEW_SLIDE_FONT_FAMILY} !important;
           font-weight: {PREVIEW_SLIDE_FONT_WEIGHT} !important;
+        }}
+        /* Mobile browsers (e.g. iOS Safari) auto-detect phone numbers and wrap
+           them in blue tel: links. Neutralize that so the copy stays plain
+           white text — the exported slide image is unaffected either way. */
+        .workspace-text-slide-preview-copy a,
+        .workspace-text-slide-preview-copy a[href^="tel:"] {{
+          color: #ffffff !important;
+          -webkit-text-fill-color: #ffffff !important;
+          text-decoration: none !important;
+          pointer-events: none;
+          cursor: text;
         }}
       </style>
       <div style="font-size: 0.82rem; font-weight: 600; color: #475569; margin-bottom: 0.5rem;">
