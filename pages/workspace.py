@@ -43,7 +43,13 @@ from drive import (
     get_or_create_subfolder,
     upload_to_drive,
 )
-from ingest_helpers import _compact_post_date, build_filename_prefix, upload_media_bundle
+from ingest_helpers import (
+    _compact_post_date,
+    build_filename_prefix,
+    download_file,
+    make_filename,
+    upload_media_bundle,
+)
 import pipeline_caption as pipeline_caption_ops
 from post_scraper import process_url as process_post_url
 from reel_scraper import process_url as process_reel_url
@@ -1676,6 +1682,7 @@ def _close_reel_lines_prompt_dialog(clear_inputs: bool = False) -> None:
     if clear_inputs:
         st.session_state.pop("workspace_reel_lines_prompt_built", None)
         st.session_state.pop("workspace_reel_lines_prompt_error", None)
+        st.session_state.pop("workspace_reel_lines_prompt_video", None)
         st.session_state.pop("workspace_reel_lines_prompt_link", None)
 
 
@@ -3893,8 +3900,46 @@ def _transcribe_uploaded_video(uploaded_file) -> str:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+def _reel_lines_video_filename(data: dict) -> str:
+    """Drive filename for a reel video, matching the ingest naming convention."""
+    ext = str((data.get("media_extensions") or [""])[0] or "").strip().lower() or ".mp4"
+    if not ext.startswith("."):
+        ext = f".{ext}"
+    prefix = build_filename_prefix(None, data.get("username", ""))
+    return f"{prefix}{make_filename(data.get('post_id', ''), data.get('post_date', ''), ext)}"
+
+
+def _save_reel_lines_video(video_path: str) -> None:
+    """Upload the reel video to the main Drive folder, recording the outcome for the dialog."""
+    filename = os.path.basename(video_path)
+    if not GOOGLE_DRIVE_FOLDER_ID:
+        st.session_state["workspace_reel_lines_prompt_video"] = {
+            "filename": filename,
+            "link": "",
+            "error": "GOOGLE_DRIVE_FOLDER_ID is not configured.",
+        }
+        return
+    try:
+        media_link = upload_to_drive(video_path, filename, GOOGLE_DRIVE_FOLDER_ID)
+    except Exception as e:
+        st.session_state["workspace_reel_lines_prompt_video"] = {
+            "filename": filename,
+            "link": "",
+            "error": describe_error(e),
+        }
+        return
+    st.session_state["workspace_reel_lines_prompt_video"] = {
+        "filename": filename,
+        "link": media_link,
+        "error": "",
+    }
+
+
 def _reel_lines_context_from_link(link: str) -> str:
-    """Turn a pasted link into source context: transcribe reels, read articles."""
+    """Turn a pasted link into source context: transcribe reels, read articles.
+
+    A reel link also gets its video saved to the main Drive folder.
+    """
     link = (link or "").strip()
     if not link:
         return ""
@@ -3906,11 +3951,9 @@ def _reel_lines_context_from_link(link: str) -> str:
             raise RuntimeError("Could not find a downloadable video for that reel link.")
         tmp_dir = tempfile.mkdtemp(prefix="reel_lines_link_")
         try:
-            video_path = os.path.join(tmp_dir, "reel.mp4")
-            response = requests.get(media_urls[0], timeout=120)
-            response.raise_for_status()
-            with open(video_path, "wb") as handle:
-                handle.write(response.content)
+            video_path = os.path.join(tmp_dir, _reel_lines_video_filename(data))
+            download_file(media_urls[0], video_path)
+            _save_reel_lines_video(video_path)
             transcript = (transcribe_video(video_path) or "").strip()
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -3961,7 +4004,8 @@ def _render_reel_lines_prompt_dialog() -> None:
     st.caption(
         "Copy this reusable prompt, then paste your transcript where indicated. Or add a link, "
         "image, or video below and build a prompt with that context already filled in — reels "
-        "and videos are transcribed, images are read for their text."
+        "and videos are transcribed, images are read for their text. A reel link also saves its "
+        "video to the Drive folder."
     )
 
     link = st.text_input(
@@ -3986,8 +4030,9 @@ def _render_reel_lines_prompt_dialog() -> None:
         width="stretch",
     ):
         st.session_state.pop("workspace_reel_lines_prompt_error", None)
+        st.session_state.pop("workspace_reel_lines_prompt_video", None)
         try:
-            with st.spinner("Gathering context (transcribing / reading)…"):
+            with st.spinner("Gathering context (downloading / transcribing / reading)…"):
                 context = _build_reel_lines_context(link, uploaded_files)
         except Exception as e:
             st.session_state["workspace_reel_lines_prompt_error"] = describe_error(e)
@@ -4003,6 +4048,21 @@ def _render_reel_lines_prompt_dialog() -> None:
                 )
                 st.session_state.pop("workspace_reel_lines_prompt_built", None)
 
+    saved_video = st.session_state.get("workspace_reel_lines_prompt_video") or {}
+    if saved_video:
+        if saved_video.get("error"):
+            st.warning(
+                f"Could not save the reel video to Drive: {saved_video['error']}"
+            )
+        else:
+            st.info(f"Reel video saved to Drive as {saved_video['filename']}.")
+            if saved_video.get("link"):
+                st.link_button(
+                    "Open video in Drive",
+                    saved_video["link"],
+                    width="stretch",
+                )
+
     error_message = st.session_state.get("workspace_reel_lines_prompt_error")
     if error_message:
         st.error(f"Could not build prompt: {error_message}")
@@ -4014,6 +4074,7 @@ def _render_reel_lines_prompt_dialog() -> None:
         if st.button("Reset to blank prompt", key="workspace_reel_lines_prompt_reset", width="stretch"):
             st.session_state.pop("workspace_reel_lines_prompt_built", None)
             st.session_state.pop("workspace_reel_lines_prompt_error", None)
+            st.session_state.pop("workspace_reel_lines_prompt_video", None)
             _rerun_workspace("Home")
     else:
         st.code(_reel_lines_prompt_with_context("", link), language="text")
