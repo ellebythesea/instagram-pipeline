@@ -1684,26 +1684,13 @@ def _close_reel_lines_prompt_dialog(clear_inputs: bool = False) -> None:
         st.session_state.pop("workspace_reel_lines_prompt_error", None)
         st.session_state.pop("workspace_reel_lines_prompt_video", None)
         st.session_state.pop("workspace_reel_lines_prompt_link", None)
+        st.session_state.pop("workspace_reel_lines_prompt_post_data", None)
+        st.session_state.pop("workspace_reel_lines_prompt_created", None)
+        st.session_state.pop("workspace_reel_lines_prompt_post_error", None)
 
 
 def _dismiss_reel_lines_prompt_dialog() -> None:
     _close_reel_lines_prompt_dialog(clear_inputs=True)
-
-
-def _open_reel_footer_dialog() -> None:
-    st.session_state["workspace_reel_footer_dialog"] = True
-
-
-def _close_reel_footer_dialog(clear_inputs: bool = False) -> None:
-    st.session_state.pop("workspace_reel_footer_dialog", None)
-    if clear_inputs:
-        st.session_state.pop("workspace_reel_footer_built", None)
-        st.session_state.pop("workspace_reel_footer_error", None)
-        st.session_state.pop("workspace_reel_footer_link", None)
-
-
-def _dismiss_reel_footer_dialog() -> None:
-    _close_reel_footer_dialog(clear_inputs=True)
 
 
 def _open_election_post_dialog() -> None:
@@ -3951,6 +3938,129 @@ def _save_reel_lines_video(video_path: str) -> None:
     }
 
 
+def _make_reel_thumbnail(video_path: str) -> str:
+    """Grab a frame from the reel and upload it to the screenshots folder. Best-effort."""
+    if not GOOGLE_DRIVE_FOLDER_ID:
+        return ""
+    try:
+        duration_s = _video_duration_seconds(video_path)
+        capture_s = min(5.0, max(0.0, duration_s - 0.25)) if duration_s > 0 else 0.0
+        base = os.path.splitext(os.path.basename(video_path))[0]
+        thumb_name = f"{base}_thumb_{int(round(capture_s))}s.jpg"
+        thumb_path = os.path.join(os.path.dirname(video_path), thumb_name)
+        subprocess.run(
+            [
+                _crop_ffmpeg_path(), "-hide_banner", "-loglevel", "error",
+                "-y", "-ss", f"{capture_s:.3f}", "-i", video_path,
+                "-frames:v", "1", thumb_path,
+            ],
+            check=True,
+        )
+        screenshots_folder_id = get_or_create_subfolder(
+            GOOGLE_DRIVE_FOLDER_ID, GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER
+        )
+        return upload_to_drive(thumb_path, thumb_name, screenshots_folder_id)
+    except Exception:
+        return ""
+
+
+def _stash_reel_lines_post_data(link: str, data: dict, video_path: str, transcript: str) -> None:
+    """Stash everything needed to create a post row for the reel just processed."""
+    saved = st.session_state.get("workspace_reel_lines_prompt_video") or {}
+    st.session_state["workspace_reel_lines_prompt_post_data"] = {
+        "link": (link or "").strip(),
+        "media_link": saved.get("link", ""),
+        "thumbnail_link": _make_reel_thumbnail(video_path),
+        "original_caption": (data.get("original_caption") or "").strip(),
+        "username": (data.get("username") or "").strip().lstrip("@"),
+        "transcript": transcript,
+    }
+
+
+def _reel_footer_caption(link: str, original_caption: str, username: str) -> str:
+    """The copy-ready bottom block: original-link comment, original caption,
+    the Follow @… credit, and the standard post footer."""
+    url = (link or "").strip()
+    original_caption = (original_caption or "").strip()
+    username = (username or "").strip().lstrip("@")
+
+    sections: list[str] = []
+    if url:
+        sections.append(url)
+    if original_caption:
+        sections.append(f"--\n\n{original_caption}")
+
+    footer_parts: list[str] = []
+    if username and username.lower() != "unknown":
+        footer_parts.append(f"Follow @{username} for more.")
+    footer = DEFAULT_POST_FOOTER.strip()
+    if footer:
+        footer_parts.append(footer)
+    if footer_parts:
+        sections.append(" ".join(footer_parts))
+
+    return "\n\n".join(sections)
+
+
+def _maybe_create_reel_lines_post(link: str) -> None:
+    """Create a post row for the reel that was just built into a prompt.
+
+    Uses the footer block as the caption (no AI generation) and skips the
+    60-second segment split. Guards against creating a duplicate row when the
+    same link is rebuilt.
+    """
+    link = (link or "").strip()
+    post_data = st.session_state.get("workspace_reel_lines_prompt_post_data") or {}
+    if not post_data or post_data.get("link") != link:
+        return
+
+    already = st.session_state.get("workspace_reel_lines_prompt_created") or {}
+    if already.get("link") == link:
+        return
+
+    username = post_data.get("username", "")
+    caption = _reel_footer_caption(link, post_data.get("original_caption", ""), username)
+
+    try:
+        # Caption is written at insert time (footer block, status done) so no
+        # AI caption generation or second sheet write is needed.
+        append_manual_post_row(GOOGLE_SHEET_ID, {
+            "url": link,
+            "caption": caption,
+            "caption_context": post_data.get("transcript", ""),
+            "original_caption": post_data.get("original_caption", ""),
+            "transcript": post_data.get("transcript", ""),
+            "source_username": username,
+            "speaker_name": "",
+            "media_type": "reel",
+            "media_link": post_data.get("media_link", ""),
+            "thumbnail_link": post_data.get("thumbnail_link", ""),
+            "top_comment": "",
+            "status": "done",
+            "name": pipeline_caption_ops.normalize_slide_name(username, "reel", ""),
+        })
+    except Exception as e:
+        st.session_state["workspace_reel_lines_prompt_post_error"] = describe_error(e)
+        return
+
+    row_num = None
+    try:
+        all_rows = get_all_rows(GOOGLE_SHEET_ID)
+        new_row = all_rows[-1] if all_rows else None
+        row_num = new_row["row_number"] if new_row else None
+    except Exception:
+        pass
+
+    st.session_state.pop("workspace_reel_lines_prompt_post_error", None)
+    st.session_state["workspace_reel_lines_prompt_created"] = {
+        "link": link,
+        "row_num": row_num,
+        "caption": caption,
+        "transcript": post_data.get("transcript", ""),
+        "media_link": post_data.get("media_link", ""),
+    }
+
+
 def _reel_lines_context_from_link(link: str) -> str:
     """Turn a pasted link into source context: transcribe reels, read articles.
 
@@ -3971,6 +4081,8 @@ def _reel_lines_context_from_link(link: str) -> str:
             download_file(media_urls[0], video_path)
             _save_reel_lines_video(video_path)
             transcript = (transcribe_video(video_path) or "").strip()
+            # Capture everything needed to also create a post row for this reel.
+            _stash_reel_lines_post_data(link, data, video_path, transcript)
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
         if not transcript:
@@ -4021,7 +4133,7 @@ def _render_reel_lines_prompt_dialog() -> None:
         "Copy this reusable prompt, then paste your transcript where indicated. Or add a link, "
         "image, or video below and build a prompt with that context already filled in — reels "
         "and videos are transcribed, images are read for their text. A reel link also saves its "
-        "video to the Drive folder."
+        "video to Drive and creates a new post row with the caption ready to copy."
     )
 
     link = st.text_input(
@@ -4047,6 +4159,7 @@ def _render_reel_lines_prompt_dialog() -> None:
     ):
         st.session_state.pop("workspace_reel_lines_prompt_error", None)
         st.session_state.pop("workspace_reel_lines_prompt_video", None)
+        st.session_state.pop("workspace_reel_lines_prompt_post_data", None)
         try:
             with st.spinner("Gathering context (downloading / transcribing / reading)…"):
                 context = _build_reel_lines_context(link, uploaded_files)
@@ -4058,6 +4171,11 @@ def _render_reel_lines_prompt_dialog() -> None:
                 st.session_state["workspace_reel_lines_prompt_built"] = (
                     _reel_lines_prompt_with_context(context, link)
                 )
+                # A reel link also becomes a new post row (footer-block caption,
+                # no segment split) so it lands in the workspace to work with.
+                if _is_reel_url(link):
+                    with st.spinner("Creating post…"):
+                        _maybe_create_reel_lines_post(link)
             else:
                 st.session_state["workspace_reel_lines_prompt_error"] = (
                     "No text could be extracted from the provided link or files."
@@ -4079,6 +4197,24 @@ def _render_reel_lines_prompt_dialog() -> None:
                     width="stretch",
                 )
 
+    post_error = st.session_state.get("workspace_reel_lines_prompt_post_error")
+    if post_error:
+        st.warning(f"Prompt built, but the post could not be created: {post_error}")
+
+    created = st.session_state.get("workspace_reel_lines_prompt_created") or {}
+    if created and created.get("link") == link:
+        row_label = f" as row {created['row_num']}" if created.get("row_num") else ""
+        st.success(f"New post created{row_label}. Caption to copy:")
+        st.code(created.get("caption", ""), language="text")
+        with st.expander("Transcript"):
+            st.code(created.get("transcript", "") or "(none)", language="text")
+        action_cols = st.columns(2)
+        with action_cols[0]:
+            if created.get("media_link"):
+                st.link_button("View reel in Drive", created["media_link"], width="stretch")
+        with action_cols[1]:
+            st.link_button("Open Instagram", created["link"], width="stretch")
+
     error_message = st.session_state.get("workspace_reel_lines_prompt_error")
     if error_message:
         st.error(f"Could not build prompt: {error_message}")
@@ -4091,88 +4227,15 @@ def _render_reel_lines_prompt_dialog() -> None:
             st.session_state.pop("workspace_reel_lines_prompt_built", None)
             st.session_state.pop("workspace_reel_lines_prompt_error", None)
             st.session_state.pop("workspace_reel_lines_prompt_video", None)
+            st.session_state.pop("workspace_reel_lines_prompt_post_data", None)
+            st.session_state.pop("workspace_reel_lines_prompt_created", None)
+            st.session_state.pop("workspace_reel_lines_prompt_post_error", None)
             _rerun_workspace("Home")
     else:
         st.code(_reel_lines_prompt_with_context("", link), language="text")
 
     if st.button("Close", key="workspace_reel_lines_prompt_close", width="stretch"):
         _close_reel_lines_prompt_dialog(clear_inputs=True)
-        _rerun_workspace("Home")
-
-
-def _build_reel_footer_block(link: str) -> str:
-    """Assemble the copy-ready bottom block for a reel post.
-
-    Combines, in one box: the comment carrying the original link, the source
-    account's original caption, the "Follow @… for more." credit, and the
-    standard post footer.
-    """
-    url = (link or "").strip()
-    if not url:
-        raise ValueError("Enter a reel link first.")
-
-    data = process_reel_url(url, include_transcript=False)
-    original_caption = (data.get("original_caption") or "").strip()
-    username = (data.get("username") or "").strip().lstrip("@")
-
-    sections: list[str] = [url]
-    if original_caption:
-        sections.append(f"--\n\n{original_caption}")
-
-    footer_parts: list[str] = []
-    if username and username.lower() != "unknown":
-        footer_parts.append(f"Follow @{username} for more.")
-    footer = DEFAULT_POST_FOOTER.strip()
-    if footer:
-        footer_parts.append(footer)
-    if footer_parts:
-        sections.append(" ".join(footer_parts))
-
-    return "\n\n".join(sections)
-
-
-@st.dialog("Reel Footer", width="large", on_dismiss=_dismiss_reel_footer_dialog)
-def _render_reel_footer_dialog() -> None:
-    st.caption(
-        "Paste a reel link to build the bottom block for a reel post — the "
-        "comment with the original link, their original caption, the follow "
-        "credit, and your footer — all in one box to grab."
-    )
-
-    link = st.text_input(
-        "Reel link",
-        key="workspace_reel_footer_link",
-        placeholder="https://www.instagram.com/reel/...",
-    ).strip()
-
-    if st.button(
-        "Build footer block",
-        key="workspace_reel_footer_build",
-        type="primary",
-        width="stretch",
-        disabled=not link,
-    ):
-        st.session_state.pop("workspace_reel_footer_error", None)
-        try:
-            with st.spinner("Fetching reel (caption, username)…"):
-                block = _build_reel_footer_block(link)
-        except Exception as e:
-            st.session_state["workspace_reel_footer_error"] = describe_error(e)
-            st.session_state.pop("workspace_reel_footer_built", None)
-        else:
-            st.session_state["workspace_reel_footer_built"] = block
-
-    error_message = st.session_state.get("workspace_reel_footer_error")
-    if error_message:
-        st.error(f"Could not build footer block: {error_message}")
-
-    built_block = st.session_state.get("workspace_reel_footer_built")
-    if built_block:
-        st.success("Footer block ready — copy it below.")
-        st.code(built_block, language="text")
-
-    if st.button("Close", key="workspace_reel_footer_close", width="stretch"):
-        _close_reel_footer_dialog(clear_inputs=True)
         _rerun_workspace("Home")
 
 
@@ -8365,8 +8428,6 @@ if active_section_tab == "Home":
         _render_create_from_link_dialog()
     if st.session_state.get("workspace_reel_lines_prompt_dialog"):
         _render_reel_lines_prompt_dialog()
-    if st.session_state.get("workspace_reel_footer_dialog"):
-        _render_reel_footer_dialog()
     if st.session_state.get("workspace_video_post_dialog"):
         _render_video_post_dialog()
     if st.session_state.get("workspace_election_post_dialog"):
@@ -8397,10 +8458,6 @@ if active_section_tab == "Home":
 
         if st.button("Reel Lines Prompt", key="workspace_open_reel_lines_prompt_dialog", width="stretch"):
             _open_reel_lines_prompt_dialog()
-            _rerun_workspace("Home")
-
-        if st.button("Reel Footer", key="workspace_open_reel_footer_dialog", width="stretch"):
-            _open_reel_footer_dialog()
             _rerun_workspace("Home")
 
         if st.button("Video Post", key="workspace_open_video_post_dialog", width="stretch"):
