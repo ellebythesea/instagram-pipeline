@@ -1690,6 +1690,22 @@ def _dismiss_reel_lines_prompt_dialog() -> None:
     _close_reel_lines_prompt_dialog(clear_inputs=True)
 
 
+def _open_reel_footer_dialog() -> None:
+    st.session_state["workspace_reel_footer_dialog"] = True
+
+
+def _close_reel_footer_dialog(clear_inputs: bool = False) -> None:
+    st.session_state.pop("workspace_reel_footer_dialog", None)
+    if clear_inputs:
+        st.session_state.pop("workspace_reel_footer_built", None)
+        st.session_state.pop("workspace_reel_footer_error", None)
+        st.session_state.pop("workspace_reel_footer_link", None)
+
+
+def _dismiss_reel_footer_dialog() -> None:
+    _close_reel_footer_dialog(clear_inputs=True)
+
+
 def _open_election_post_dialog() -> None:
     st.session_state["workspace_election_post_dialog"] = True
 
@@ -4084,6 +4100,82 @@ def _render_reel_lines_prompt_dialog() -> None:
         _rerun_workspace("Home")
 
 
+def _build_reel_footer_block(link: str) -> str:
+    """Assemble the copy-ready bottom block for a reel post.
+
+    Combines, in one box: the comment carrying the original link, the source
+    account's original caption, the "Follow @… for more." credit, and the
+    standard post footer.
+    """
+    url = (link or "").strip()
+    if not url:
+        raise ValueError("Enter a reel link first.")
+
+    data = process_reel_url(url, include_transcript=False)
+    original_caption = (data.get("original_caption") or "").strip()
+    username = (data.get("username") or "").strip().lstrip("@")
+
+    sections: list[str] = [url]
+    if original_caption:
+        sections.append(f"--\n\n{original_caption}")
+
+    footer_parts: list[str] = []
+    if username and username.lower() != "unknown":
+        footer_parts.append(f"Follow @{username} for more.")
+    footer = DEFAULT_POST_FOOTER.strip()
+    if footer:
+        footer_parts.append(footer)
+    if footer_parts:
+        sections.append(" ".join(footer_parts))
+
+    return "\n\n".join(sections)
+
+
+@st.dialog("Reel Footer", width="large", on_dismiss=_dismiss_reel_footer_dialog)
+def _render_reel_footer_dialog() -> None:
+    st.caption(
+        "Paste a reel link to build the bottom block for a reel post — the "
+        "comment with the original link, their original caption, the follow "
+        "credit, and your footer — all in one box to grab."
+    )
+
+    link = st.text_input(
+        "Reel link",
+        key="workspace_reel_footer_link",
+        placeholder="https://www.instagram.com/reel/...",
+    ).strip()
+
+    if st.button(
+        "Build footer block",
+        key="workspace_reel_footer_build",
+        type="primary",
+        width="stretch",
+        disabled=not link,
+    ):
+        st.session_state.pop("workspace_reel_footer_error", None)
+        try:
+            with st.spinner("Fetching reel (caption, username)…"):
+                block = _build_reel_footer_block(link)
+        except Exception as e:
+            st.session_state["workspace_reel_footer_error"] = describe_error(e)
+            st.session_state.pop("workspace_reel_footer_built", None)
+        else:
+            st.session_state["workspace_reel_footer_built"] = block
+
+    error_message = st.session_state.get("workspace_reel_footer_error")
+    if error_message:
+        st.error(f"Could not build footer block: {error_message}")
+
+    built_block = st.session_state.get("workspace_reel_footer_built")
+    if built_block:
+        st.success("Footer block ready — copy it below.")
+        st.code(built_block, language="text")
+
+    if st.button("Close", key="workspace_reel_footer_close", width="stretch"):
+        _close_reel_footer_dialog(clear_inputs=True)
+        _rerun_workspace("Home")
+
+
 @st.dialog("Video Post", width="large", on_dismiss=_dismiss_video_post_dialog)
 def _render_video_post_dialog() -> None:
     uploaded = st.file_uploader(
@@ -5250,6 +5342,17 @@ def _render_slide_one_preview(
           font-family: {PREVIEW_SLIDE_FONT_FAMILY} !important;
           font-weight: {PREVIEW_SLIDE_FONT_WEIGHT} !important;
         }}
+        /* Mobile browsers (e.g. iOS Safari) auto-detect phone numbers and wrap
+           them in blue tel: links. Neutralize that so the copy stays plain
+           white text — the exported slide image is unaffected either way. */
+        .workspace-slide-preview-copy a,
+        .workspace-slide-preview-copy a[href^="tel:"] {{
+          color: #ffffff !important;
+          -webkit-text-fill-color: #ffffff !important;
+          text-decoration: none !important;
+          pointer-events: none;
+          cursor: text;
+        }}
       </style>
       <div style="font-size: 0.82rem; font-weight: 500; color: #475569; margin-bottom: 0.5rem;">
         Slide 1 preview
@@ -5365,6 +5468,17 @@ def _render_text_slide_preview(
         .workspace-text-slide-preview-copy {{
           font-family: {PREVIEW_SLIDE_FONT_FAMILY} !important;
           font-weight: {PREVIEW_SLIDE_FONT_WEIGHT} !important;
+        }}
+        /* Mobile browsers (e.g. iOS Safari) auto-detect phone numbers and wrap
+           them in blue tel: links. Neutralize that so the copy stays plain
+           white text — the exported slide image is unaffected either way. */
+        .workspace-text-slide-preview-copy a,
+        .workspace-text-slide-preview-copy a[href^="tel:"] {{
+          color: #ffffff !important;
+          -webkit-text-fill-color: #ffffff !important;
+          text-decoration: none !important;
+          pointer-events: none;
+          cursor: text;
         }}
       </style>
       <div style="font-size: 0.82rem; font-weight: 600; color: #475569; margin-bottom: 0.5rem;">
@@ -8251,6 +8365,8 @@ if active_section_tab == "Home":
         _render_create_from_link_dialog()
     if st.session_state.get("workspace_reel_lines_prompt_dialog"):
         _render_reel_lines_prompt_dialog()
+    if st.session_state.get("workspace_reel_footer_dialog"):
+        _render_reel_footer_dialog()
     if st.session_state.get("workspace_video_post_dialog"):
         _render_video_post_dialog()
     if st.session_state.get("workspace_election_post_dialog"):
@@ -8279,6 +8395,14 @@ if active_section_tab == "Home":
             _open_workspace_home_action_dialog("Create a Post")
             _rerun_workspace("Home")
 
+        if st.button("Reel Lines Prompt", key="workspace_open_reel_lines_prompt_dialog", width="stretch"):
+            _open_reel_lines_prompt_dialog()
+            _rerun_workspace("Home")
+
+        if st.button("Reel Footer", key="workspace_open_reel_footer_dialog", width="stretch"):
+            _open_reel_footer_dialog()
+            _rerun_workspace("Home")
+
         if st.button("Video Post", key="workspace_open_video_post_dialog", width="stretch"):
             _open_video_post_dialog()
             _rerun_workspace("Home")
@@ -8289,10 +8413,6 @@ if active_section_tab == "Home":
 
         if st.button("Generate headline", key="workspace_home_action_Generate headline", width="stretch"):
             _open_workspace_home_action_dialog("Generate headline")
-            _rerun_workspace("Home")
-
-        if st.button("Reel Lines Prompt", key="workspace_open_reel_lines_prompt_dialog", width="stretch"):
-            _open_reel_lines_prompt_dialog()
             _rerun_workspace("Home")
 
         if st.button(
