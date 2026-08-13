@@ -3819,7 +3819,7 @@ Paragraph 2:
 * Do not speculate.
 * Do not use emojis.
 * Do not reference Trump's current office status.
-* Write like a political news outlet.[LINK_CTA]
+* Write like a political news outlet.
 
 Style for all output:
 
@@ -3833,25 +3833,15 @@ Transcript:
 
 
 REEL_LINES_PROMPT_PLACEHOLDER = "[PASTE TRANSCRIPT HERE]"
-REEL_LINES_LINK_CTA_PLACEHOLDER = "[LINK_CTA]"
-
-
-def _reel_lines_link_cta_instruction(link: str) -> str:
-    """Caption bullet telling the model to append the Comment LINK CTA for a link."""
-    cleaned = _clean_public_url((link or "").strip())
-    if not cleaned:
-        return ""
-    return (
-        "\n* End the caption with this exact final line, on its own line after Paragraph 2: "
-        f"Comment LINK (on instagram) and we will DM you the link to {cleaned}"
-    )
 
 
 def _reel_lines_prompt_with_context(context: str = "", link: str = "") -> str:
-    """Fill the reusable prompt with gathered context and the link CTA (both optional)."""
-    prompt = REEL_LINES_PROMPT.replace(
-        REEL_LINES_LINK_CTA_PLACEHOLDER, _reel_lines_link_cta_instruction(link)
-    )
+    """Fill the reusable prompt with gathered context (optional).
+
+    The comment-link CTA and footer are no longer part of this prompt — they
+    live in the caption of the post the app creates alongside it.
+    """
+    prompt = REEL_LINES_PROMPT
     context = (context or "").strip()
     if context:
         prompt = prompt.replace(REEL_LINES_PROMPT_PLACEHOLDER, context)
@@ -3978,15 +3968,15 @@ def _stash_reel_lines_post_data(link: str, data: dict, video_path: str, transcri
 
 
 def _reel_footer_caption(link: str, original_caption: str, username: str) -> str:
-    """The copy-ready bottom block: original-link comment, original caption,
-    the Follow @… credit, and the standard post footer."""
+    """The copy-ready bottom block: the Comment LINK (on instagram) CTA, the
+    original caption, the Follow @… credit, and the standard post footer."""
     url = (link or "").strip()
     original_caption = (original_caption or "").strip()
     username = (username or "").strip().lstrip("@")
 
     sections: list[str] = []
     if url:
-        sections.append(url)
+        sections.append(_build_link_cta(url))
     if original_caption:
         sections.append(f"--\n\n{original_caption}")
 
@@ -4183,19 +4173,8 @@ def _render_reel_lines_prompt_dialog() -> None:
                 st.session_state.pop("workspace_reel_lines_prompt_built", None)
 
     saved_video = st.session_state.get("workspace_reel_lines_prompt_video") or {}
-    if saved_video:
-        if saved_video.get("error"):
-            st.warning(
-                f"Could not save the reel video to Drive: {saved_video['error']}"
-            )
-        else:
-            st.info(f"Reel video saved to Drive as {saved_video['filename']}.")
-            if saved_video.get("link"):
-                st.link_button(
-                    "Open video in Drive",
-                    saved_video["link"],
-                    width="stretch",
-                )
+    if saved_video.get("error"):
+        st.warning(f"Could not save the reel video to Drive: {saved_video['error']}")
 
     post_error = st.session_state.get("workspace_reel_lines_prompt_post_error")
     if post_error:
@@ -4204,16 +4183,7 @@ def _render_reel_lines_prompt_dialog() -> None:
     created = st.session_state.get("workspace_reel_lines_prompt_created") or {}
     if created and created.get("link") == link:
         row_label = f" as row {created['row_num']}" if created.get("row_num") else ""
-        st.success(f"New post created{row_label}. Caption to copy:")
-        st.code(created.get("caption", ""), language="text")
-        with st.expander("Transcript"):
-            st.code(created.get("transcript", "") or "(none)", language="text")
-        action_cols = st.columns(2)
-        with action_cols[0]:
-            if created.get("media_link"):
-                st.link_button("View reel in Drive", created["media_link"], width="stretch")
-        with action_cols[1]:
-            st.link_button("Open Instagram", created["link"], width="stretch")
+        st.success(f"New post created{row_label} — video, caption, and transcript are in the app.")
 
     error_message = st.session_state.get("workspace_reel_lines_prompt_error")
     if error_message:
