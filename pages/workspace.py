@@ -3771,7 +3771,7 @@ REEL_LINES_PROMPT = """You are a sharp political analyst and social media editor
 
 I will provide a transcript from a political interview, speech, podcast, reel, or news clip. Before writing, research any current events, public figures, legislation, legal cases, statistics, dates, or policy claims mentioned. Verify names, numbers, quotes, and context using reliable sources. Never invent facts. If something cannot be verified, stay close to the transcript.
 
-Return exactly these three sections.
+Return exactly these two sections, then append the footer exactly as instructed at the end.
 
 SECTION 1: FIFTEEN OVERLAY / HEADLINE OPTIONS
 
@@ -3865,16 +3865,24 @@ def _reel_lines_footer_block(link: str = "", username: str = "") -> str:
 
 
 def _reel_lines_footer_section(link: str = "", username: str = "") -> str:
-    """The SECTION 3 block: strict verbatim instructions plus the exact footer."""
+    """Instructions (not to be printed) plus the exact footer block.
+
+    The external AI must append the footer block verbatim after the caption
+    with NO heading or label, so the whole block can be copied on its own.
+    """
     footer_block = _reel_lines_footer_block(link, username)
     return (
-        "SECTION 3: FOOTER (reproduce exactly)\n\n"
-        "After the caption, output the following footer block exactly as written, "
-        "character for character. Do not edit, rephrase, reformat, translate, shorten, "
-        "expand, correct, or re-punctuate any part of it — keep the wording, capitalization, "
-        "punctuation, em dash, attribution, and line breaks identical. If the link still reads "
-        "[LINK], leave it exactly as [LINK]. Reproduce it verbatim:\n\n"
-        f"{footer_block}"
+        "FOOTER TO APPEND — the lines in this section are instructions; do not print them.\n"
+        "After Section 2, add one blank line, then output the footer block exactly as written "
+        "between the markers below, character for character. Do not edit, rephrase, reformat, "
+        "translate, shorten, expand, correct, or re-punctuate any part of it — keep the wording, "
+        "capitalization, punctuation, em dash, attribution, and line breaks identical. If the link "
+        "still reads [LINK], leave it exactly as [LINK]. Output ONLY the block itself — do not print "
+        "any heading, label, the words 'SECTION 3' or 'FOOTER', the markers, or these instructions, "
+        "so the footer can be copied on its own.\n\n"
+        "----- BEGIN FOOTER BLOCK (do not print this line) -----\n"
+        f"{footer_block}\n"
+        "----- END FOOTER BLOCK (do not print this line) -----"
     )
 
 
@@ -3884,9 +3892,10 @@ def _reel_lines_prompt_with_context(
     """Fill the reusable prompt with gathered context (optional).
 
     The comment-link CTA, Follow @… credit, and standard footer are embedded
-    back into the prompt as a verbatim SECTION 3 so the external AI reproduces
-    the exact footer — no need to re-copy it from the app. The same block still
-    lives in the caption of the post the app creates alongside it.
+    back into the prompt with instructions to append the exact block, with no
+    heading or label, so the external AI reproduces a clean, copy-in-one-go
+    footer — no need to re-copy it from the app. The same block still lives in
+    the caption of the post the app creates alongside it.
     """
     prompt = REEL_LINES_PROMPT
     prompt = prompt.replace(
