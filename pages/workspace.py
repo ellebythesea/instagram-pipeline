@@ -3771,7 +3771,7 @@ REEL_LINES_PROMPT = """You are a sharp political analyst and social media editor
 
 I will provide a transcript from a political interview, speech, podcast, reel, or news clip. Before writing, research any current events, public figures, legislation, legal cases, statistics, dates, or policy claims mentioned. Verify names, numbers, quotes, and context using reliable sources. Never invent facts. If something cannot be verified, stay close to the transcript.
 
-Return exactly these two sections.
+Return exactly these three sections.
 
 SECTION 1: FIFTEEN OVERLAY / HEADLINE OPTIONS
 
@@ -3828,20 +3828,71 @@ Style for all output:
 * No filler.
 * Prioritize facts, numbers, quotes, and verified context over opinion.
 
+[FOOTER SECTION]
+
 Transcript:
 [PASTE TRANSCRIPT HERE]"""
 
 
 REEL_LINES_PROMPT_PLACEHOLDER = "[PASTE TRANSCRIPT HERE]"
+REEL_LINES_FOOTER_SECTION_PLACEHOLDER = "[FOOTER SECTION]"
 
 
-def _reel_lines_prompt_with_context(context: str = "", link: str = "") -> str:
+def _reel_lines_footer_block(link: str = "", username: str = "") -> str:
+    """The exact copy-ready footer that must trail the caption: the Comment
+    LINK CTA, the Follow @… credit, and the standard post footer.
+
+    Mirrors the block the app writes into the post caption (_reel_footer_caption)
+    so it only has to be copied once — the external AI echoes it back verbatim
+    instead of the user re-copying it from the app.
+    """
+    url = (link or "").strip()
+    username = (username or "").strip().lstrip("@")
+
+    parts: list[str] = []
+    parts.append(_build_link_cta(url) if url else _build_link_cta("[LINK]"))
+
+    credit_and_footer: list[str] = []
+    if username and username.lower() != "unknown":
+        credit_and_footer.append(f"Follow @{username} for more.")
+    footer = DEFAULT_POST_FOOTER.strip()
+    if footer:
+        credit_and_footer.append(footer)
+    if credit_and_footer:
+        parts.append(" ".join(credit_and_footer))
+
+    return "\n\n".join(parts)
+
+
+def _reel_lines_footer_section(link: str = "", username: str = "") -> str:
+    """The SECTION 3 block: strict verbatim instructions plus the exact footer."""
+    footer_block = _reel_lines_footer_block(link, username)
+    return (
+        "SECTION 3: FOOTER (reproduce exactly)\n\n"
+        "After the caption, output the following footer block exactly as written, "
+        "character for character. Do not edit, rephrase, reformat, translate, shorten, "
+        "expand, correct, or re-punctuate any part of it — keep the wording, capitalization, "
+        "punctuation, em dash, attribution, and line breaks identical. If the link still reads "
+        "[LINK], leave it exactly as [LINK]. Reproduce it verbatim:\n\n"
+        f"{footer_block}"
+    )
+
+
+def _reel_lines_prompt_with_context(
+    context: str = "", link: str = "", username: str = ""
+) -> str:
     """Fill the reusable prompt with gathered context (optional).
 
-    The comment-link CTA and footer are no longer part of this prompt — they
-    live in the caption of the post the app creates alongside it.
+    The comment-link CTA, Follow @… credit, and standard footer are embedded
+    back into the prompt as a verbatim SECTION 3 so the external AI reproduces
+    the exact footer — no need to re-copy it from the app. The same block still
+    lives in the caption of the post the app creates alongside it.
     """
     prompt = REEL_LINES_PROMPT
+    prompt = prompt.replace(
+        REEL_LINES_FOOTER_SECTION_PLACEHOLDER,
+        _reel_lines_footer_section(link, username),
+    )
     context = (context or "").strip()
     if context:
         prompt = prompt.replace(REEL_LINES_PROMPT_PLACEHOLDER, context)
@@ -4158,8 +4209,13 @@ def _render_reel_lines_prompt_dialog() -> None:
             st.session_state.pop("workspace_reel_lines_prompt_built", None)
         else:
             if context:
+                _reel_post_data = (
+                    st.session_state.get("workspace_reel_lines_prompt_post_data") or {}
+                )
                 st.session_state["workspace_reel_lines_prompt_built"] = (
-                    _reel_lines_prompt_with_context(context, link)
+                    _reel_lines_prompt_with_context(
+                        context, link, _reel_post_data.get("username", "")
+                    )
                 )
                 # A reel link also becomes a new post row (footer-block caption,
                 # no segment split) so it lands in the workspace to work with.
