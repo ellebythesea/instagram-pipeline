@@ -1,9 +1,12 @@
 """Ingest page: paste a client document, pull out its linked items, add the picked ones to the posts sheet.
 
-No AI is involved and nothing is rewritten. Every http(s) URL in the pasted text is
-located by regex and paired with the document's own wording around it, verbatim, so
-nothing in a long document can be silently skipped or reworded. Links on blocked
-platforms (Twitter/X, Threads, Reddit) are left out; everything else is listed.
+No AI is involved and nothing is rewritten. Every http(s) URL in the source is located by
+regex and paired with the document's own wording around it, verbatim, so nothing in a long
+document can be silently skipped or reworded. Links on blocked platforms (Twitter/X,
+Threads, Reddit) and links to Google Docs/Drive are left out; everything else is listed.
+
+Pasted rich text is accepted as HTML, because a plain-text paste from Gmail drops every
+href and leaves link text like "IG" with nothing behind it.
 """
 
 import hashlib
@@ -12,7 +15,8 @@ import os
 import re
 import sys
 from datetime import date, datetime
-from urllib.parse import urlparse, urlunparse
+from html.parser import HTMLParser
+from urllib.parse import parse_qs, unquote, urlparse, urlunparse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -36,8 +40,19 @@ LIST_MARKER_RE = re.compile(r"^\s*(?:[*\-+•]|\d+[.)])\s+")
 MARKDOWN_ESCAPE_RE = re.compile(r"\\([\\`*_{}\[\]()#+\-.!|>~])")
 # Instagram query strings (?hl=en, ?img_index=1) point at the same post.
 INSTAGRAM_HOSTS = ("instagram.com",)
-# Platforms that are never posted from, so their links are dropped on sight.
-BLOCKED_HOSTS = ("twitter.com", "x.com", "t.co", "threads.com", "threads.net", "reddit.com")
+# Never posted from, so these are dropped on sight: platforms that are not used, plus
+# Google Docs/Drive links, which are the source documents themselves rather than items.
+BLOCKED_HOSTS = (
+    "twitter.com",
+    "x.com",
+    "t.co",
+    "threads.com",
+    "threads.net",
+    "reddit.com",
+    "docs.google.com",
+    "drive.google.com",
+)
+BLOCKED_LABEL = "Twitter/X, Threads, Reddit, or Google Docs/Drive"
 
 # A highlighted run in the HTML export is a span with a non-white background colour.
 HIGHLIGHT_SPAN_RE = re.compile(
@@ -47,6 +62,15 @@ HTML_TAG_RE = re.compile(r"<[^>]+>")
 UNHIGHLIGHTED_COLORS = {"#ffffff", "#fff", "transparent", "white", "none", "initial", "inherit"}
 # Last entry in the Document dropdown: type a link instead of using the docs tab.
 CUSTOM_DOC_OPTION = "Enter your own URL"
+
+# Pasted rich text (from Gmail, a Doc, a web page) arrives as HTML rather than markdown.
+HTML_SOURCE_RE = re.compile(r"<\s*(a|div|p|span|table|br|html|body|ul|ol|li)\b", re.IGNORECASE)
+HTML_BLOCK_TAGS = {
+    "p", "div", "li", "tr", "td", "blockquote", "section", "article", "ul", "ol", "table",
+}
+HTML_HEADING_RE = re.compile(r"^h([1-6])$")
+HTML_SKIP_TAGS = {"style", "script", "head", "title", "meta", "link"}
+RGB_RE = re.compile(r"rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)", re.IGNORECASE)
 # Below this length a highlighted run is a fragment (a heading, a word) and matching
 # it against headlines would produce false positives.
 HIGHLIGHT_MIN_CHARS = 25
@@ -77,13 +101,24 @@ def _is_instagram_url(url: str) -> bool:
 
 
 def _is_blocked_url(url: str) -> bool:
-    """Twitter/X, Threads, and Reddit links are never posted from."""
+    """Links on platforms that are never posted from, or to the source docs themselves."""
     return _host_matches(url, BLOCKED_HOSTS)
+
+
+def _unwrap_redirect(url: str) -> str:
+    """Gmail and Doc HTML route links through google.com/url?q=<real link>."""
+    cleaned = (url or "").strip()
+    parsed = urlparse(cleaned)
+    if parsed.netloc.lower().endswith("google.com") and parsed.path.rstrip("/") == "/url":
+        target = parse_qs(parsed.query).get("q", [""])[0]
+        if target:
+            return unquote(target)
+    return cleaned
 
 
 def _canonical_url(url: str) -> str:
     """Trim trailing punctuation, and drop tracking query strings from Instagram links."""
-    cleaned = (url or "").strip().rstrip(").,;:\"'>]}")
+    cleaned = _unwrap_redirect(url).strip().rstrip(").,;:\"'>]}")
     if not cleaned:
         return ""
     if _is_instagram_url(cleaned):
@@ -174,7 +209,6 @@ def _parse_link_candidates(text: str) -> list[dict]:
     """
     candidates: list[dict] = []
     seen: set[str] = set()
-    heading = ""
     recent: list[str] = []
 
     for raw_line in _unescape_markdown(text).splitlines():
@@ -183,19 +217,21 @@ def _parse_link_candidates(text: str) -> list[dict]:
 
         if not links:
             if _is_section_heading(raw_line, has_links=False):
-                heading = own_text
+                # A section title is not an item title, and nothing below it may borrow
+                # wording from above it.
                 recent = []
             elif own_text:
-                recent = [*recent, own_text][-3:]
+                recent = [*recent, own_text][-2:]
             continue
 
-        # A line carrying its own headline keeps it; a bare "@handle: [IG]" line
-        # borrows the nearest headline-shaped line above it (its parent bullet).
+        # A line carrying its own headline keeps it; a bare "@handle: [IG]" line borrows
+        # its parent bullet. Only the two lines directly above are eligible — reaching
+        # further back attaches an unrelated headline to a stray link.
         if not _is_lead_in(own_text):
             headline, note = own_text, ""
         else:
             parent = next((line for line in reversed(recent) if not _is_lead_in(line)), "")
-            headline, note = (parent or heading), own_text
+            headline, note = parent, own_text
 
         for label, url in links:
             canonical = _canonical_url(url)
@@ -212,7 +248,7 @@ def _parse_link_candidates(text: str) -> list[dict]:
                 }
             )
         if own_text:
-            recent = [*recent, own_text][-3:]
+            recent = [*recent, own_text][-2:]
 
     return candidates
 
@@ -223,6 +259,9 @@ def _extract_items(text: str) -> tuple[list[dict], int]:
     Every link is listed with the document's own wording, except links on the
     blocked platforms. Nothing is summarized, reworded, or sent anywhere.
     """
+    if _looks_like_html(text):
+        text = _html_to_markdownish(text)
+
     items: list[dict] = []
     skipped = 0
     for candidate in _parse_link_candidates(text):
@@ -302,20 +341,113 @@ def _match_key(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", (text or "").lower())
 
 
-def _highlighted_texts(doc_html: str) -> list[str]:
-    """The text of every highlighted run in a Google Doc HTML export.
+def _is_highlight_color(value: str) -> bool:
+    """True for a background colour that reads as a highlight rather than plain paper.
 
-    Google highlights the item's own wording rather than the link, so these are matched
-    against item headlines instead of URLs.
+    Handles both the hex Google's export writes and the rgb() a rich-text paste produces.
+    """
+    cleaned = (value or "").strip().lower().rstrip(";")
+    if not cleaned or cleaned in UNHIGHLIGHTED_COLORS:
+        return False
+    rgb = RGB_RE.match(cleaned)
+    if rgb:
+        channels = [int(part) for part in rgb.groups()]
+    elif cleaned.startswith("#"):
+        digits = cleaned[1:]
+        if len(digits) == 3:
+            digits = "".join(char * 2 for char in digits)
+        if len(digits) < 6:
+            return False
+        try:
+            channels = [int(digits[i : i + 2], 16) for i in (0, 2, 4)]
+        except ValueError:
+            return False
+    else:
+        # A named colour other than the plain ones listed above.
+        return True
+    return not all(channel >= 250 for channel in channels)
+
+
+def _highlighted_texts(source_html: str) -> list[str]:
+    """The text of every highlighted run in an HTML document.
+
+    Highlighting lands on the item's own wording rather than on the link, so these are
+    matched against item headlines instead of URLs.
     """
     found: list[str] = []
-    for color, inner in HIGHLIGHT_SPAN_RE.findall(doc_html or ""):
-        if color.strip().lower() in UNHIGHLIGHTED_COLORS:
+    for color, inner in HIGHLIGHT_SPAN_RE.findall(source_html or ""):
+        if not _is_highlight_color(color):
             continue
         text = " ".join(html.unescape(HTML_TAG_RE.sub("", inner)).split()).strip()
         if len(text) >= HIGHLIGHT_MIN_CHARS:
             found.append(text)
     return found
+
+
+class _MarkdownishHTMLParser(HTMLParser):
+    """Rewrites HTML into the bulleted, `[label](url)` shape the link parser reads.
+
+    Pasted rich text keeps its hrefs, which a plain-text paste loses entirely — link
+    text like "IG" arrives with no URL behind it.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self.skip_depth = 0
+        self.href_stack: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        tag = tag.lower()
+        if tag in HTML_SKIP_TAGS:
+            self.skip_depth += 1
+            return
+        if self.skip_depth:
+            return
+        heading = HTML_HEADING_RE.match(tag)
+        if tag == "br":
+            self.parts.append("\n")
+        elif tag == "li":
+            self.parts.append("\n* ")
+        elif heading:
+            self.parts.append("\n\n" + "#" * int(heading.group(1)) + " ")
+        elif tag in HTML_BLOCK_TAGS:
+            self.parts.append("\n")
+        if tag == "a":
+            href = (dict(attrs).get("href") or "").strip()
+            self.href_stack.append(href)
+            self.parts.append("[")
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.lower()
+        if tag in HTML_SKIP_TAGS:
+            self.skip_depth = max(0, self.skip_depth - 1)
+            return
+        if self.skip_depth:
+            return
+        if tag == "a":
+            href = self.href_stack.pop() if self.href_stack else ""
+            self.parts.append(f"]({href})" if href else "]")
+        elif tag in HTML_BLOCK_TAGS or HTML_HEADING_RE.match(tag):
+            self.parts.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if self.skip_depth:
+            return
+        self.parts.append(data.replace("\n", " "))
+
+
+def _looks_like_html(source: str) -> bool:
+    return bool(HTML_SOURCE_RE.search(source or ""))
+
+
+def _html_to_markdownish(source: str) -> str:
+    """Flatten pasted HTML into text the markdown link parser can read."""
+    parser = _MarkdownishHTMLParser()
+    parser.feed(source or "")
+    parser.close()
+    text = re.sub(r"\n{3,}", "\n\n", "".join(parser.parts))
+    return "\n".join(" ".join(line.split()) for line in text.splitlines()).strip()
 
 
 def _mark_highlighted(items: list[dict], highlighted_texts: list[str]) -> None:
@@ -400,6 +532,32 @@ def _set_all_picks(items: list[dict], value: bool) -> None:
         st.session_state[_pick_key(index)] = value
 
 
+def _rich_paste_available() -> bool:
+    """Whether the rich-text paste box can be shown at all."""
+    try:
+        from streamlit_quill import st_quill  # noqa: F401
+    except Exception:
+        return False
+    return True
+
+
+def _rich_paste_box() -> str:
+    """A rich-text box that keeps hyperlinks when pasting from Gmail or a doc.
+
+    Returns HTML. A plain text area would drop every href, leaving link text like "IG"
+    with nothing behind it.
+    """
+    from streamlit_quill import st_quill
+
+    return st_quill(
+        html=True,
+        # False disables Quill's toolbar; an empty list renders it as a blank grey bar.
+        toolbar=False,
+        placeholder="Paste a document, email, or list of links here…",
+        key="ingest_document_rich",
+    ) or ""
+
+
 def _row_text(item: dict) -> str:
     """One pipe-separated block: headline, link, then any notes."""
     parts = [f"**{item['headline'] or item['url']}**", item["url"]]
@@ -418,7 +576,7 @@ st.title("Ingest")
 st.caption(
     "Paste a document from a client to list every link in it with the document's own wording, "
     "then add the ones you pick to the posts sheet with that client's hashtag. "
-    "Twitter/X, Threads, and Reddit links are left out."
+    "Twitter/X, Threads, Reddit, and Google Docs/Drive links are left out."
 )
 
 if not require_auth():
@@ -544,15 +702,26 @@ if not selected_hashtags:
 
 document_text = ""
 if selected_doc_label is None:
-    document_text = st.text_area(
-        "Document text",
-        key="ingest_document_text",
-        height=260,
-        placeholder="Paste a document, email, or list of links here…",
-    )
+    if _rich_paste_available():
+        st.caption(
+            "Paste straight from Gmail or a doc — formatting is kept, so links behind text "
+            "like “IG” survive. Plain text works too."
+        )
+        document_text = _rich_paste_box() or ""
+    else:
+        document_text = st.text_area(
+            "Document text",
+            key="ingest_document_text",
+            height=260,
+            placeholder="Paste a document, email, or list of links here…",
+        )
 
 # The selected doc tab wins; the paste box only exists when no document is chosen.
 source_text = selected_tab_text or document_text
+
+# Pasted rich text carries its own highlighting, the same as a Doc export does.
+if not selected_tab_text and _looks_like_html(source_text):
+    highlighted_texts = _highlighted_texts(source_text)
 
 if st.button(
     "Find items in this tab" if tabs else "Find items",
@@ -597,14 +766,14 @@ if items is not None:
     if not items:
         st.info(
             "No links were found in that text."
-            + (f" {skipped} Twitter/X, Threads, or Reddit link(s) were skipped." if skipped else "")
+            + (f" {skipped} {BLOCKED_LABEL} link(s) were skipped." if skipped else "")
         )
     else:
         st.divider()
         remaining = [item for item in items if not item.get("added")]
         st.subheader(f"{len(remaining)} item{'s' if len(remaining) != 1 else ''} found")
         if skipped:
-            st.caption(f"{skipped} Twitter/X, Threads, or Reddit link(s) were skipped.")
+            st.caption(f"{skipped} {BLOCKED_LABEL} link(s) were skipped.")
 
         select_col, clear_col = st.columns(2)
         with select_col:
