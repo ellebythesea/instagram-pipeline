@@ -41,14 +41,16 @@ For working through the documents clients send over. A third workspace tab along
 `Substack`.
 
 Pick a client from the `Document` dropdown (populated from the `docs` tab) and the page reads that
-client's Google Doc live, lists its tabs, and selects the most recent one by date. Or leave the
-dropdown on `None` and paste text into the box instead. `Reload` re-reads the doc from Drive; it is
-otherwise cached for five minutes so switching tabs is instant.
+client's Google Doc live, lists its tabs, and selects the most recent one by date. The last entry,
+`Enter your own URL`, reveals an input for a one-off Google Doc link instead. Or leave the dropdown on
+`None` and paste text into the box. `Reload` re-reads the doc from Drive; it is otherwise cached for
+five minutes so switching tabs is instant.
 
 Items appear as one flat table: a checkbox on the left, and on the right the document's own wording,
 the link, and any notes, pipe-separated. Check off what you want and `Add to Google Sheets` appends
-one `posts` row per link. The hashtag comes from column C of the `docs` row; when a document has none
-(or none is selected) a `Hashtag` dropdown appears instead, fed by the `hashtags` tab.
+one `posts` row per link. The hashtag comes from column C of the `docs` row; when there is no such row
+to read it from — a typed URL, pasted text, or a `docs` row with column C blank — a `Hashtag` dropdown
+appears instead, fed by the `hashtags` tab.
 
 No AI is involved and no text is rewritten. Links are found by regex and paired with the surrounding
 text verbatim, so nothing in a long document is skipped or reworded, and the page costs nothing to

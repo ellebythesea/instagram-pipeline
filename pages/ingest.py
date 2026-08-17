@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import streamlit as st
 
 from config import GOOGLE_SHEET_ID
-from drive import export_google_doc_html, export_google_doc_markdown
+from drive import export_google_doc_html, export_google_doc_markdown, extract_drive_file_id
 from sheets import append_link_rows, get_all_rows, get_doc_presets, get_hashtag_presets
 from utils.auth import require_auth
 from utils.error_labels import describe_error
@@ -45,6 +45,8 @@ HIGHLIGHT_SPAN_RE = re.compile(
 )
 HTML_TAG_RE = re.compile(r"<[^>]+>")
 UNHIGHLIGHTED_COLORS = {"#ffffff", "#fff", "transparent", "white", "none", "initial", "inherit"}
+# Last entry in the Document dropdown: type a link instead of using the docs tab.
+CUSTOM_DOC_OPTION = "Enter your own URL"
 # Below this length a highlighted run is a fragment (a heading, a word) and matching
 # it against headlines would produce false positives.
 HIGHLIGHT_MIN_CHARS = 25
@@ -451,11 +453,10 @@ except Exception as e:
 doc_labels = [preset["label"] for preset in doc_presets]
 selected_doc_label = st.selectbox(
     "Document",
-    doc_labels,
+    [*doc_labels, CUSTOM_DOC_OPTION],
     index=None,
     key="ingest_doc_label",
     placeholder="None — paste text below instead",
-    disabled=not doc_labels,
     help="Comes from the docs tab of the Google Sheet (column A: client, B: Google Doc link, C: hashtag).",
 )
 selected_doc = next(
@@ -463,11 +464,27 @@ selected_doc = next(
     None,
 )
 
+# A one-off link typed in rather than kept on the docs tab.
+custom_doc_url = ""
+if selected_doc_label == CUSTOM_DOC_OPTION:
+    custom_doc_url = st.text_input(
+        "Document URL",
+        key="ingest_custom_doc_url",
+        placeholder="https://docs.google.com/document/d/…",
+        help="Any Google Doc you can open. Nothing needs sharing with the service account.",
+    ).strip()
+
+doc_to_load = selected_doc["url"] if selected_doc else custom_doc_url
+if doc_to_load and not extract_drive_file_id(doc_to_load):
+    # Without this the whole URL is sent to Drive as a file id and comes back a raw 404.
+    st.error("That does not look like a Google Doc link — it should contain `/d/<id>/`.")
+    doc_to_load = ""
+
 tabs: list[dict] = []
 doc_name = ""
-if selected_doc:
+if doc_to_load:
     try:
-        doc_name, tabs = _load_doc_tabs(selected_doc["url"])
+        doc_name, tabs = _load_doc_tabs(doc_to_load)
     except Exception as e:
         st.error(f"Could not open that document: {describe_error(e)}")
 
@@ -526,7 +543,7 @@ if not selected_hashtags:
     )
 
 document_text = ""
-if not selected_doc:
+if selected_doc_label is None:
     document_text = st.text_area(
         "Document text",
         key="ingest_document_text",
