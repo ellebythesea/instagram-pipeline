@@ -35,6 +35,32 @@ Rows that have been processed for editing appear here with:
 - scheduling controls
 - row actions like transcribe, generate caption, skip, add CTA, or delete
 
+### Ingest tab
+
+For working through the documents clients send over. A third workspace tab alongside `Home` and
+`Substack`.
+
+Pick a client from the `Document` dropdown (populated from the `docs` tab) and the page reads that
+client's Google Doc live, lists its tabs, and selects the most recent one by date. Or leave the
+dropdown on `None` and paste text into the box instead. `Reload` re-reads the doc from Drive; it is
+otherwise cached for five minutes so switching tabs is instant.
+
+Items appear as one flat table: a checkbox on the left, and on the right the document's own wording,
+the link, and any notes, pipe-separated. Check off what you want and `Add to Google Sheets` appends
+one `posts` row per link. The hashtag comes from column C of the `docs` row; when a document has none
+(or none is selected) a `Hashtag` dropdown appears instead, fed by the `hashtags` tab.
+
+No AI is involved and no text is rewritten. Links are found by regex and paired with the surrounding
+text verbatim, so nothing in a long document is skipped or reworded, and the page costs nothing to
+run. Links on Twitter/X, Threads, and Reddit are dropped; everything else is listed. Nothing starts
+checked. Notes on a row can include:
+
+- `🟡 highlighted` — the item's wording is highlighted in the doc. Detected by exporting the doc as
+  HTML (the markdown export drops styling) and matching highlighted runs against item headlines,
+  scoped to the selected tab, since these docs repeat headlines from one day to the next.
+- `already in the sheet` — the link is already on the `posts` tab. Those rows are skipped by
+  `Select all`.
+
 ### Substack tab
 
 This section has three subtabs:
@@ -130,6 +156,30 @@ Referral link presets for top comments. 2 columns:
 |-----|--------|
 | A | label |
 | B | link (full top comment text with referral URL) |
+
+### Tab: hashtags
+
+Client/organization hashtag presets. Populates the `Hashtag` dropdown on the Ingest tab. 2 columns,
+header row optional:
+
+| Col | Header |
+|-----|--------|
+| A | label (client name shown in the dropdown) |
+| B | hashtags written into Required Hashtags |
+
+### Tab: docs
+
+Client source documents. Populates the `Document` dropdown on the Ingest tab. 3 columns, header row
+optional:
+
+| Col | Header |
+|-----|--------|
+| A | label (client name shown in the dropdown) |
+| B | Google Doc link to read items from |
+| C | hashtags written into Required Hashtags for that doc (optional) |
+
+Any doc you can open works — it is read with the app's OAuth token, so nothing needs sharing with the
+service account.
 
 ### Tab: __workspace_meta__
 

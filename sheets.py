@@ -71,6 +71,8 @@ _LAST_SCHEDULED_TIMES_KEY = "last_scheduled_times"
 _SLIDE_CTA_OPTIONS_KEY = "slide_cta_options"
 _ORIGINAL_THUMBNAILS_KEY = "original_thumbnails"
 _FUNDRAISING_SHEET_TITLE = "fundraising"
+_HASHTAGS_SHEET_TITLE = "hashtags"
+_DOCS_SHEET_TITLE = "docs"
 _SUBSTACK_SHEET_TITLE = "substack"
 _SUBSTACK_HEADERS = [
     "url",
@@ -694,6 +696,96 @@ def get_fundraising_links(sheet_id: str) -> list[dict[str, str]]:
         if not label or not link:
             continue
         presets.append({"label": label, "link": link})
+    return presets
+
+
+_LABEL_HEADER_WORDS = {"name", "label", "organization", "org", "client", "source"}
+
+
+def _label_value_presets(
+    sheet_id: str,
+    title: str,
+    value_key: str,
+    value_header_words: set[str],
+) -> list[dict[str, str]]:
+    """Read a two-column label/value preset tab (col A label, col B value).
+
+    The first row may optionally be a header row. Rows missing either column are
+    skipped, so a half-filled row can never reach an app dropdown.
+    """
+    ws = _optional_worksheet(sheet_id, title)
+    if ws is None:
+        return []
+
+    values = _with_backoff(ws.get_all_values)
+    if not values:
+        return []
+
+    presets: list[dict[str, str]] = []
+    for index, row in enumerate(values):
+        label = row[0].strip() if len(row) > 0 else ""
+        value = " ".join((row[1] if len(row) > 1 else "").split())
+        if not label and not value:
+            continue
+        if (
+            index == 0
+            and label.lower() in _LABEL_HEADER_WORDS
+            and value.lower() in value_header_words
+        ):
+            continue
+        if not label or not value:
+            continue
+        presets.append({"label": label, value_key: value})
+    return presets
+
+
+def get_hashtag_presets(sheet_id: str) -> list[dict[str, str]]:
+    """Organization hashtag presets from the optional `hashtags` worksheet.
+
+    Column A is the client label shown in app dropdowns, column B the hashtag text
+    written into Required Hashtags.
+    """
+    return _label_value_presets(
+        sheet_id,
+        _HASHTAGS_SHEET_TITLE,
+        "hashtags",
+        {"hashtag", "hashtags", "required hashtags", "tag", "tags"},
+    )
+
+
+def get_doc_presets(sheet_id: str) -> list[dict[str, str]]:
+    """Client source documents from the optional `docs` worksheet.
+
+    Expected layout is three columns:
+      A: client label shown in app dropdowns
+      B: Google Doc link that client's items are read from
+      C: hashtag text used for links added from that document (optional)
+    The first row may optionally be a header row.
+    """
+    ws = _optional_worksheet(sheet_id, _DOCS_SHEET_TITLE)
+    if ws is None:
+        return []
+
+    values = _with_backoff(ws.get_all_values)
+    if not values:
+        return []
+
+    presets: list[dict[str, str]] = []
+    for index, row in enumerate(values):
+        label = row[0].strip() if len(row) > 0 else ""
+        url = " ".join((row[1] if len(row) > 1 else "").split())
+        hashtags = " ".join((row[2] if len(row) > 2 else "").split())
+        if not label and not url:
+            continue
+        if (
+            index == 0
+            and label.lower() in _LABEL_HEADER_WORDS
+            and url.lower() in {"url", "link", "doc", "docs", "document", "google doc"}
+        ):
+            continue
+        if not label or not url:
+            continue
+        presets.append({"label": label, "url": url, "hashtags": hashtags})
     return presets
 
 

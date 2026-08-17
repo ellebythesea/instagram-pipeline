@@ -162,6 +162,39 @@ def get_drive_file_metadata(link_or_file_id: str) -> dict:
         _raise_drive_step_error("reading Drive file metadata", exc)
 
 
+def _export_google_doc(link_or_file_id: str, mime_type: str) -> tuple[str, str]:
+    service = _get_service()
+    metadata = get_drive_file_metadata(link_or_file_id)
+    if metadata.get("mimeType") != "application/vnd.google-apps.document":
+        raise RuntimeError(
+            f"That link is not a Google Doc (it is {metadata.get('mimeType') or 'an unknown type'})."
+        )
+    try:
+        exported = service.files().export(fileId=metadata["id"], mimeType=mime_type).execute()
+    except Exception as exc:
+        _raise_drive_step_error(f"exporting a Google Doc as {mime_type}", exc)
+    text = exported.decode("utf-8", "replace") if isinstance(exported, bytes) else str(exported)
+    return metadata.get("name", ""), text
+
+
+def export_google_doc_markdown(link_or_file_id: str) -> tuple[str, str]:
+    """Return (document name, markdown text) for a Google Doc link or id.
+
+    The markdown export includes every tab in the document, each introduced by its
+    tab title as a top-level `# ` heading.
+    """
+    return _export_google_doc(link_or_file_id, "text/markdown")
+
+
+def export_google_doc_html(link_or_file_id: str) -> tuple[str, str]:
+    """Return (document name, HTML text) for a Google Doc link or id.
+
+    The HTML export keeps character styling the markdown export drops, which is how
+    highlighted (background-colored) text is detected.
+    """
+    return _export_google_doc(link_or_file_id, "text/html")
+
+
 def copy_drive_file_to_folder(link_or_file_id: str, folder_id: str, filename: str = "") -> str:
     service = _get_service()
     metadata = get_drive_file_metadata(link_or_file_id)

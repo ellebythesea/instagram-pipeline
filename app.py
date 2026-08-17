@@ -5,6 +5,7 @@ import streamlit as st
 pg = st.navigation(
     [
         st.Page("pages/workspace.py", title="Workspace", icon="🏠"),
+        st.Page("pages/ingest.py", title="Ingest", icon="📥"),
         st.Page("pages/instagram_pipeline.py", title="Instagram Pipeline", icon="📋"),
         st.Page("pages/post_editor.py", title="Post Editor", icon="✏️"),
         st.Page("pages/headlines.py", title="Headlines", icon="🗞️"),

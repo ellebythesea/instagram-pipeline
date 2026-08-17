@@ -119,6 +119,41 @@ Referral link presets for top comments. 2 columns.
 
 ---
 
+## Tab: hashtags
+
+Client/organization hashtag presets. Populates the `Hashtag` dropdown on the Ingest page. 2 columns.
+
+| Col | Header |
+|-----|--------|
+| A | label |
+| B | hashtags |
+
+- `label` — client/organization name shown in the app dropdown
+- `hashtags` — hashtag text written into `Required Hashtags` (col B of `posts`) for every link added on the Ingest page
+
+The header row is optional; rows missing either column are ignored.
+
+---
+
+## Tab: docs
+
+Client source documents. Populates the `Document` dropdown on the Ingest page. 3 columns.
+
+| Col | Header |
+|-----|--------|
+| A | label |
+| B | url |
+| C | hashtags |
+
+- `label` — client/organization name shown in the app dropdown
+- `url` — Google Doc link the client's items are read from; its tabs are listed in the app
+- `hashtags` — hashtag text written into `Required Hashtags` for links added from that document. When
+  blank, the Ingest page falls back to the `hashtags` tab dropdown.
+
+The header row is optional; rows missing a label or url are ignored.
+
+---
+
 ## Tab: __workspace_meta__
 
 Internal key/value store used by the app. **Do not edit manually.**

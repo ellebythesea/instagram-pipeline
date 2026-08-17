@@ -8427,11 +8427,16 @@ elif st.session_state["workspace_active_tab"] == "Data":
 
 active_section_tab = st.segmented_control(
     "Workspace section",
-    ["Home", "Substack"],
+    ["Home", "Ingest", "Substack"],
     key="workspace_active_tab",
     label_visibility="collapsed",
     width="stretch",
 ) or "Home"
+
+if active_section_tab == "Ingest":
+    # Ingest is its own page; leave this tab on Home so coming back lands here.
+    st.session_state["workspace_active_tab"] = "Home"
+    st.switch_page("pages/ingest.py")
 
 workspace_rows_error = ""
 workspace_rows: list[dict] = []
