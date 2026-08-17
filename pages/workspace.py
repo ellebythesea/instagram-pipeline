@@ -8434,8 +8434,9 @@ active_section_tab = st.segmented_control(
 ) or "Home"
 
 if active_section_tab == "Ingest":
-    # Ingest is its own page; leave this tab on Home so coming back lands here.
-    st.session_state["workspace_active_tab"] = "Home"
+    # Ingest is its own page. The tab cannot be reassigned here — its widget already
+    # exists this run — so queue Home for the next visit via the pending-tab hook.
+    st.session_state["_workspace_pending_tab"] = "Home"
     st.switch_page("pages/ingest.py")
 
 workspace_rows_error = ""

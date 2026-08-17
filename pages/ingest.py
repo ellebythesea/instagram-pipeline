@@ -422,17 +422,23 @@ st.caption(
 if not require_auth():
     st.stop()
 
+# Seeded before the widget exists: a widget's state cannot be assigned afterwards.
+if st.session_state.pop("_ingest_reset_section", False) or (
+    st.session_state.get("ingest_section_tab") not in {"Home", "Ingest", "Substack"}
+):
+    st.session_state["ingest_section_tab"] = "Ingest"
+
 section_tab = st.segmented_control(
     "Workspace section",
     ["Home", "Ingest", "Substack"],
-    default="Ingest",
     key="ingest_section_tab",
     label_visibility="collapsed",
     width="stretch",
 )
 if section_tab in {"Home", "Substack"}:
-    # Both live on the workspace page; reset this control so returning here works.
-    st.session_state["ingest_section_tab"] = "Ingest"
+    # Both live on the workspace page. Queue this control back to Ingest for the next
+    # visit rather than assigning it now, which the widget no longer allows.
+    st.session_state["_ingest_reset_section"] = True
     st.session_state["_workspace_pending_tab"] = section_tab
     st.switch_page("pages/workspace.py")
 
