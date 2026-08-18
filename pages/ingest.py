@@ -560,7 +560,7 @@ def _rich_paste_box() -> str:
 
 def _row_text(item: dict) -> str:
     """One pipe-separated block: headline, link, then any notes."""
-    parts = [f"**{item['headline'] or item['url']}**", item["url"]]
+    parts = [item["headline"] or item["url"], item["url"]]
     if item["description"]:
         parts.append(item["description"])
     if item.get("highlighted"):
