@@ -1,9 +1,10 @@
-"""Ingest page: paste a client document, pull out its linked items, add the picked ones to the posts sheet.
+"""Ingest page: read a client document back in full, tick the links you want, add them to the posts sheet.
 
-No AI is involved and nothing is rewritten. Every http(s) URL in the source is located by
-regex and paired with the document's own wording around it, verbatim, so nothing in a long
-document can be silently skipped or reworded. Links on blocked platforms (Twitter/X,
-Threads, Reddit) and links to Google Docs/Drive are left out; everything else is listed.
+No AI is involved and nothing is rewritten or summarized. The document is shown back
+line for line, exactly as written, with every http(s) URL lifted onto a line of its own
+and given a checkbox — so nothing in a long document can be silently dropped, and the
+links stay easy to hit. Links on platforms that are never posted from (Twitter/X,
+Threads, Reddit) and links to Google Docs/Drive are still shown, just without a checkbox.
 
 Pasted rich text is accepted as HTML, because a plain-text paste from Gmail drops every
 href and leaves link text like "IG" with nothing behind it.
@@ -31,13 +32,13 @@ from utils.styles import inject as inject_styles
 
 # Shorter than this, a line is a lead-in (e.g. "@aaronparnas:") rather than a headline.
 HEADLINE_MIN_CHARS = 20
-# Long enough for a paragraph-style item, short enough to keep a table row readable.
-HEADLINE_MAX_CHARS = 300
 
 MARKDOWN_LINK_RE = re.compile(r"\[([^\]\n]*)\]\(\s*(https?://[^\s)]+?)\s*\)")
 BARE_URL_RE = re.compile(r"https?://[^\s<>()\[\]\"'\\]+")
 LIST_MARKER_RE = re.compile(r"^\s*(?:[*\-+•]|\d+[.)])\s+")
 MARKDOWN_ESCAPE_RE = re.compile(r"\\([\\`*_{}\[\]()#+\-.!|>~])")
+# The few characters Streamlit would read as markup when the document is shown back.
+MARKDOWN_SPECIAL_RE = re.compile(r"([\\`*_\[\]#])")
 # Instagram query strings (?hl=en, ?img_index=1) point at the same post.
 INSTAGRAM_HOSTS = ("instagram.com",)
 # Never posted from, so these are dropped on sight: platforms that are not used, plus
@@ -70,10 +71,15 @@ HTML_BLOCK_TAGS = {
 }
 HTML_HEADING_RE = re.compile(r"^h([1-6])$")
 HTML_SKIP_TAGS = {"style", "script", "head", "title", "meta", "link"}
+# Kept as markdown bold so a pasted item headline still reads as a headline.
+HTML_BOLD_TAGS = {"b", "strong"}
 RGB_RE = re.compile(r"rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)", re.IGNORECASE)
 # Below this length a highlighted run is a fragment (a heading, a word) and matching
 # it against headlines would produce false positives.
 HIGHLIGHT_MIN_CHARS = 25
+# A line of wording must be at least this distinctive before a highlight can match it,
+# so a stray word does not test as "contained in" some unrelated highlighted sentence.
+HIGHLIGHT_MATCH_MIN_CHARS = 12
 
 # In a Google Doc's markdown export each tab starts with its title as a `# ` heading.
 DOC_TAB_HEADING_RE = re.compile(r"^#\s+(\S.*)$")
@@ -190,92 +196,91 @@ def _is_lead_in(text: str) -> bool:
 
 
 def _is_section_heading(line: str, has_links: bool) -> bool:
-    """Markdown heading, or a standalone bold line that is not a list item."""
+    """A markdown heading line, which titles a section rather than an item.
+
+    Bold alone does not qualify: in these documents the item headlines are bold too,
+    and treating them as section titles is what used to make them disappear.
+    """
     if has_links:
         return False
     stripped = line.strip()
     if not stripped or LIST_MARKER_RE.match(line):
         return False
-    if stripped.startswith("#"):
-        return True
-    return bool(re.fullmatch(r"\*\*.+\*\*", stripped))
+    return stripped.startswith("#")
 
 
-def _parse_link_candidates(text: str) -> list[dict]:
-    """Every distinct link in the document, paired with the document's own wording.
+def _is_bold_line(line: str) -> bool:
+    """True when the line's own wording is entirely bold, as item headlines are."""
+    core = LIST_MARKER_RE.sub("", MARKDOWN_LINK_RE.sub(" ", line)).strip()
+    core = re.sub(r"^#+\s*", "", core).strip()
+    return bool(re.fullmatch(r"\*\*.+\*\*", core))
 
-    headline is the document's text for the item, copied as written. note holds a
-    lead-in like "@aaronparnas" when the link sits on its own line under a headline.
+
+def _document_blocks(text: str) -> list[dict]:
+    """The whole document read back in order, as text lines and one row per link.
+
+    Nothing is dropped: every line of wording is kept verbatim as a text block, and
+    every link becomes its own block on its own line so it is easy to tick. Links that
+    are blocked or already listed above are still shown, just without a checkbox.
     """
-    candidates: list[dict] = []
+    if _looks_like_html(text):
+        text = _html_to_markdownish(text)
+
+    blocks: list[dict] = []
     seen: set[str] = set()
-    recent: list[str] = []
+    link_index = 0
 
     for raw_line in _unescape_markdown(text).splitlines():
         links = _line_links(raw_line)
         own_text = _text_without_links(raw_line)
 
-        if not links:
-            if _is_section_heading(raw_line, has_links=False):
-                # A section title is not an item title, and nothing below it may borrow
-                # wording from above it.
-                recent = []
-            elif own_text:
-                recent = [*recent, own_text][-2:]
-            continue
-
-        # A line carrying its own headline keeps it; a bare "@handle: [IG]" line borrows
-        # its parent bullet. Only the two lines directly above are eligible — reaching
-        # further back attaches an unrelated headline to a stray link.
-        if not _is_lead_in(own_text):
-            headline, note = own_text, ""
-        else:
-            parent = next((line for line in reversed(recent) if not _is_lead_in(line)), "")
-            headline, note = parent, own_text
+        if own_text:
+            blocks.append(
+                {
+                    "kind": "text",
+                    "text": own_text,
+                    "heading": _is_section_heading(raw_line, has_links=bool(links)),
+                    "bold": _is_bold_line(raw_line),
+                    "bullet": bool(LIST_MARKER_RE.match(raw_line)),
+                    "lead_in": _is_lead_in(own_text),
+                }
+            )
 
         for label, url in links:
             canonical = _canonical_url(url)
-            key = _normalize_url(canonical)
-            if not canonical or not _is_http_url(canonical) or not key or key in seen:
+            if not canonical or not _is_http_url(canonical):
                 continue
-            seen.add(key)
-            candidates.append(
+            key = _normalize_url(canonical)
+            duplicate = bool(key) and key in seen
+            if key:
+                seen.add(key)
+            blocks.append(
                 {
-                    "url": canonical,
+                    "kind": "link",
+                    "index": link_index,
                     "label": label,
-                    "headline": (headline or label or canonical)[:HEADLINE_MAX_CHARS],
-                    "note": note[:HEADLINE_MAX_CHARS],
+                    "url": canonical,
+                    "blocked": _is_blocked_url(canonical),
+                    "duplicate": duplicate,
                 }
             )
-        if own_text:
-            recent = [*recent, own_text][-2:]
+            link_index += 1
 
-    return candidates
+    return blocks
 
 
-def _extract_items(text: str) -> tuple[list[dict], int]:
-    """Return (items, skipped_count) for a pasted document.
+def _is_selectable(block: dict) -> bool:
+    """True for a link that can be ticked and added to the sheet."""
+    return (
+        block["kind"] == "link"
+        and not block["blocked"]
+        and not block["duplicate"]
+        and not block.get("added")
+    )
 
-    Every link is listed with the document's own wording, except links on the
-    blocked platforms. Nothing is summarized, reworded, or sent anywhere.
-    """
-    if _looks_like_html(text):
-        text = _html_to_markdownish(text)
 
-    items: list[dict] = []
-    skipped = 0
-    for candidate in _parse_link_candidates(text):
-        if _is_blocked_url(candidate["url"]):
-            skipped += 1
-            continue
-        items.append(
-            {
-                "headline": candidate["headline"],
-                "description": candidate["note"],
-                "url": candidate["url"],
-            }
-        )
-    return items, skipped
+def _link_blocks(blocks: list[dict]) -> list[dict]:
+    return [block for block in blocks if block["kind"] == "link"]
 
 
 def _split_doc_tabs(markdown: str) -> list[dict]:
@@ -337,7 +342,7 @@ def _newest_tab_index(tabs: list[dict]) -> int:
 
 
 def _match_key(text: str) -> str:
-    """Loose comparison key for matching highlighted text against a headline."""
+    """Loose comparison key for matching highlighted text against a line of wording."""
     return re.sub(r"[^a-z0-9]+", "", (text or "").lower())
 
 
@@ -372,7 +377,7 @@ def _highlighted_texts(source_html: str) -> list[str]:
     """The text of every highlighted run in an HTML document.
 
     Highlighting lands on the item's own wording rather than on the link, so these are
-    matched against item headlines instead of URLs.
+    matched against the document's lines of text instead of URLs.
     """
     found: list[str] = []
     for color, inner in HIGHLIGHT_SPAN_RE.findall(source_html or ""):
@@ -413,6 +418,8 @@ class _MarkdownishHTMLParser(HTMLParser):
             self.parts.append("\n\n" + "#" * int(heading.group(1)) + " ")
         elif tag in HTML_BLOCK_TAGS:
             self.parts.append("\n")
+        elif tag in HTML_BOLD_TAGS:
+            self.parts.append("**")
         if tag == "a":
             href = (dict(attrs).get("href") or "").strip()
             self.href_stack.append(href)
@@ -428,6 +435,8 @@ class _MarkdownishHTMLParser(HTMLParser):
         if tag == "a":
             href = self.href_stack.pop() if self.href_stack else ""
             self.parts.append(f"]({href})" if href else "]")
+        elif tag in HTML_BOLD_TAGS:
+            self.parts.append("**")
         elif tag in HTML_BLOCK_TAGS or HTML_HEADING_RE.match(tag):
             self.parts.append("\n")
 
@@ -450,15 +459,29 @@ def _html_to_markdownish(source: str) -> str:
     return "\n".join(" ".join(line.split()) for line in text.splitlines()).strip()
 
 
-def _mark_highlighted(items: list[dict], highlighted_texts: list[str]) -> None:
-    """Flag items whose headline was highlighted in the source document."""
-    keys = [_match_key(text) for text in highlighted_texts]
-    keys = [key for key in keys if key]
-    for item in items:
-        headline_key = _match_key(item["headline"])
-        item["highlighted"] = bool(headline_key) and any(
-            headline_key in key or key in headline_key for key in keys
+def _mark_highlighted(blocks: list[dict], highlighted_texts: list[str]) -> None:
+    """Flag the wording that was highlighted in the source, and the links under it.
+
+    Highlighting lands on an item's own words rather than on its links, so a link
+    inherits the flag from the highlighted line it sits beneath. A plain line of
+    wording clears it again; a short lead-in like "@aaronparnas:" does not.
+    """
+    keys = [key for key in (_match_key(text) for text in highlighted_texts) if key]
+    inherited = False
+    for block in blocks:
+        if block["kind"] != "text":
+            block["highlighted"] = inherited
+            continue
+        key = _match_key(block["text"])
+        block["highlighted"] = (
+            not block["heading"]
+            and len(key) >= HIGHLIGHT_MATCH_MIN_CHARS
+            and any(key in other or other in key for other in keys)
         )
+        if block["highlighted"]:
+            inherited = True
+        elif not block["lead_in"]:
+            inherited = False
 
 
 def _attach_tab_highlights(tabs: list[dict], doc_html: str) -> None:
@@ -525,11 +548,13 @@ def _pick_key(index: int) -> str:
     return f"ingest_pick_{st.session_state.get('ingest_result_token', '')}_{index}"
 
 
-def _set_all_picks(items: list[dict], value: bool) -> None:
-    for index, item in enumerate(items):
-        if value and item.get("already_in_sheet"):
+def _set_all_picks(blocks: list[dict], value: bool) -> None:
+    for block in _link_blocks(blocks):
+        if not _is_selectable(block):
             continue
-        st.session_state[_pick_key(index)] = value
+        if value and block.get("already_in_sheet"):
+            continue
+        st.session_state[_pick_key(block["index"])] = value
 
 
 def _rich_paste_available() -> bool:
@@ -558,14 +583,38 @@ def _rich_paste_box() -> str:
     ) or ""
 
 
-def _row_text(item: dict) -> str:
-    """One pipe-separated block: headline, link, then any notes."""
-    parts = [f"**{item['headline'] or item['url']}**", item["url"]]
-    if item["description"]:
-        parts.append(item["description"])
-    if item.get("highlighted"):
+def _escape_markdown(text: str) -> str:
+    """Show the document's wording as written, without Streamlit reading it as markup."""
+    return MARKDOWN_SPECIAL_RE.sub(r"\\\1", text or "")
+
+
+def _text_row(block: dict) -> str:
+    """A line of the document's own wording, styled roughly as the document styles it."""
+    body = _escape_markdown(block["text"])
+    if block["heading"] or block["bold"]:
+        body = f"**{body}**"
+    if block["bullet"]:
+        body = f"• {body}"
+    if block.get("highlighted"):
+        body = f"{body} 🟡"
+    return body
+
+
+def _link_row(block: dict) -> str:
+    """One link on its own line: its label in the document, the URL, then any notes."""
+    parts = []
+    if block["label"]:
+        parts.append(f"**{_escape_markdown(block['label'])}**")
+    parts.append(block["url"])
+    if block.get("highlighted"):
         parts.append("🟡 highlighted")
-    if item.get("already_in_sheet"):
+    if block["blocked"]:
+        parts.append(f"not used ({BLOCKED_LABEL})")
+    if block["duplicate"]:
+        parts.append("same link as above")
+    if block.get("added"):
+        parts.append("✅ added")
+    elif block.get("already_in_sheet"):
         parts.append("already in the sheet")
     return " | ".join(parts)
 
@@ -574,9 +623,9 @@ st.set_page_config(page_title="Ingest", page_icon="📥", layout="centered")
 inject_styles()
 st.title("Ingest")
 st.caption(
-    "Paste a document from a client to list every link in it with the document's own wording, "
-    "then add the ones you pick to the posts sheet with that client's hashtag. "
-    "Twitter/X, Threads, Reddit, and Google Docs/Drive links are left out."
+    "Paste a document from a client to read it back in full, with a checkbox beside every "
+    "link, then add the ones you pick to the posts sheet with that client's hashtag. "
+    "Twitter/X, Threads, Reddit, and Google Docs/Drive links are shown but cannot be picked."
 )
 
 if not require_auth():
@@ -663,7 +712,7 @@ if tabs:
     with reload_col:
         if st.button("Reload", key="ingest_reload_doc", width="stretch", help="Re-read the document from Drive."):
             _load_doc_tabs.clear()
-            st.session_state.pop("ingest_items", None)
+            st.session_state.pop("ingest_blocks", None)
             st.rerun()
     selected_tab = next((tab for tab in tabs if tab["title"] == selected_tab_title), None)
     if selected_tab:
@@ -724,26 +773,25 @@ if not selected_tab_text and _looks_like_html(source_text):
     highlighted_texts = _highlighted_texts(source_text)
 
 if st.button(
-    "Find items in this tab" if tabs else "Find items",
+    "Read this tab" if tabs else "Read this document",
     key="ingest_extract",
     type="primary",
     width="stretch",
     disabled=not source_text.strip(),
 ):
-    st.session_state.pop("ingest_items", None)
+    st.session_state.pop("ingest_blocks", None)
     st.session_state.pop("ingest_added", None)
     st.session_state.pop("ingest_error", None)
     try:
-        found, skipped = _extract_items(source_text)
+        blocks = _document_blocks(source_text)
     except Exception as e:
         st.session_state["ingest_error"] = describe_error(e)
     else:
         existing = _existing_sheet_urls()
-        for item in found:
-            item["already_in_sheet"] = _normalize_url(item["url"]) in existing
-        _mark_highlighted(found, highlighted_texts)
-        st.session_state["ingest_items"] = found
-        st.session_state["ingest_skipped"] = skipped
+        for block in _link_blocks(blocks):
+            block["already_in_sheet"] = _normalize_url(block["url"]) in existing
+        _mark_highlighted(blocks, highlighted_texts)
+        st.session_state["ingest_blocks"] = blocks
         st.session_state["ingest_result_token"] = hashlib.sha1(
             source_text.strip().encode("utf-8")
         ).hexdigest()[:10]
@@ -760,51 +808,55 @@ if added:
         + (f" with {added['hashtags']}." if added["hashtags"] else ".")
     )
 
-items = st.session_state.get("ingest_items")
-if items is not None:
-    skipped = st.session_state.get("ingest_skipped", 0)
-    if not items:
-        st.info(
-            "No links were found in that text."
-            + (f" {skipped} {BLOCKED_LABEL} link(s) were skipped." if skipped else "")
-        )
+blocks = st.session_state.get("ingest_blocks")
+if blocks is not None:
+    links = _link_blocks(blocks)
+    selectable = [block for block in links if _is_selectable(block)]
+    if not links:
+        st.info("No links were found in that text.")
     else:
         st.divider()
-        remaining = [item for item in items if not item.get("added")]
-        st.subheader(f"{len(remaining)} item{'s' if len(remaining) != 1 else ''} found")
-        if skipped:
-            st.caption(f"{skipped} {BLOCKED_LABEL} link(s) were skipped.")
+        st.subheader(f"{len(selectable)} link{'s' if len(selectable) != 1 else ''} to pick from")
+        st.caption(
+            "The document is shown back in full, with a checkbox beside every link that can "
+            f"be added. {BLOCKED_LABEL} links are listed without one."
+        )
 
         select_col, clear_col = st.columns(2)
         with select_col:
             if st.button("Select all", key="ingest_select_all", width="stretch"):
-                _set_all_picks(items, True)
+                _set_all_picks(blocks, True)
                 st.rerun()
         with clear_col:
             if st.button("Clear all", key="ingest_clear_all", width="stretch"):
-                _set_all_picks(items, False)
+                _set_all_picks(blocks, False)
                 st.rerun()
 
-        # One table: checkbox column on the left, one text block per row on the right.
-        # Nothing starts checked — the widget default is False, so no seeding here.
+        # The document, in order: wording on its own lines, then each link on a line of
+        # its own with a checkbox in the left gutter. Text lines keep that gutter empty
+        # so everything stays aligned. Nothing starts checked — the widget default is
+        # False, so no seeding here.
         with st.container(border=True):
-            for index, item in enumerate(items):
-                if item.get("added"):
-                    continue
+            for block in blocks:
                 check_col, text_col = st.columns([1, 20], vertical_alignment="center")
+                if block["kind"] == "text":
+                    with text_col:
+                        st.markdown(_text_row(block))
+                    continue
                 with check_col:
-                    st.checkbox(
-                        item["headline"] or item["url"],
-                        key=_pick_key(index),
-                        label_visibility="collapsed",
-                    )
+                    if _is_selectable(block):
+                        st.checkbox(
+                            block["url"],
+                            key=_pick_key(block["index"]),
+                            label_visibility="collapsed",
+                        )
                 with text_col:
-                    st.markdown(_row_text(item))
+                    st.markdown(_link_row(block))
 
         picked = [
-            i
-            for i, item in enumerate(items)
-            if not item.get("added") and st.session_state.get(_pick_key(i))
+            block
+            for block in selectable
+            if st.session_state.get(_pick_key(block["index"]))
         ]
         st.divider()
         if st.button(
@@ -814,16 +866,16 @@ if items is not None:
             width="stretch",
             disabled=not picked or not selected_hashtags,
         ):
-            urls = [items[i]["url"] for i in picked]
+            urls = [block["url"] for block in picked]
             try:
                 append_link_rows(GOOGLE_SHEET_ID, urls, selected_hashtags)
             except Exception as e:
                 st.error(f"Could not add to the posts sheet: {describe_error(e)}")
             else:
-                for i in picked:
-                    items[i]["added"] = True
-                    st.session_state.pop(_pick_key(i), None)
-                st.session_state["ingest_items"] = items
+                for block in picked:
+                    block["added"] = True
+                    st.session_state.pop(_pick_key(block["index"]), None)
+                st.session_state["ingest_blocks"] = blocks
                 st.session_state["ingest_added"] = {
                     "count": len(urls),
                     "hashtags": selected_hashtags,

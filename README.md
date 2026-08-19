@@ -46,20 +46,26 @@ client's Google Doc live, lists its tabs, and selects the most recent one by dat
 `None` and paste text into the box. `Reload` re-reads the doc from Drive; it is otherwise cached for
 five minutes so switching tabs is instant.
 
-Items appear as one flat table: a checkbox on the left, and on the right the document's own wording,
-the link, and any notes, pipe-separated. Check off what you want and `Add to Google Sheets` appends
+`Read this tab` shows the document back in full, in order and line for line, with every link lifted
+onto a line of its own and a checkbox in the left gutter beside the ones that can be added. Headlines
+stay bold, bullets stay bullets, and nothing is dropped — the wording around a link is right there
+above it rather than squeezed into the row. Check off what you want and `Add to Google Sheets` appends
 one `posts` row per link. The hashtag comes from column C of the `docs` row; when there is no such row
 to read it from — a typed URL, pasted text, or a `docs` row with column C blank — a `Hashtag` dropdown
 appears instead, fed by the `hashtags` tab.
 
-No AI is involved and no text is rewritten. Links are found by regex and paired with the surrounding
-text verbatim, so nothing in a long document is skipped or reworded, and the page costs nothing to
-run. Links on Twitter/X, Threads, and Reddit are dropped; everything else is listed. Nothing starts
-checked. Notes on a row can include:
+No AI is involved and no text is rewritten or summarized. Links are found by regex and the rest of the
+document is shown exactly as written, so nothing in a long document is skipped or reworded, and the
+page costs nothing to run. Nothing starts checked. Notes on a link line can include:
 
-- `🟡 highlighted` — the item's wording is highlighted in the doc. Detected by exporting the doc as
-  HTML (the markdown export drops styling) and matching highlighted runs against item headlines,
-  scoped to the selected tab, since these docs repeat headlines from one day to the next.
+- `🟡 highlighted` — the wording above the link is highlighted in the doc. Detected by exporting the
+  doc as HTML (the markdown export drops styling) and matching highlighted runs against the
+  document's own lines, scoped to the selected tab, since these docs repeat headlines from one day to
+  the next. The highlighted line itself is marked with a 🟡 too.
+- `not used (…)` — a link on Twitter/X, Threads, or Reddit, or to a Google Doc/Drive file. Still
+  shown so the document reads whole, but with no checkbox.
+- `same link as above` — the same URL appeared earlier in the document, so only the first one is
+  checkable.
 - `already in the sheet` — the link is already on the `posts` tab. Those rows are skipped by
   `Select all`.
 
