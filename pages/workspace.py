@@ -2059,14 +2059,9 @@ def _row_has_slide_text(row: dict) -> bool:
     )
 
 
-# Trash glyph for the grid's delete control, drawn in currentColor so it matches the
-# other badges.
-GRID_TRASH_ICON = (
-    '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor"'
-    ' stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
-    '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12'
-    'M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>'
-)
+# Glyph for the grid's delete control. A plain character, not an inline SVG: st.html
+# strips the svg out, which left the badge rendering as an empty circle.
+GRID_TRASH_ICON = "&#10005;"
 
 
 def _grid_badges(row: dict) -> list[tuple[str, str]]:

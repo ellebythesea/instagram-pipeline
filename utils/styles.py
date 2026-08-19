@@ -297,9 +297,15 @@ a.workspace-grid-badge {
     cursor: pointer;
     transition: background 0.12s ease;
 }
+.workspace-grid-trash {
+    /* Red from the start, so the delete control reads as one on touch too. */
+    background: rgba(220, 38, 38, 0.9);
+    font-size: 0.85rem;
+    font-weight: 700;
+}
 .workspace-grid-trash:hover,
 .workspace-grid-trash:focus-visible {
-    background: rgba(220, 38, 38, 0.95);
+    background: rgba(185, 28, 28, 0.98);
 }
 .workspace-grid-meta {
     position: absolute;
