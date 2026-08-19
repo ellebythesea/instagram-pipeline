@@ -2164,13 +2164,14 @@ def _close_workspace_delete_confirm() -> None:
 
 
 def _render_workspace_delete_confirm(row: dict) -> None:
-    """Two small buttons that confirm or drop the delete the grid's trash control asked for."""
+    """Two buttons that confirm or drop the delete the grid's trash control asked for."""
     row_num = row["row_number"]
-    username = _cell_text(row.get("Source Username")).strip().lstrip("@")
-    label = f"@{username} · row {row_num}" if username else f"row {row_num}"
-    st.caption(f"Delete {label}?")
     with st.container(horizontal=True):
-        if st.button("Delete", key=f"workspace_grid_delete_confirm_{row_num}", type="primary"):
+        if st.button(
+            f"Confirm deleting row {row_num}",
+            key=f"workspace_grid_delete_confirm_{row_num}",
+            type="primary",
+        ):
             try:
                 _delete_workspace_row(row)
             except Exception as e:
