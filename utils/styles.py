@@ -301,6 +301,42 @@ a.workspace-grid-badge {
 .workspace-grid-trash:focus-visible {
     background: rgba(220, 38, 38, 0.95);
 }
+/* Inline delete confirm: revealed by :target, so asking and cancelling only move the
+   URL fragment and never rerun the app. */
+.workspace-grid-confirm {
+    display: none;
+}
+.workspace-grid-confirm:target {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    gap: 0.35rem;
+    max-width: calc(100% - 1rem);
+    /* Above the card-wide open link, so the buttons take their own clicks. */
+    z-index: 3;
+}
+.workspace-grid-confirm a {
+    height: 1.6rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 0.6rem;
+    border-radius: 999px;
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 700;
+    line-height: 1;
+    text-decoration: none;
+    cursor: pointer;
+}
+.workspace-grid-confirm-delete {
+    background: rgba(220, 38, 38, 0.95);
+}
+.workspace-grid-confirm-cancel {
+    background: rgba(15, 23, 42, 0.86);
+}
 .workspace-grid-meta {
     position: absolute;
     left: 0;
