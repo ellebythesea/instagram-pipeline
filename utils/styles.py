@@ -242,6 +242,12 @@ div[data-testid="stVerticalBlock"]:has(> div.workspace-candidate-output-anchor) 
 .workspace-grid-card-selected {
     box-shadow: inset 0 0 0 4px #efcb2c;
 }
+.workspace-grid-open {
+    position: absolute;
+    inset: 0;
+    display: block;
+    text-decoration: none;
+}
 .workspace-grid-card img {
     width: 100%;
     height: 100%;
@@ -269,6 +275,8 @@ div[data-testid="stVerticalBlock"]:has(> div.workspace-candidate-output-anchor) 
     display: flex;
     gap: 0.35rem;
     flex-wrap: wrap;
+    /* Above the card-wide open link, so the trash control takes its own clicks. */
+    z-index: 2;
 }
 .workspace-grid-badge {
     min-width: 1.45rem;
@@ -283,6 +291,15 @@ div[data-testid="stVerticalBlock"]:has(> div.workspace-candidate-output-anchor) 
     font-weight: 700;
     line-height: 1;
     padding: 0 0.4rem;
+}
+a.workspace-grid-badge {
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 0.12s ease;
+}
+.workspace-grid-trash:hover,
+.workspace-grid-trash:focus-visible {
+    background: rgba(220, 38, 38, 0.95);
 }
 .workspace-grid-meta {
     position: absolute;
