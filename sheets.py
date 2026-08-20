@@ -74,6 +74,7 @@ _FUNDRAISING_SHEET_TITLE = "fundraising"
 _HASHTAGS_SHEET_TITLE = "hashtags"
 _DOCS_SHEET_TITLE = "docs"
 _SUBSTACK_SHEET_TITLE = "substack"
+_ARCHIVE_SHEET_TITLE = "Safe to Delete"
 _SUBSTACK_HEADERS = [
     "url",
     "name",
@@ -827,6 +828,48 @@ def update_speaker_names_batch(sheet_id: str, updates: dict[int, str]) -> None:
 def delete_row(sheet_id: str, row_number: int) -> None:
     """Delete a single sheet row by absolute row number."""
     ws = _worksheet(sheet_id)
+    _with_backoff(ws.delete_rows, row_number)
+    _invalidate_rows_cache(sheet_id)
+
+
+def _archive_worksheet(sheet_id: str) -> gspread.Worksheet:
+    """The "Safe to Delete" tab, created with a header row the first time it is needed."""
+    headers = [*_EXPECTED_HEADERS, "Deleted At"]
+    try:
+        ws = _named_worksheet(sheet_id, _ARCHIVE_SHEET_TITLE)
+    except gspread.WorksheetNotFound:
+        ws = _with_backoff(
+            _workbook(sheet_id).add_worksheet,
+            title=_ARCHIVE_SHEET_TITLE,
+            rows=200,
+            cols=len(headers),
+        )
+        _worksheets[(sheet_id, _ARCHIVE_SHEET_TITLE)] = ws
+        _with_backoff(ws.append_row, headers, value_input_option="RAW")
+        return ws
+    if not any(value.strip() for value in _with_backoff(ws.row_values, 1)):
+        _with_backoff(ws.append_row, headers, value_input_option="RAW")
+    return ws
+
+
+def archive_row(sheet_id: str, row_number: int) -> None:
+    """Move a row to the "Safe to Delete" tab, then drop it from the posts tab.
+
+    The copy keeps the posts column order, so restoring a row is a paste back into
+    the posts tab. Values go in RAW so a caption that starts with "=" stays text.
+    """
+    ws = _worksheet(sheet_id)
+    values = _with_backoff(ws.row_values, row_number)
+    # row_values trims trailing empties, so pad to the full column set before adding
+    # the timestamp - otherwise it lands in whichever column happened to be last.
+    padded = [*values, *[""] * (len(_EXPECTED_HEADERS) - len(values))][:len(_EXPECTED_HEADERS)]
+    archive_ws = _archive_worksheet(sheet_id)
+    # Copy first, delete second: a failed append must not lose the row.
+    _with_backoff(
+        archive_ws.append_row,
+        [*padded, time.strftime("%Y-%m-%d %H:%M:%S")],
+        value_input_option="RAW",
+    )
     _with_backoff(ws.delete_rows, row_number)
     _invalidate_rows_cache(sheet_id)
 

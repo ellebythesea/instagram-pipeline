@@ -1430,7 +1430,7 @@ update_transcript = sheet_ops.update_transcript
 update_thumbnail_link = getattr(sheet_ops, "update_thumbnail_link", None)
 update_carousel_fields = getattr(sheet_ops, "update_carousel_fields", None)
 update_quote = getattr(sheet_ops, "update_quote", None)
-delete_sheet_row = sheet_ops.delete_row
+archive_sheet_row = sheet_ops.archive_row
 get_fundraising_links = getattr(sheet_ops, "get_fundraising_links", lambda _sheet_id: [])
 get_slide_cta_options = getattr(sheet_ops, "get_slide_cta_options", lambda _sheet_id: {})
 update_slide_cta_option = getattr(sheet_ops, "update_slide_cta_option", lambda _sheet_id, _row_number, _option: None)
@@ -2170,9 +2170,9 @@ def _render_workspace_delete_confirm(row: dict) -> None:
             try:
                 _delete_workspace_row(row)
             except Exception as e:
-                st.session_state["workspace_error"] = f"Row {row_num}: could not delete row - {describe_error(e)}"
+                st.session_state["workspace_error"] = f"Row {row_num}: could not move row to Safe to Delete - {describe_error(e)}"
             else:
-                st.session_state["workspace_success"] = f"Row {row_num}: deleted from the sheet."
+                st.session_state["workspace_success"] = f"Row {row_num}: moved to the Safe to Delete tab."
             # Deleting shifts every later row up by one, so any pointer at a row number
             # is now aimed at the wrong post. Drop them and fall back to the first row.
             if str(st.query_params.get("workspace_row", "") or "") == str(row_num):
@@ -5759,9 +5759,9 @@ def _copy_tabs(
                 try:
                     _delete_workspace_row(prompt_row)
                 except Exception as e:
-                    st.session_state["workspace_error"] = f"Row {row_num}: could not delete row - {describe_error(e)}"
+                    st.session_state["workspace_error"] = f"Row {row_num}: could not move row to Safe to Delete - {describe_error(e)}"
                 else:
-                    st.session_state["workspace_success"] = f"Row {row_num}: deleted from the sheet."
+                    st.session_state["workspace_success"] = f"Row {row_num}: moved to the Safe to Delete tab."
                 _rerun_workspace("Edit")
     elif selected_content_tab == "Original":
         _tab_copy_preview(original_preview)
@@ -6291,9 +6291,9 @@ def _copy_tabs(
                 try:
                     _delete_workspace_row(prompt_row)
                 except Exception as e:
-                    st.session_state["workspace_error"] = f"Row {row_num}: could not delete row - {describe_error(e)}"
+                    st.session_state["workspace_error"] = f"Row {row_num}: could not move row to Safe to Delete - {describe_error(e)}"
                 else:
-                    st.session_state["workspace_success"] = f"Row {row_num}: deleted from the sheet."
+                    st.session_state["workspace_success"] = f"Row {row_num}: moved to the Safe to Delete tab."
                 _rerun_workspace("Edit")
 
 
@@ -7760,8 +7760,9 @@ def _process_next_workspace_action(for_row_number: int | None = None) -> None:
 
 
 def _delete_workspace_row(row: dict) -> None:
+    """Move a row to the "Safe to Delete" tab so it can be restored by hand later."""
     row_number = row["row_number"]
-    delete_sheet_row(GOOGLE_SHEET_ID, row_number)
+    archive_sheet_row(GOOGLE_SHEET_ID, row_number)
     pending_transcribe_resets = st.session_state.get("workspace_transcribe_reset_rows", [])
     if pending_transcribe_resets:
         st.session_state["workspace_transcribe_reset_rows"] = [
@@ -8973,9 +8974,9 @@ if active_section_tab == "Home":
                             try:
                                 _delete_workspace_row(row)
                             except Exception as e:
-                                st.session_state["workspace_error"] = f"Row {row_num}: could not delete row - {describe_error(e)}"
+                                st.session_state["workspace_error"] = f"Row {row_num}: could not move row to Safe to Delete - {describe_error(e)}"
                             else:
-                                st.session_state["workspace_success"] = f"Row {row_num}: deleted from the sheet."
+                                st.session_state["workspace_success"] = f"Row {row_num}: moved to the Safe to Delete tab."
                             _close_workspace_menu(row)
                             _rerun_workspace("Edit")
                     transcript_warning = st.session_state.get(warning_key)

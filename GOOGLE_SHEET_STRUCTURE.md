@@ -166,3 +166,21 @@ Internal key/value store used by the app. **Do not edit manually.**
 Known keys written by the app:
 - `last_scheduled_times` — JSON array of the last assigned scheduled time slots
 - `slide_cta_options` — JSON object mapping row numbers to selected slide CTA choices
+
+---
+
+## Tab: Safe to Delete
+
+Where deleted rows go. The app creates this tab the first time a row is deleted, so
+nothing is removed from the workbook outright.
+
+Columns A–Y match the `posts` tab exactly, followed by one extra column:
+
+| Col | Header |
+|-----|--------|
+| Z | Deleted At |
+
+`Deleted At` is a `YYYY-MM-DD HH:MM:SS` stamp of when the row was moved here.
+
+To restore a row, copy its A–Y cells back into a `posts` row and delete the copy
+here. Nothing in the app reads this tab.
