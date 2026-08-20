@@ -4,6 +4,7 @@ import io
 import json
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor
 from json import JSONDecodeError
 from urllib.parse import parse_qs, urlparse
 
@@ -162,19 +163,33 @@ def get_drive_file_metadata(link_or_file_id: str) -> dict:
         _raise_drive_step_error("reading Drive file metadata", exc)
 
 
-def _export_google_doc(link_or_file_id: str, mime_type: str) -> tuple[str, str]:
-    service = _get_service()
+def _google_doc_metadata(link_or_file_id: str) -> dict:
+    """Drive metadata for a link, refusing anything that is not a Google Doc."""
     metadata = get_drive_file_metadata(link_or_file_id)
     if metadata.get("mimeType") != "application/vnd.google-apps.document":
         raise RuntimeError(
             f"That link is not a Google Doc (it is {metadata.get('mimeType') or 'an unknown type'})."
         )
+    return metadata
+
+
+def _export_by_file_id(file_id: str, mime_type: str) -> str:
+    """Export one already-checked Doc id.
+
+    Builds its own service: googleapiclient service objects are not thread-safe, and
+    these calls run in parallel.
+    """
+    service = _get_service()
     try:
-        exported = service.files().export(fileId=metadata["id"], mimeType=mime_type).execute()
+        exported = service.files().export(fileId=file_id, mimeType=mime_type).execute()
     except Exception as exc:
         _raise_drive_step_error(f"exporting a Google Doc as {mime_type}", exc)
-    text = exported.decode("utf-8", "replace") if isinstance(exported, bytes) else str(exported)
-    return metadata.get("name", ""), text
+    return exported.decode("utf-8", "replace") if isinstance(exported, bytes) else str(exported)
+
+
+def _export_google_doc(link_or_file_id: str, mime_type: str) -> tuple[str, str]:
+    metadata = _google_doc_metadata(link_or_file_id)
+    return metadata.get("name", ""), _export_by_file_id(metadata["id"], mime_type)
 
 
 def export_google_doc_markdown(link_or_file_id: str) -> tuple[str, str]:
@@ -193,6 +208,26 @@ def export_google_doc_html(link_or_file_id: str) -> tuple[str, str]:
     highlighted (background-colored) text is detected.
     """
     return _export_google_doc(link_or_file_id, "text/html")
+
+
+def export_google_doc_markdown_and_html(link_or_file_id: str) -> tuple[str, str, str]:
+    """Return (document name, markdown, HTML) for a Google Doc.
+
+    One metadata lookup covers both exports, and the two exports overlap, so opening
+    a document costs about one export instead of two. The HTML comes back empty if
+    only its export fails - callers use it for styling the markdown cannot carry.
+    """
+    metadata = _google_doc_metadata(link_or_file_id)
+    file_id = metadata["id"]
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        markdown_export = pool.submit(_export_by_file_id, file_id, "text/markdown")
+        html_export = pool.submit(_export_by_file_id, file_id, "text/html")
+        markdown = markdown_export.result()
+        try:
+            doc_html = html_export.result()
+        except Exception:
+            doc_html = ""
+    return metadata.get("name", ""), markdown, doc_html
 
 
 def copy_drive_file_to_folder(link_or_file_id: str, folder_id: str, filename: str = "") -> str:
