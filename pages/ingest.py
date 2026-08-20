@@ -24,7 +24,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import streamlit as st
 
 from config import GOOGLE_SHEET_ID
-from drive import export_google_doc_html, export_google_doc_markdown, extract_drive_file_id
+from drive import export_google_doc_markdown_and_html, extract_drive_file_id
 from sheets import append_link_rows, get_all_rows, get_doc_presets, get_hashtag_presets
 from utils.auth import require_auth
 from utils.error_labels import describe_error
@@ -512,22 +512,23 @@ def _attach_tab_highlights(tabs: list[dict], doc_html: str) -> None:
         tab["highlights"] = _highlighted_texts(doc_html[start:end])
 
 
-@st.cache_data(ttl=300, show_spinner="Opening the document…")
+@st.cache_data(ttl=1800, show_spinner="Opening the document…")
 def _load_doc_tabs(url: str) -> tuple[str, list[dict]]:
     """Export a Google Doc and split it into tabs, each with its highlighted text.
 
-    Cached so switching tabs is instant. The HTML export is a second call, made only
-    for the highlight styling that the markdown export drops.
+    Both exports come from one parallel call. Cached for half an hour, so switching
+    tabs and reopening a document are instant; Reload re-reads it from Drive.
     """
-    doc_name, markdown = export_google_doc_markdown(url)
+    doc_name, markdown, doc_html = export_google_doc_markdown_and_html(url)
     tabs = _split_doc_tabs(markdown)
-    try:
-        _, doc_html = export_google_doc_html(url)
-        _attach_tab_highlights(tabs, doc_html)
-    except Exception:
-        # Highlights are a nice-to-have; never block reading the document over them.
-        for tab in tabs:
-            tab.setdefault("highlights", [])
+    if doc_html:
+        try:
+            _attach_tab_highlights(tabs, doc_html)
+        except Exception:
+            # Highlights are a nice-to-have; never block reading the document over them.
+            pass
+    for tab in tabs:
+        tab.setdefault("highlights", [])
     return doc_name, tabs
 
 
