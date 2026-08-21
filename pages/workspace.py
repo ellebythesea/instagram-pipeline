@@ -2131,10 +2131,17 @@ def _render_editor_grid(editor_rows: list[dict], selected_row_num: int | None = 
             )
         # The card is a div, not a link: the trash control is itself a link, and an
         # anchor cannot be nested inside another anchor.
-        # The trash control deletes on click, so it only needs to arrive as a query param.
+        # Clicking the x clicks this row's hidden Streamlit button below, so the delete
+        # travels over the websocket like any other button press - a quick rerun, no page
+        # load. The href is the fallback: if the handler cannot find its button, the click
+        # falls through to the query param and the page reloads instead.
         delete_href = f"?workspace_delete={row_num}"
+        delete_twin_key = f"workspace_grid_delete_{row_num}"
         trash_html = (
             f'<a class="workspace-grid-badge workspace-grid-trash" href="{html.escape(delete_href)}"'
+            f' onclick=\'var b=(window.parent||window).document'
+            f'.querySelector(".st-key-{delete_twin_key} button");'
+            f' if (b) {{ b.click(); return false; }}\''
             f' title="Delete row {row_num}" aria-label="Delete row {row_num}">{GRID_TRASH_ICON}</a>'
         )
         cards.append(
@@ -2150,6 +2157,14 @@ def _render_editor_grid(editor_rows: list[dict], selected_row_num: int | None = 
         )
     grid_html = "".join(cards)
     st.html(f'<div class="workspace-grid">{grid_html}</div>')
+    # Hidden twins of the cards' x controls. The grid is one block of markup, which
+    # cannot hold a Streamlit widget, so each card's x clicks the button for its row
+    # here. Kept out of sight by the st-key-workspace_grid_delete_ rule in the styles.
+    for row in editor_rows:
+        row_num = row["row_number"]
+        with st.container(key=f"workspace_grid_delete_{row_num}"):
+            if st.button(f"Delete row {row_num}", key=f"workspace_grid_delete_twin_{row_num}"):
+                _delete_workspace_grid_row(row)
 
 
 def _delete_workspace_grid_row(row: dict) -> None:
