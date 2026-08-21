@@ -5767,6 +5767,11 @@ def _copy_tabs(
         if is_instagram:
             st.caption("Transcript")
             _tab_copy_preview(transcript)
+            # Both in one snippet, for pasting the caption and what was said together.
+            st.caption("Caption + transcript")
+            _tab_copy_preview(
+                "\n\n".join(part for part in (original_preview, transcript) if (part or "").strip())
+            )
     elif selected_content_tab == "Slides":
         prompt_key = f"workspace_row_slides_prompt_{row_num}"
         if not st.session_state.get(prompt_key):
