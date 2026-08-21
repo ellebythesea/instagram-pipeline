@@ -297,6 +297,11 @@ a.workspace-grid-badge {
     cursor: pointer;
     transition: background 0.12s ease;
 }
+/* The grid's x controls click these hidden buttons, so a delete is a normal rerun
+   rather than a page load. Never shown; the x on the card is the visible control. */
+[class*="st-key-workspace_grid_delete_"] {
+    display: none;
+}
 .workspace-grid-trash {
     /* Red from the start, so the delete control reads as one on touch too. */
     background: rgba(220, 38, 38, 0.9);
