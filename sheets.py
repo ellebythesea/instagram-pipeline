@@ -20,7 +20,9 @@ import json
 import os
 import random
 import time
+from datetime import datetime, timezone
 from json import JSONDecodeError
+from zoneinfo import ZoneInfo
 
 import gspread
 from google.oauth2.service_account import Credentials
@@ -75,6 +77,7 @@ _HASHTAGS_SHEET_TITLE = "hashtags"
 _DOCS_SHEET_TITLE = "docs"
 _SUBSTACK_SHEET_TITLE = "substack"
 _ARCHIVE_SHEET_TITLE = "Safe to Delete"
+_archive_ready: set[str] = set()
 _SUBSTACK_HEADERS = [
     "url",
     "name",
@@ -658,15 +661,21 @@ def shift_original_thumbnails_after_delete(sheet_id: str, deleted_row_number: in
     so blur state stays aligned with the sheet after rows renumber.
     """
     data = get_original_thumbnails(sheet_id)
-    data.pop(str(deleted_row_number), None)
+    if not data:
+        # Nothing stored, so nothing to re-key: skip the read-modify-write entirely.
+        return
     shifted = {}
     for k, v in data.items():
+        if k == str(deleted_row_number):
+            continue
         try:
             n = int(k)
         except ValueError:
             shifted[k] = v
             continue
         shifted[str(n - 1) if n > deleted_row_number else k] = v
+    if shifted == data:
+        return
     _update_original_thumbnails(sheet_id, shifted)
 
 
@@ -832,8 +841,22 @@ def delete_row(sheet_id: str, row_number: int) -> None:
     _invalidate_rows_cache(sheet_id)
 
 
+def _deleted_at_stamp() -> str:
+    """Now, in Eastern time - the timezone the rest of the workflow is planned in."""
+    stamp = datetime.now(timezone.utc)
+    try:
+        stamp = stamp.astimezone(ZoneInfo("America/New_York"))
+    except Exception:
+        pass
+    return stamp.strftime("%Y-%m-%d %H:%M:%S")
+
+
 def _archive_worksheet(sheet_id: str) -> gspread.Worksheet:
     """The "Safe to Delete" tab, created with a header row the first time it is needed."""
+    if sheet_id in _archive_ready:
+        # Header row already confirmed for this process, and the worksheet is cached,
+        # so this costs no call at all.
+        return _named_worksheet(sheet_id, _ARCHIVE_SHEET_TITLE)
     headers = [*_EXPECTED_HEADERS, "Deleted At"]
     try:
         ws = _named_worksheet(sheet_id, _ARCHIVE_SHEET_TITLE)
@@ -846,9 +869,11 @@ def _archive_worksheet(sheet_id: str) -> gspread.Worksheet:
         )
         _worksheets[(sheet_id, _ARCHIVE_SHEET_TITLE)] = ws
         _with_backoff(ws.append_row, headers, value_input_option="RAW")
+        _archive_ready.add(sheet_id)
         return ws
     if not any(value.strip() for value in _with_backoff(ws.row_values, 1)):
         _with_backoff(ws.append_row, headers, value_input_option="RAW")
+    _archive_ready.add(sheet_id)
     return ws
 
 
@@ -867,7 +892,7 @@ def archive_row(sheet_id: str, row_number: int) -> None:
     # Copy first, delete second: a failed append must not lose the row.
     _with_backoff(
         archive_ws.append_row,
-        [*padded, time.strftime("%Y-%m-%d %H:%M:%S")],
+        [*padded, _deleted_at_stamp()],
         value_input_option="RAW",
     )
     _with_backoff(ws.delete_rows, row_number)
