@@ -2131,8 +2131,7 @@ def _render_editor_grid(editor_rows: list[dict], selected_row_num: int | None = 
             )
         # The card is a div, not a link: the trash control is itself a link, and an
         # anchor cannot be nested inside another anchor.
-        # The trash control asks for confirmation with two buttons under the grid,
-        # so the click only needs to arrive as a query param.
+        # The trash control deletes on click, so it only needs to arrive as a query param.
         delete_href = f"?workspace_delete={row_num}"
         trash_html = (
             f'<a class="workspace-grid-badge workspace-grid-trash" href="{html.escape(delete_href)}"'
@@ -2153,38 +2152,23 @@ def _render_editor_grid(editor_rows: list[dict], selected_row_num: int | None = 
     st.html(f'<div class="workspace-grid">{grid_html}</div>')
 
 
-def _close_workspace_delete_confirm() -> None:
-    st.session_state.pop("workspace_delete_pending_row", None)
-    st.query_params.pop("workspace_delete", None)
-
-
-def _render_workspace_delete_confirm(row: dict) -> None:
-    """Two buttons that confirm or drop the delete the grid's trash control asked for."""
+def _delete_workspace_grid_row(row: dict) -> None:
+    """Move the row the grid's delete control names, then reload the workspace."""
     row_num = row["row_number"]
-    with st.container(horizontal=True):
-        if st.button(
-            f"Confirm deleting row {row_num}",
-            key=f"workspace_grid_delete_confirm_{row_num}",
-            type="primary",
-        ):
-            try:
-                _delete_workspace_row(row)
-            except Exception as e:
-                st.session_state["workspace_error"] = f"Row {row_num}: could not move row to Safe to Delete - {describe_error(e)}"
-            else:
-                st.session_state["workspace_success"] = f"Row {row_num}: moved to the Safe to Delete tab."
-            # Deleting shifts every later row up by one, so any pointer at a row number
-            # is now aimed at the wrong post. Drop them and fall back to the first row.
-            if str(st.query_params.get("workspace_row", "") or "") == str(row_num):
-                st.query_params.pop("workspace_row", None)
-            if st.session_state.get("workspace_target_row") == str(row_num):
-                st.session_state.pop("workspace_target_row", None)
-            st.session_state.pop("workspace_selected_row_num", None)
-            _close_workspace_delete_confirm()
-            _rerun_workspace("Edit")
-        if st.button("Cancel", key=f"workspace_grid_delete_cancel_{row_num}"):
-            _close_workspace_delete_confirm()
-            _rerun_workspace("Edit")
+    try:
+        _delete_workspace_row(row)
+    except Exception as e:
+        st.session_state["workspace_error"] = f"Row {row_num}: could not move row to Safe to Delete - {describe_error(e)}"
+    else:
+        st.session_state["workspace_success"] = f"Row {row_num}: moved to the Safe to Delete tab."
+    # Deleting shifts every later row up by one, so any pointer at a row number
+    # is now aimed at the wrong post. Drop them and fall back to the first row.
+    if str(st.query_params.get("workspace_row", "") or "") == str(row_num):
+        st.query_params.pop("workspace_row", None)
+    if st.session_state.get("workspace_target_row") == str(row_num):
+        st.session_state.pop("workspace_target_row", None)
+    st.session_state.pop("workspace_selected_row_num", None)
+    _rerun_workspace("Edit")
 
 
 def _scroll_to_element(element_id: str, block: str = "center") -> None:
@@ -8669,23 +8653,18 @@ if active_section_tab == "Home":
                     st.session_state["workspace_success"] = "No new rows to process."
                 _rerun_workspace("Edit")
 
-    # The grid's trash control is a plain link, so the click arrives as a query param.
-    # Hand it to session state and clear the URL, or the confirm sticks on every rerun.
+    # The grid's trash control is a plain link, so the click arrives as a query param
+    # and deletes straight away. Clear the URL first, or the delete replays on the
+    # next rerun.
     delete_param = str(st.query_params.get("workspace_delete", "") or "").strip()
     if delete_param:
-        st.session_state["workspace_delete_pending_row"] = delete_param
         st.query_params.pop("workspace_delete", None)
-
-    pending_delete = str(st.session_state.get("workspace_delete_pending_row", "") or "")
-    if pending_delete:
-        pending_delete_row = next(
-            (row for row in editor_rows if str(row.get("row_number", "")) == pending_delete),
+        delete_row = next(
+            (row for row in editor_rows if str(row.get("row_number", "")) == delete_param),
             None,
         )
-        if pending_delete_row is None:
-            st.session_state.pop("workspace_delete_pending_row", None)
-        else:
-            _render_workspace_delete_confirm(pending_delete_row)
+        if delete_row is not None:
+            _delete_workspace_grid_row(delete_row)
 
     dialog_row_number = st.session_state.get("workspace_link_dialog_row")
     if dialog_row_number is not None:
