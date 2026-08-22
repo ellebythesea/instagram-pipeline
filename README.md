@@ -102,9 +102,8 @@ A link that is not a reel still works: another Instagram post contributes its ca
 else is read as an article. Those rows get headlines and a caption but no video.
 
 The result is an ordinary `posts` row, so it lands in the `Edit` tab like any other. There it shows a
-`Headlines` tab in place of `Slides`: each headline sits in its own one-line copy block with the full
-line spelled out in small text underneath, so a headline wider than the block can still be read, and
-the caption to copy is at the bottom. Buttons at the top open the Instagram link, if there was one,
+`Headlines` tab in place of `Slides`: each headline sits in its own copy block, wrapped rather than
+scrolled so the whole line reads inside the block, and the caption to copy is at the bottom. Buttons at the top open the Instagram link, if there was one,
 and the video in Drive. The `Original` tab holds the transcript, as it does for any other row.
 
 Because the headlines live in `text1`, the `Slides` and `Make generic` row actions are hidden for

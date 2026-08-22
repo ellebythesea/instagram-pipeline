@@ -5276,9 +5276,9 @@ def _render_reel_lines_headlines_tab(
 ) -> None:
     """The Reel Lines stand-in for the Slides tab.
 
-    Every headline gets its own one-line copy block with the full line spelled
-    out in small text underneath, so a headline that runs past the width of the
-    copy block can still be read. The caption to copy sits at the bottom.
+    Every headline gets its own copy block, wrapped rather than scrolled so the
+    whole line is readable in the block itself. The caption to copy is at the
+    bottom.
     """
     drive_link = next(
         (part.strip() for part in _cell_text(media_link).split(",") if part.strip()), ""
@@ -5299,7 +5299,7 @@ def _render_reel_lines_headlines_tab(
     if headlines:
         st.caption(f"{len(headlines)} headlines — copy the one you want")
         for headline in headlines:
-            _tab_copy_preview(headline)
+            st.code(headline, language=None, wrap_lines=True)
     else:
         st.info("No headlines were saved for this post.")
 
