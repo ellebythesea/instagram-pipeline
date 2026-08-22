@@ -90,11 +90,13 @@ carousel.
 
 Paste a link, upload a video, or do both. A reel link is downloaded; an upload is used as-is; when
 both are given the upload is the media and the link is only the comment link. Either way the video is
-transcribed, saved to the main Drive folder, and given a thumbnail, and the transcript becomes:
+transcribed, saved whole to the main Drive folder — no 60-second split — and given a thumbnail. Then,
+in order:
 
-- a generated caption, ending in the standard `Comment LINK (on instagram) and we will DM you the
-  link to …` CTA when a link was given
-- ten one-line clickbait headlines in sentence case
+- the transcript generates a caption, ending in the standard `Comment LINK (on instagram) and we will
+  DM you the link to …` CTA when a link was given
+- the transcript and that caption together generate ten one-line clickbait headlines in sentence
+  case, so the headlines and the caption land on the same angle
 
 A link that is not a reel still works: another Instagram post contributes its caption, and anything
 else is read as an article. Those rows get headlines and a caption but no video.

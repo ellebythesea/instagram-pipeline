@@ -3834,16 +3834,18 @@ REEL_LINES_HEADLINE_COUNT = 10
 
 REEL_LINES_HEADLINE_PROMPT = (
     "You write clickbait headlines for short-form political video posts.\n\n"
-    f"From the source text, write exactly {REEL_LINES_HEADLINE_COUNT} headline options. Each one "
-    "is a single line that works both as the text overlay on a vertical video and as a headline.\n\n"
+    f"From the transcript, write exactly {REEL_LINES_HEADLINE_COUNT} headline options. Each one is "
+    "a single line that works both as the text overlay on a vertical video and as a headline. When "
+    "a caption is supplied it is the post this video is going out with — use it for the angle and "
+    "the detail it settled on, but write the headlines from the transcript.\n\n"
     "Rules:\n"
     "* Sentence case only: capitalize the first word and proper nouns, nothing else. Never Title "
     "Case, never ALL CAPS, not even for emphasis.\n"
     "* One line each, roughly 5 to 12 words, no line breaks.\n"
     "* Clickbait in framing only — curiosity, stakes, conflict, contradiction, a number, a "
-    "consequence. Every claim must be supported by the source. Do not invent facts, do not "
-    "exaggerate past what the source says, and do not imply anything the source does not.\n"
-    "* Name the key person whenever the source names them.\n"
+    "consequence. Every claim must be supported by the transcript or the caption. Do not invent "
+    "facts, do not exaggerate past what they say, and do not imply anything they do not.\n"
+    "* Name the key person whenever the transcript names them.\n"
     "* No hashtags, no emojis, no quotation marks around the line, no numbering, no trailing "
     "ellipses.\n"
     f"* Make all {REEL_LINES_HEADLINE_COUNT} noticeably different from each other — a different "
@@ -3872,14 +3874,28 @@ def _clean_reel_lines_headline(value) -> str:
 
 
 def _generate_reel_lines_headlines(
-    source_text: str, speaker_name: str = "", username: str = ""
+    source_text: str,
+    caption: str = "",
+    speaker_name: str = "",
+    username: str = "",
 ) -> list[str]:
-    """Ten one-line clickbait headlines in sentence case, drawn from the source text."""
+    """Ten one-line clickbait headlines in sentence case.
+
+    Written from the transcript plus the caption the post already got, so the
+    headlines and the caption pull in the same direction instead of landing on
+    two different angles.
+    """
     source_text = (source_text or "").strip()
     if not source_text:
         raise ValueError("No transcript or source text to write headlines from.")
 
-    user_parts = [f"SOURCE:\n{source_text}"]
+    user_parts = [f"TRANSCRIPT:\n{source_text}"]
+    caption = (caption or "").strip()
+    if caption:
+        user_parts.append(
+            "CAPTION ALREADY WRITTEN FOR THIS POST (for the angle and the verified detail it "
+            f"settled on — do not copy its wording or its hashtags):\n{caption}"
+        )
     featured = (speaker_name or "").strip() or (username or "").strip().lstrip("@")
     if featured and featured.lower() != "unknown":
         user_parts.append(f"The person featured here is: {featured}.")
@@ -4078,7 +4094,9 @@ def _create_reel_lines_post(link: str, uploaded_video, speaker_name: str = "") -
         with st.spinner("Writing the caption…"):
             caption = generate_row_caption(row_for_caption)
         with st.spinner(f"Writing {REEL_LINES_HEADLINE_COUNT} headlines…"):
-            headlines = _generate_reel_lines_headlines(source_text, speaker_name, display_username)
+            headlines = _generate_reel_lines_headlines(
+                source_text, caption, speaker_name, display_username
+            )
 
         append_manual_post_row(GOOGLE_SHEET_ID, {
             "url": link,
