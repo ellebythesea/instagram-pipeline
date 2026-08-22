@@ -284,8 +284,18 @@ def get_ingested_rows(sheet_id: str) -> list[dict]:
     ]
 
 
-def append_link_rows(sheet_id: str, urls: list[str], required_hashtags: str = "") -> None:
-    """Append new rows with Instagram URL and optional required hashtags."""
+def append_link_rows(
+    sheet_id: str,
+    urls: list[str],
+    required_hashtags: str = "",
+    top_comment: str = "",
+) -> None:
+    """Append new rows with Instagram URL, optional required hashtags and top comment.
+
+    `top_comment` goes into col K as written. A bare URL there is expanded into the
+    standard "Comment LINK" CTA when the caption is generated, so the docs tab can
+    carry just a link.
+    """
     cleaned_urls = [url.strip() for url in urls if url.strip()]
     if not cleaned_urls:
         return
@@ -296,6 +306,7 @@ def append_link_rows(sheet_id: str, urls: list[str], required_hashtags: str = ""
         row = [""] * len(_EXPECTED_HEADERS)
         row[0] = url
         row[1] = required_hashtags.strip()
+        row[10] = top_comment.strip()
         rows.append(row)
     _with_backoff(ws.append_rows, rows, value_input_option="USER_ENTERED")
     _invalidate_rows_cache(sheet_id)
@@ -766,10 +777,13 @@ def get_hashtag_presets(sheet_id: str) -> list[dict[str, str]]:
 def get_doc_presets(sheet_id: str) -> list[dict[str, str]]:
     """Client source documents from the optional `docs` worksheet.
 
-    Expected layout is three columns:
+    Expected layout is four columns:
       A: client label shown in app dropdowns
       B: Google Doc link that client's items are read from
       C: hashtag text used for links added from that document (optional)
+      D: comment link used as the Top Comment for links added from that document
+         (optional) - a bare URL becomes the standard "Comment LINK" CTA, and any
+         other text is used as the top comment verbatim
     The first row may optionally be a header row.
     """
     ws = _optional_worksheet(sheet_id, _DOCS_SHEET_TITLE)
@@ -785,6 +799,7 @@ def get_doc_presets(sheet_id: str) -> list[dict[str, str]]:
         label = row[0].strip() if len(row) > 0 else ""
         url = " ".join((row[1] if len(row) > 1 else "").split())
         hashtags = " ".join((row[2] if len(row) > 2 else "").split())
+        comment_link = " ".join((row[3] if len(row) > 3 else "").split())
         if not label and not url:
             continue
         if (
@@ -795,7 +810,14 @@ def get_doc_presets(sheet_id: str) -> list[dict[str, str]]:
             continue
         if not label or not url:
             continue
-        presets.append({"label": label, "url": url, "hashtags": hashtags})
+        presets.append(
+            {
+                "label": label,
+                "url": url,
+                "hashtags": hashtags,
+                "comment_link": comment_link,
+            }
+        )
     return presets
 
 

@@ -665,7 +665,10 @@ selected_doc_label = st.selectbox(
     index=None,
     key="ingest_doc_label",
     placeholder="None — paste text below instead",
-    help="Comes from the docs tab of the Google Sheet (column A: client, B: Google Doc link, C: hashtag).",
+    help=(
+        "Comes from the docs tab of the Google Sheet (column A: client, B: Google Doc "
+        "link, C: hashtag, D: comment link)."
+    ),
 )
 selected_doc = next(
     (preset for preset in doc_presets if preset["label"] == selected_doc_label),
@@ -719,6 +722,13 @@ if tabs:
     if selected_tab:
         selected_tab_text = selected_tab["text"]
         highlighted_texts = selected_tab.get("highlights") or []
+
+# A document can carry its own comment link (docs column D). Every link added from that
+# document gets it as the Top Comment, which the caption step turns into the "Comment
+# LINK" CTA when it is a bare URL.
+selected_comment_link = (selected_doc or {}).get("comment_link", "")
+if selected_doc and selected_comment_link:
+    st.caption(f"Comment link for this document: {selected_comment_link}")
 
 # A document carries its own hashtag (docs column C); only ask when it cannot.
 selected_hashtags = (selected_doc or {}).get("hashtags", "")
@@ -804,10 +814,13 @@ if error_message:
 
 added = st.session_state.get("ingest_added")
 if added:
-    st.success(
+    message = (
         f"Added {added['count']} link{'s' if added['count'] != 1 else ''} to the posts sheet"
         + (f" with {added['hashtags']}." if added["hashtags"] else ".")
     )
+    if added.get("comment_link"):
+        message += f" Top comment set to {added['comment_link']}."
+    st.success(message)
 
 blocks = st.session_state.get("ingest_blocks")
 if blocks is not None:
@@ -869,7 +882,9 @@ if blocks is not None:
         ):
             urls = [block["url"] for block in picked]
             try:
-                append_link_rows(GOOGLE_SHEET_ID, urls, selected_hashtags)
+                append_link_rows(
+                    GOOGLE_SHEET_ID, urls, selected_hashtags, selected_comment_link
+                )
             except Exception as e:
                 st.error(f"Could not add to the posts sheet: {describe_error(e)}")
             else:
@@ -880,6 +895,7 @@ if blocks is not None:
                 st.session_state["ingest_added"] = {
                     "count": len(urls),
                     "hashtags": selected_hashtags,
+                    "comment_link": selected_comment_link,
                 }
                 st.rerun()
 

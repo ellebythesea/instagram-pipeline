@@ -1455,9 +1455,14 @@ else:
             sheet_ops.update_last_scheduled_time(sheet_id, scheduled_times[-1])
 
 
-def append_link_rows(sheet_id: str, urls: list[str], required_hashtags: str = "") -> None:
+def append_link_rows(
+    sheet_id: str,
+    urls: list[str],
+    required_hashtags: str = "",
+    top_comment: str = "",
+) -> None:
     if hasattr(sheet_ops, "append_link_rows"):
-        sheet_ops.append_link_rows(sheet_id, urls, required_hashtags)
+        sheet_ops.append_link_rows(sheet_id, urls, required_hashtags, top_comment)
         return
 
     cleaned_urls = [url.strip() for url in urls if url.strip()]
@@ -1469,7 +1474,8 @@ def append_link_rows(sheet_id: str, urls: list[str], required_hashtags: str = ""
     for url in cleaned_urls:
         row = [""] * len(sheet_ops._EXPECTED_HEADERS)
         row[0] = url
-        row[10] = required_hashtags.strip()
+        row[1] = required_hashtags.strip()
+        row[10] = top_comment.strip()
         rows.append(row)
     sheet_ops._with_backoff(ws.append_rows, rows, value_input_option="USER_ENTERED")
     sheet_ops._invalidate_rows_cache(sheet_id)

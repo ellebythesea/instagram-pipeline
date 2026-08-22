@@ -54,6 +54,12 @@ one `posts` row per link. The hashtag comes from column C of the `docs` row; whe
 to read it from — a typed URL, pasted text, or a `docs` row with column C blank — a `Hashtag` dropdown
 appears instead, fed by the `hashtags` tab.
 
+Column D of the `docs` row is that client's comment link. When it is filled in, every link added from
+that document gets it as its `Top Comment`, so the caption step ends the post with the standard
+`Comment LINK (on instagram) and we will DM you the link to …` CTA pointing at it. A bare URL is
+expanded into that CTA; anything else is used as the top comment as written. Leave column D blank and
+rows are added with no top comment, as before.
+
 No AI is involved and no text is rewritten or summarized. Links are found by regex and the rest of the
 document is shown exactly as written, so nothing in a long document is skipped or reworded, and the
 page costs nothing to run. Nothing starts checked. Notes on a link line can include:
@@ -177,7 +183,7 @@ header row optional:
 
 ### Tab: docs
 
-Client source documents. Populates the `Document` dropdown on the Ingest tab. 3 columns, header row
+Client source documents. Populates the `Document` dropdown on the Ingest tab. 4 columns, header row
 optional:
 
 | Col | Header |
@@ -185,6 +191,7 @@ optional:
 | A | label (client name shown in the dropdown) |
 | B | Google Doc link to read items from |
 | C | hashtags written into Required Hashtags for that doc (optional) |
+| D | comment link written into Top Comment for that doc (optional) |
 
 Any doc you can open works — it is read with the app's OAuth token, so nothing needs sharing with the
 service account.

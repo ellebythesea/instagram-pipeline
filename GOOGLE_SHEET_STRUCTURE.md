@@ -137,20 +137,26 @@ The header row is optional; rows missing either column are ignored.
 
 ## Tab: docs
 
-Client source documents. Populates the `Document` dropdown on the Ingest page. 3 columns.
+Client source documents. Populates the `Document` dropdown on the Ingest page. 4 columns.
 
 | Col | Header |
 |-----|--------|
 | A | label |
 | B | url |
 | C | hashtags |
+| D | comment link |
 
 - `label` — client/organization name shown in the app dropdown
 - `url` — Google Doc link the client's items are read from; its tabs are listed in the app
 - `hashtags` — hashtag text written into `Required Hashtags` for links added from that document. When
   blank, the Ingest page falls back to the `hashtags` tab dropdown.
+- `comment link` — written into `Top Comment` (col K of `posts`) for every link added from that
+  document. A bare URL becomes the standard `Comment LINK (on instagram) and we will DM you the
+  link to …` CTA when the caption is generated; any other text is used as the top comment as
+  written. Leave blank for no top comment.
 
-The header row is optional; rows missing a label or url are ignored.
+The header row is optional; rows missing a label or url are ignored. `hashtags` and
+`comment link` are both optional, so older 3-column and 2-column `docs` tabs keep working.
 
 ---
 
