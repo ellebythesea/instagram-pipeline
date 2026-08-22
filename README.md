@@ -83,6 +83,33 @@ This section has three subtabs:
 - `Monitors` watches Instagram comments on election guide posts.
 - `Guides` creates Substack election article prompts from candidate names.
 
+### Create Reel Lines
+
+An `App actions` entry on the `Home` tab for the other kind of post: one video, ten headlines, no
+carousel.
+
+Paste a link, upload a video, or do both. A reel link is downloaded; an upload is used as-is; when
+both are given the upload is the media and the link is only the comment link. Either way the video is
+transcribed, saved whole to the main Drive folder — no 60-second split — and given a thumbnail. Then,
+in order:
+
+- the transcript generates a caption, ending in the standard `Comment LINK (on instagram) and we will
+  DM you the link to …` CTA when a link was given
+- the transcript and that caption together generate ten one-line clickbait headlines in sentence
+  case, so the headlines and the caption land on the same angle
+
+A link that is not a reel still works: another Instagram post contributes its caption, and anything
+else is read as an article. Those rows get headlines and a caption but no video.
+
+The result is an ordinary `posts` row, so it lands in the `Edit` tab like any other. There it shows a
+`Headlines` tab in place of `Slides`: each headline sits in its own one-line copy block with the full
+line spelled out in small text underneath, so a headline wider than the block can still be read, and
+the caption to copy is at the bottom. Buttons at the top open the Instagram link, if there was one,
+and the video in Drive. The `Original` tab holds the transcript, as it does for any other row.
+
+Because the headlines live in `text1`, the `Slides` and `Make generic` row actions are hidden for
+these rows — generating slide copy would overwrite them.
+
 ## Google Sheet Structure
 
 ### Tab: posts
@@ -119,6 +146,10 @@ Main Instagram pipeline. 24 columns A–X:
 Status values: empty (pending), `ingested`, `done`, `slides`, `error: [reason]`
 
 The app restores headers if they are missing.
+
+`Create Reel Lines` rows reuse this schema: `Slide CTA` (col U) is set to `reel lines` to mark the
+row kind, and `text1` (col R) holds the ten headlines, one per line, instead of slide copy. `text2`
+through `text6` stay empty.
 
 ### Tab: substack
 

@@ -1679,24 +1679,20 @@ def _dismiss_create_from_link_dialog() -> None:
     _close_create_from_link_dialog(clear_inputs=True)
 
 
-def _open_reel_lines_prompt_dialog() -> None:
-    st.session_state["workspace_reel_lines_prompt_dialog"] = True
+def _open_reel_lines_dialog() -> None:
+    st.session_state["workspace_reel_lines_dialog"] = True
 
 
-def _close_reel_lines_prompt_dialog(clear_inputs: bool = False) -> None:
-    st.session_state.pop("workspace_reel_lines_prompt_dialog", None)
+def _close_reel_lines_dialog(clear_inputs: bool = False) -> None:
+    st.session_state.pop("workspace_reel_lines_dialog", None)
     if clear_inputs:
-        st.session_state.pop("workspace_reel_lines_prompt_built", None)
-        st.session_state.pop("workspace_reel_lines_prompt_error", None)
-        st.session_state.pop("workspace_reel_lines_prompt_video", None)
-        st.session_state.pop("workspace_reel_lines_prompt_link", None)
-        st.session_state.pop("workspace_reel_lines_prompt_post_data", None)
-        st.session_state.pop("workspace_reel_lines_prompt_created", None)
-        st.session_state.pop("workspace_reel_lines_prompt_post_error", None)
+        st.session_state.pop("workspace_reel_lines_link", None)
+        st.session_state.pop("workspace_reel_lines_video", None)
+        st.session_state.pop("workspace_reel_lines_speaker", None)
 
 
-def _dismiss_reel_lines_prompt_dialog() -> None:
-    _close_reel_lines_prompt_dialog(clear_inputs=True)
+def _dismiss_reel_lines_dialog() -> None:
+    _close_reel_lines_dialog(clear_inputs=True)
 
 
 def _open_election_post_dialog() -> None:
@@ -3822,190 +3818,115 @@ def _render_create_from_link_dialog() -> None:
         _rerun_workspace("Home")
 
 
-REEL_LINES_PROMPT = """You are a sharp political analyst and social media editor.
+# ---------------------------------------------------------------------------
+# Reel Lines posts
+#
+# A Reel Lines post is an ordinary posts-tab row with a different payload: in
+# place of carousel slides it carries ten one-line clickbait headlines, so the
+# editor shows a Headlines tab instead of a Slides tab. The kind is stamped in
+# the Slide CTA column, which these rows never use for a slide CTA — nothing
+# else writes that column unless a slide CTA is picked, and the Slides tab (the
+# only place that offers one) is replaced by Headlines for these rows.
+# ---------------------------------------------------------------------------
 
-I will provide a transcript from a political interview, speech, podcast, reel, or news clip. Before writing, research any current events, public figures, legislation, legal cases, statistics, dates, or policy claims mentioned. Verify names, numbers, quotes, and context using reliable sources. Never invent facts. If something cannot be verified, stay close to the transcript.
+REEL_LINES_ROW_MARKER = "reel lines"
+REEL_LINES_HEADLINE_COUNT = 10
 
-Return exactly these two sections, then append the footer exactly as instructed at the end.
+REEL_LINES_HEADLINE_PROMPT = (
+    "You write clickbait headlines for short-form political video posts.\n\n"
+    f"From the transcript, write exactly {REEL_LINES_HEADLINE_COUNT} headline options. Each one is "
+    "a single line that works both as the text overlay on a vertical video and as a headline. When "
+    "a caption is supplied it is the post this video is going out with — use it for the angle and "
+    "the detail it settled on, but write the headlines from the transcript.\n\n"
+    "Rules:\n"
+    "* Sentence case only: capitalize the first word and proper nouns, nothing else. Never Title "
+    "Case, never ALL CAPS, not even for emphasis.\n"
+    "* One line each, roughly 5 to 12 words, no line breaks.\n"
+    "* Clickbait in framing only — curiosity, stakes, conflict, contradiction, a number, a "
+    "consequence. Every claim must be supported by the transcript or the caption. Do not invent "
+    "facts, do not exaggerate past what they say, and do not imply anything they do not.\n"
+    "* Name the key person whenever the transcript names them.\n"
+    "* No hashtags, no emojis, no quotation marks around the line, no numbering, no trailing "
+    "ellipses.\n"
+    f"* Make all {REEL_LINES_HEADLINE_COUNT} noticeably different from each other — a different "
+    "angle, fact, or hook each time.\n\n"
+    'Return JSON only, in the form {"headlines": ["...", "..."]}.'
+)
 
-SECTION 1: FIFTEEN OVERLAY / HEADLINE OPTIONS
-
-Create 15 options for a single short text line that sits above a short vertical video. Each option doubles as a scroll-stopping overlay line and a headline.
-
-Rules:
-
-* Each option is exactly one short sentence, roughly 5 to 12 words.
-* Derive every option from the transcript — use its actual facts, quotes, numbers, and moments.
-* Strong but factual. Name the key person whenever possible.
-* Focus on the conflict, consequence, or biggest revelation. Create curiosity or reveal the biggest hook, statistic, quote, or takeaway.
-* Do not exaggerate, mislead, or use clickbait the transcript cannot support.
-* Sound like something that would perform well on TikTok, Instagram Reels, or X.
-* Avoid ALL CAPS. Make every option noticeably different.
-
-Format:
-
-Option 1:
-Option 2:
-...
-Option 15:
-
-SECTION 2: SOCIAL CAPTION
-
-Write a social post under 1300 characters using exactly two simple paragraphs.
-
-Paragraph 1:
-
-* Maximum 250 characters.
-* Summarize the biggest takeaway.
-* Include every hashtag.
-* Use exactly 3 to 5 hashtags.
-* Prioritize the main people first.
-* Include one single word topic hashtag.
-* Include one additional relevant hashtag if needed.
-* Replace names with hashtag versions in the sentence, such as #ZohranMamdani instead of Zohran Mamdani.
-* Do not add a hashtag only line.
-
-Paragraph 2:
-
-* Add verified context.
-* Include relevant dates, statistics, names, legislation, or policy details.
-* Use direct quotes from the transcript whenever possible.
-* Attribute the source only once using the supplied speaker or interviewer if appropriate.
-* Do not speculate.
-* Do not use emojis.
-* Do not reference Trump's current office status.
-* Write like a political news outlet.
-
-Style for all output:
-
-* Clear, direct, concise.
-* No markdown except the section headings and option labels.
-* No filler.
-* Prioritize facts, numbers, quotes, and verified context over opinion.
-
-[FOOTER SECTION]
-
-Transcript:
-[PASTE TRANSCRIPT HERE]"""
+_REEL_LINES_NUMBER_PREFIX_RE = re.compile(r"^(?:option\s*)?\d+\s*[.):\-]\s*", re.IGNORECASE)
 
 
-REEL_LINES_PROMPT_PLACEHOLDER = "[PASTE TRANSCRIPT HERE]"
-REEL_LINES_FOOTER_SECTION_PLACEHOLDER = "[FOOTER SECTION]"
+def _is_reel_lines_row(row: dict) -> bool:
+    """True for a Reel Lines row — headlines in text1 instead of slide copy."""
+    return _cell_text((row or {}).get("Slide CTA")).strip().lower() == REEL_LINES_ROW_MARKER
 
 
-def _reel_lines_footer_block(link: str = "", username: str = "") -> str:
-    """The exact copy-ready footer that must trail the caption: the Comment
-    LINK CTA, the Follow @… credit, and the standard post footer.
+def _reel_lines_row_headlines(row: dict) -> list[str]:
+    """The stored headlines, one per line of text1."""
+    return [line.strip() for line in _cell_text((row or {}).get("text1")).splitlines() if line.strip()]
 
-    Mirrors the block the app writes into the post caption (_reel_footer_caption)
-    so it only has to be copied once — the external AI echoes it back verbatim
-    instead of the user re-copying it from the app.
+
+def _clean_reel_lines_headline(value) -> str:
+    """One tidy line: no numbering, no wrapping quotes, no line breaks."""
+    text = " ".join(_cell_text(value).split())
+    text = _REEL_LINES_NUMBER_PREFIX_RE.sub("", text)
+    return text.strip().strip('"').strip("'").strip()
+
+
+def _generate_reel_lines_headlines(
+    source_text: str,
+    caption: str = "",
+    speaker_name: str = "",
+    username: str = "",
+) -> list[str]:
+    """Ten one-line clickbait headlines in sentence case.
+
+    Written from the transcript plus the caption the post already got, so the
+    headlines and the caption pull in the same direction instead of landing on
+    two different angles.
     """
-    url = (link or "").strip()
-    username = (username or "").strip().lstrip("@")
+    source_text = (source_text or "").strip()
+    if not source_text:
+        raise ValueError("No transcript or source text to write headlines from.")
 
-    parts: list[str] = []
-    parts.append(_build_link_cta(url) if url else _build_link_cta("[LINK]"))
+    user_parts = [f"TRANSCRIPT:\n{source_text}"]
+    caption = (caption or "").strip()
+    if caption:
+        user_parts.append(
+            "CAPTION ALREADY WRITTEN FOR THIS POST (for the angle and the verified detail it "
+            f"settled on — do not copy its wording or its hashtags):\n{caption}"
+        )
+    featured = (speaker_name or "").strip() or (username or "").strip().lstrip("@")
+    if featured and featured.lower() != "unknown":
+        user_parts.append(f"The person featured here is: {featured}.")
 
-    credit_and_footer: list[str] = []
-    if username and username.lower() != "unknown":
-        credit_and_footer.append(f"Follow @{username} for more.")
-    footer = DEFAULT_POST_FOOTER.strip()
-    if footer:
-        credit_and_footer.append(footer)
-    if credit_and_footer:
-        parts.append(" ".join(credit_and_footer))
-
-    return "\n\n".join(parts)
-
-
-def _reel_lines_footer_section(link: str = "", username: str = "") -> str:
-    """Instructions (not to be printed) plus the exact footer block.
-
-    The external AI must append the footer block verbatim after the caption
-    with NO heading or label, so the whole block can be copied on its own.
-    """
-    footer_block = _reel_lines_footer_block(link, username)
-    return (
-        "FOOTER TO APPEND — the lines in this section are instructions; do not print them.\n"
-        "After Section 2, add one blank line, then output the footer block exactly as written "
-        "between the markers below, character for character. Do not edit, rephrase, reformat, "
-        "translate, shorten, expand, correct, or re-punctuate any part of it — keep the wording, "
-        "capitalization, punctuation, em dash, attribution, and line breaks identical. If the link "
-        "still reads [LINK], leave it exactly as [LINK]. Output ONLY the block itself — do not print "
-        "any heading, label, the words 'SECTION 3' or 'FOOTER', the markers, or these instructions, "
-        "so the footer can be copied on its own.\n\n"
-        "----- BEGIN FOOTER BLOCK (do not print this line) -----\n"
-        f"{footer_block}\n"
-        "----- END FOOTER BLOCK (do not print this line) -----"
-    )
-
-
-def _reel_lines_prompt_with_context(
-    context: str = "", link: str = "", username: str = ""
-) -> str:
-    """Fill the reusable prompt with gathered context (optional).
-
-    The comment-link CTA, Follow @… credit, and standard footer are embedded
-    back into the prompt with instructions to append the exact block, with no
-    heading or label, so the external AI reproduces a clean, copy-in-one-go
-    footer — no need to re-copy it from the app. The same block still lives in
-    the caption of the post the app creates alongside it.
-    """
-    prompt = REEL_LINES_PROMPT
-    prompt = prompt.replace(
-        REEL_LINES_FOOTER_SECTION_PLACEHOLDER,
-        _reel_lines_footer_section(link, username),
-    )
-    context = (context or "").strip()
-    if context:
-        prompt = prompt.replace(REEL_LINES_PROMPT_PLACEHOLDER, context)
-    return prompt
-
-
-def _extract_text_from_image(image_bytes: bytes, mime_type: str) -> str:
-    """Use the vision model to read any text (or describe) an uploaded image."""
-    import base64
-
-    b64 = base64.b64encode(image_bytes).decode("ascii")
     response = _get_client().chat.completions.create(
         model="gpt-4o",
         messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": (
-                            "Extract all readable text from this image exactly as it appears, "
-                            "preserving line breaks. Return only the text with no commentary. "
-                            "If the image has no readable text, describe its key visible content "
-                            "in one or two sentences."
-                        ),
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:{mime_type or 'image/jpeg'};base64,{b64}"},
-                    },
-                ],
-            }
+            {"role": "system", "content": REEL_LINES_HEADLINE_PROMPT},
+            {"role": "user", "content": "\n\n".join(user_parts)},
         ],
-        temperature=0,
+        response_format={"type": "json_object"},
+        temperature=0.8,
     )
-    return (response.choices[0].message.content or "").strip()
-
-
-def _transcribe_uploaded_video(uploaded_file) -> str:
-    """Save an uploaded video/audio file to temp and return its Whisper transcript."""
-    suffix = os.path.splitext(uploaded_file.name)[-1].lower() or ".mp4"
-    tmp_dir = tempfile.mkdtemp(prefix="reel_lines_video_")
     try:
-        src_path = os.path.join(tmp_dir, f"source{suffix}")
-        with open(src_path, "wb") as handle:
-            handle.write(uploaded_file.getbuffer())
-        return (transcribe_video(src_path) or "").strip()
-    finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+        payload = json.loads(response.choices[0].message.content or "{}")
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"Could not read the headline response: {e}") from e
+    raw = payload.get("headlines") if isinstance(payload, dict) else None
+    if not isinstance(raw, list):
+        raise RuntimeError("The headline response did not contain a list of headlines.")
+
+    headlines: list[str] = []
+    seen: set[str] = set()
+    for item in raw:
+        cleaned = _clean_reel_lines_headline(item)
+        if cleaned and cleaned.lower() not in seen:
+            seen.add(cleaned.lower())
+            headlines.append(cleaned)
+    if not headlines:
+        raise RuntimeError("No usable headlines came back.")
+    return headlines[:REEL_LINES_HEADLINE_COUNT]
 
 
 def _reel_lines_video_filename(data: dict) -> str:
@@ -4017,30 +3938,13 @@ def _reel_lines_video_filename(data: dict) -> str:
     return f"{prefix}{make_filename(data.get('post_id', ''), data.get('post_date', ''), ext)}"
 
 
-def _save_reel_lines_video(video_path: str) -> None:
-    """Upload the reel video to the main Drive folder, recording the outcome for the dialog."""
-    filename = os.path.basename(video_path)
+def _upload_reel_lines_video(video_path: str, filename: str = "") -> str:
+    """Put the video in the main Drive folder so the row can link straight to it."""
     if not GOOGLE_DRIVE_FOLDER_ID:
-        st.session_state["workspace_reel_lines_prompt_video"] = {
-            "filename": filename,
-            "link": "",
-            "error": "GOOGLE_DRIVE_FOLDER_ID is not configured.",
-        }
-        return
-    try:
-        media_link = upload_to_drive(video_path, filename, GOOGLE_DRIVE_FOLDER_ID)
-    except Exception as e:
-        st.session_state["workspace_reel_lines_prompt_video"] = {
-            "filename": filename,
-            "link": "",
-            "error": describe_error(e),
-        }
-        return
-    st.session_state["workspace_reel_lines_prompt_video"] = {
-        "filename": filename,
-        "link": media_link,
-        "error": "",
-    }
+        raise RuntimeError("GOOGLE_DRIVE_FOLDER_ID is not configured.")
+    return upload_to_drive(
+        video_path, filename or os.path.basename(video_path), GOOGLE_DRIVE_FOLDER_ID
+    )
 
 
 def _make_reel_thumbnail(video_path: str) -> str:
@@ -4069,263 +3973,215 @@ def _make_reel_thumbnail(video_path: str) -> str:
         return ""
 
 
-def _stash_reel_lines_post_data(link: str, data: dict, video_path: str, transcript: str) -> None:
-    """Stash everything needed to create a post row for the reel just processed."""
-    saved = st.session_state.get("workspace_reel_lines_prompt_video") or {}
-    st.session_state["workspace_reel_lines_prompt_post_data"] = {
-        "link": (link or "").strip(),
-        "media_link": saved.get("link", ""),
-        "thumbnail_link": _make_reel_thumbnail(video_path),
-        "original_caption": (data.get("original_caption") or "").strip(),
-        "username": (data.get("username") or "").strip().lstrip("@"),
-        "transcript": transcript,
-    }
+def _reel_lines_source_from_link(link: str, tmp_dir: str) -> dict:
+    """Pull what a pasted link can give us: a downloaded video, or its text.
 
-
-def _reel_footer_caption(link: str, original_caption: str, username: str) -> str:
-    """The copy-ready bottom block: the Comment LINK (on instagram) CTA, the
-    original caption, the Follow @… credit, and the standard post footer."""
-    url = (link or "").strip()
-    original_caption = (original_caption or "").strip()
-    username = (username or "").strip().lstrip("@")
-
-    sections: list[str] = []
-    if url:
-        sections.append(_build_link_cta(url))
-    if original_caption:
-        sections.append(f"--\n\n{original_caption}")
-
-    footer_parts: list[str] = []
-    if username and username.lower() != "unknown":
-        footer_parts.append(f"Follow @{username} for more.")
-    footer = DEFAULT_POST_FOOTER.strip()
-    if footer:
-        footer_parts.append(footer)
-    if footer_parts:
-        sections.append(" ".join(footer_parts))
-
-    return "\n\n".join(sections)
-
-
-def _maybe_create_reel_lines_post(link: str) -> None:
-    """Create a post row for the reel that was just built into a prompt.
-
-    Uses the footer block as the caption (no AI generation) and skips the
-    60-second segment split. Guards against creating a duplicate row when the
-    same link is rebuilt.
+    A reel link is downloaded so it can be transcribed and saved to Drive. Any
+    other Instagram post falls back to its caption, and anything else is read as
+    an article.
     """
-    link = (link or "").strip()
-    post_data = st.session_state.get("workspace_reel_lines_prompt_post_data") or {}
-    if not post_data or post_data.get("link") != link:
-        return
-
-    already = st.session_state.get("workspace_reel_lines_prompt_created") or {}
-    if already.get("link") == link:
-        return
-
-    username = post_data.get("username", "")
-    caption = _reel_footer_caption(link, post_data.get("original_caption", ""), username)
-
-    try:
-        # Caption is written at insert time (footer block, status done) so no
-        # AI caption generation or second sheet write is needed.
-        append_manual_post_row(GOOGLE_SHEET_ID, {
-            "url": link,
-            "caption": caption,
-            "caption_context": post_data.get("transcript", ""),
-            "original_caption": post_data.get("original_caption", ""),
-            "transcript": post_data.get("transcript", ""),
-            "source_username": username,
-            "speaker_name": "",
-            "media_type": "reel",
-            "media_link": post_data.get("media_link", ""),
-            "thumbnail_link": post_data.get("thumbnail_link", ""),
-            "top_comment": "",
-            "status": "done",
-            "name": pipeline_caption_ops.normalize_slide_name(username, "reel", ""),
-        })
-    except Exception as e:
-        st.session_state["workspace_reel_lines_prompt_post_error"] = describe_error(e)
-        return
-
-    row_num = None
-    try:
-        all_rows = get_all_rows(GOOGLE_SHEET_ID)
-        new_row = all_rows[-1] if all_rows else None
-        row_num = new_row["row_number"] if new_row else None
-    except Exception:
-        pass
-
-    st.session_state.pop("workspace_reel_lines_prompt_post_error", None)
-    st.session_state["workspace_reel_lines_prompt_created"] = {
-        "link": link,
-        "row_num": row_num,
-        "caption": caption,
-        "transcript": post_data.get("transcript", ""),
-        "media_link": post_data.get("media_link", ""),
-    }
-
-
-def _reel_lines_context_from_link(link: str) -> str:
-    """Turn a pasted link into source context: transcribe reels, read articles.
-
-    A reel link also gets its video saved to the main Drive folder.
-    """
-    link = (link or "").strip()
-    if not link:
-        return ""
-
     if _is_reel_url(link):
         data = process_reel_url(link, include_transcript=False)
         media_urls = data.get("media_urls") or []
         if not media_urls:
             raise RuntimeError("Could not find a downloadable video for that reel link.")
-        tmp_dir = tempfile.mkdtemp(prefix="reel_lines_link_")
-        try:
-            video_path = os.path.join(tmp_dir, _reel_lines_video_filename(data))
-            download_file(media_urls[0], video_path)
-            _save_reel_lines_video(video_path)
-            transcript = (transcribe_video(video_path) or "").strip()
-            # Capture everything needed to also create a post row for this reel.
-            _stash_reel_lines_post_data(link, data, video_path, transcript)
-        finally:
-            shutil.rmtree(tmp_dir, ignore_errors=True)
-        if not transcript:
-            raise RuntimeError("Could not transcribe that reel.")
-        return transcript
+        filename = _reel_lines_video_filename(data)
+        video_path = os.path.join(tmp_dir, filename)
+        download_file(media_urls[0], video_path)
+        return {
+            "video_path": video_path,
+            "filename": filename,
+            "original_caption": _cell_text(data.get("original_caption")).strip(),
+            "username": _cell_text(data.get("username")).strip().lstrip("@"),
+            "source_text": "",
+        }
 
     if _is_instagram_url(link):
-        # Non-reel Instagram post: fall back to its caption text.
         data = process_post_url(link)
-        return (data.get("original_caption") or "").strip()
+        original_caption = _cell_text(data.get("original_caption")).strip()
+        return {
+            "video_path": "",
+            "filename": "",
+            "original_caption": original_caption,
+            "username": _cell_text(data.get("username")).strip().lstrip("@"),
+            "source_text": original_caption,
+        }
 
     from article_source import fetch_article_source
 
     data = fetch_article_source(link)
-    return (data.get("source_text") or data.get("summary_text") or "").strip()
+    return {
+        "video_path": "",
+        "filename": "",
+        "original_caption": "",
+        "username": "",
+        "source_text": _cell_text(data.get("source_text") or data.get("summary_text")).strip(),
+    }
 
 
-def _build_reel_lines_context(link: str, uploaded_files) -> str:
-    """Collect transcript/image text from a link and any uploaded files."""
-    sections: list[str] = []
+def _create_reel_lines_post(link: str, uploaded_video, speaker_name: str = "") -> int:
+    """Create one Reel Lines post row and return its row number.
 
-    if (link or "").strip():
-        link_context = _reel_lines_context_from_link(link)
-        if link_context:
-            sections.append(link_context)
+    An uploaded video is transcribed as-is; a reel link is downloaded first.
+    Either way the video lands in Drive, the transcript becomes both the caption
+    source and the row's transcript, and a pasted link becomes the comment link.
+    """
+    link = (link or "").strip()
+    speaker_name = (speaker_name or "").strip()
+    if not link and uploaded_video is None:
+        raise ValueError("Add a link or upload a video.")
 
-    for uploaded in uploaded_files or []:
-        file_type = (uploaded.type or "").lower()
-        name_lower = (uploaded.name or "").lower()
-        is_image = file_type.startswith("image/") or name_lower.endswith(
-            (".png", ".jpg", ".jpeg", ".webp", ".gif")
-        )
-        if is_image:
-            text = _extract_text_from_image(uploaded.getvalue(), uploaded.type or "image/jpeg")
-            if text:
-                sections.append(text)
-        else:
-            transcript = _transcribe_uploaded_video(uploaded)
-            if transcript:
-                sections.append(transcript)
+    tmp_dir = tempfile.mkdtemp(prefix="reel_lines_")
+    try:
+        video_path = ""
+        video_filename = ""
+        original_caption = ""
+        username = ""
+        source_text = ""
 
-    return "\n\n".join(section for section in sections if section).strip()
+        if uploaded_video is not None:
+            suffix = os.path.splitext(uploaded_video.name)[-1].lower() or ".mp4"
+            video_path = os.path.join(tmp_dir, f"source{suffix}")
+            with open(video_path, "wb") as handle:
+                handle.write(uploaded_video.getbuffer())
+            video_filename = uploaded_video.name or f"video{suffix}"
+
+        if link:
+            with st.spinner("Reading the link…"):
+                from_link = _reel_lines_source_from_link(link, tmp_dir)
+            original_caption = from_link["original_caption"]
+            username = from_link["username"]
+            source_text = from_link["source_text"]
+            # An upload wins as the media — the link is then only the comment link.
+            if not video_path and from_link["video_path"]:
+                video_path = from_link["video_path"]
+                video_filename = from_link["filename"]
+
+        transcript = ""
+        media_link = ""
+        thumbnail_link = ""
+        if video_path:
+            with st.spinner("Transcribing…"):
+                transcript = (transcribe_video(video_path) or "").strip()
+            if not transcript:
+                raise RuntimeError("Could not transcribe that video.")
+            source_text = transcript
+            with st.spinner("Saving the video to Drive…"):
+                media_link = _upload_reel_lines_video(video_path, video_filename)
+            thumbnail_link = _make_reel_thumbnail(video_path)
+
+        if not source_text:
+            raise RuntimeError("No transcript or text could be read from that link.")
+
+        media_type = "reel" if transcript else ("post" if _is_instagram_url(link) else "article")
+        display_username = username or speaker_name
+        top_comment = _build_link_cta(link) if link else ""
+        caption_context = "" if transcript else source_text
+
+        row_for_caption = {
+            "Instagram URL": link,
+            "Required Hashtags": "",
+            "Source Username": display_username,
+            "Media Type": media_type,
+            "Media Drive Link": media_link,
+            "Thumbnail Drive Link": thumbnail_link,
+            "Original Caption": original_caption,
+            "Transcript": transcript,
+            "Top Comment": top_comment,
+            "Speaker Name": speaker_name,
+            "Caption Context": caption_context,
+        }
+        with st.spinner("Writing the caption…"):
+            caption = generate_row_caption(row_for_caption)
+        with st.spinner(f"Writing {REEL_LINES_HEADLINE_COUNT} headlines…"):
+            headlines = _generate_reel_lines_headlines(
+                source_text, caption, speaker_name, display_username
+            )
+
+        append_manual_post_row(GOOGLE_SHEET_ID, {
+            "url": link,
+            "caption": caption,
+            "caption_context": caption_context,
+            "original_caption": original_caption,
+            "transcript": transcript,
+            "source_username": display_username,
+            "speaker_name": speaker_name,
+            "media_type": media_type,
+            "media_link": media_link,
+            "thumbnail_link": thumbnail_link,
+            "top_comment": top_comment,
+            "status": "done",
+            "name": pipeline_caption_ops.normalize_slide_name(
+                display_username, media_type, speaker_name
+            ),
+            "text1": "\n".join(headlines),
+            "slide_cta": REEL_LINES_ROW_MARKER,
+        })
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    all_rows = _run_with_sheet_quota_countdown(
+        lambda: get_all_rows(GOOGLE_SHEET_ID),
+        "Reel Lines post paused (sheet quota):",
+    )
+    new_row = all_rows[-1] if all_rows else None
+    return int(new_row["row_number"]) if new_row else 0
 
 
-@st.dialog("Reel Lines Prompt", width="large", on_dismiss=_dismiss_reel_lines_prompt_dialog)
-def _render_reel_lines_prompt_dialog() -> None:
+@st.dialog("Create Reel Lines", width="large", on_dismiss=_dismiss_reel_lines_dialog)
+def _render_reel_lines_dialog() -> None:
     st.caption(
-        "Copy this reusable prompt, then paste your transcript where indicated. Or add a link, "
-        "image, or video below and build a prompt with that context already filled in — reels "
-        "and videos are transcribed, images are read for their text. A reel link also saves its "
-        "video to Drive and creates a new post row with the caption ready to copy."
+        "Paste a link or upload a video. The video is downloaded (or taken from your upload) and "
+        f"transcribed, then the transcript becomes a caption plus {REEL_LINES_HEADLINE_COUNT} "
+        "clickbait headlines you copy one at a time. A link is also saved as the comment link. "
+        "Upload a video and paste a link together to use the upload as the media and the link as "
+        "the comment link."
     )
 
     link = st.text_input(
         "Link (optional)",
-        key="workspace_reel_lines_prompt_link",
+        key="workspace_reel_lines_link",
         placeholder="https://www.instagram.com/reel/... or an article link",
     ).strip()
 
-    uploaded_files = st.file_uploader(
-        "Image and/or video (optional)",
-        type=["png", "jpg", "jpeg", "webp", "gif", "mp4", "mov", "m4v", "webm", "m4a", "mp3", "wav"],
-        key="workspace_reel_lines_prompt_files",
-        accept_multiple_files=True,
+    uploaded_video = st.file_uploader(
+        "Video (optional)",
+        type=["mp4", "mov", "m4v", "webm", "m4a", "mp3", "wav"],
+        key="workspace_reel_lines_video",
+        accept_multiple_files=False,
     )
 
-    has_input = bool(link or uploaded_files)
+    speaker_name = st.text_input(
+        "Speaker name (optional)",
+        key="workspace_reel_lines_speaker",
+        placeholder="e.g. Bernie Sanders",
+    ).strip()
 
-    if has_input and st.button(
-        "Build prompt with this context",
-        key="workspace_reel_lines_prompt_build",
+    if st.button(
+        "Create post",
+        key="workspace_reel_lines_submit",
         type="primary",
         width="stretch",
+        disabled=not (link or uploaded_video),
     ):
-        st.session_state.pop("workspace_reel_lines_prompt_error", None)
-        st.session_state.pop("workspace_reel_lines_prompt_video", None)
-        st.session_state.pop("workspace_reel_lines_prompt_post_data", None)
         try:
-            with st.spinner("Gathering context (downloading / transcribing / reading)…"):
-                context = _build_reel_lines_context(link, uploaded_files)
+            row_num = _create_reel_lines_post(link, uploaded_video, speaker_name)
         except Exception as e:
-            st.session_state["workspace_reel_lines_prompt_error"] = describe_error(e)
-            st.session_state.pop("workspace_reel_lines_prompt_built", None)
+            st.error(f"Could not create the post: {describe_error(e)}")
         else:
-            if context:
-                _reel_post_data = (
-                    st.session_state.get("workspace_reel_lines_prompt_post_data") or {}
-                )
-                st.session_state["workspace_reel_lines_prompt_built"] = (
-                    _reel_lines_prompt_with_context(
-                        context, link, _reel_post_data.get("username", "")
-                    )
-                )
-                # A reel link also becomes a new post row (footer-block caption,
-                # no segment split) so it lands in the workspace to work with.
-                if _is_reel_url(link):
-                    with st.spinner("Creating post…"):
-                        _maybe_create_reel_lines_post(link)
-            else:
-                st.session_state["workspace_reel_lines_prompt_error"] = (
-                    "No text could be extracted from the provided link or files."
-                )
-                st.session_state.pop("workspace_reel_lines_prompt_built", None)
-
-    saved_video = st.session_state.get("workspace_reel_lines_prompt_video") or {}
-    if saved_video.get("error"):
-        st.warning(f"Could not save the reel video to Drive: {saved_video['error']}")
-
-    post_error = st.session_state.get("workspace_reel_lines_prompt_post_error")
-    if post_error:
-        st.warning(f"Prompt built, but the post could not be created: {post_error}")
-
-    created = st.session_state.get("workspace_reel_lines_prompt_created") or {}
-    if created and created.get("link") == link:
-        row_label = f" as row {created['row_num']}" if created.get("row_num") else ""
-        st.success(f"New post created{row_label} — video, caption, and transcript are in the app.")
-
-    error_message = st.session_state.get("workspace_reel_lines_prompt_error")
-    if error_message:
-        st.error(f"Could not build prompt: {error_message}")
-
-    built_prompt = st.session_state.get("workspace_reel_lines_prompt_built")
-    if built_prompt:
-        st.success("Prompt built with your context — copy it below.")
-        st.code(built_prompt, language="text")
-        if st.button("Reset to blank prompt", key="workspace_reel_lines_prompt_reset", width="stretch"):
-            st.session_state.pop("workspace_reel_lines_prompt_built", None)
-            st.session_state.pop("workspace_reel_lines_prompt_error", None)
-            st.session_state.pop("workspace_reel_lines_prompt_video", None)
-            st.session_state.pop("workspace_reel_lines_prompt_post_data", None)
-            st.session_state.pop("workspace_reel_lines_prompt_created", None)
-            st.session_state.pop("workspace_reel_lines_prompt_post_error", None)
+            st.session_state["workspace_home_notice"] = (
+                f"Reel Lines post created as row {row_num}."
+                if row_num
+                else "Reel Lines post created."
+            )
+            if row_num:
+                st.session_state["workspace_selected_row_num"] = row_num
+                st.query_params["workspace_row"] = str(row_num)
+            _close_reel_lines_dialog(clear_inputs=True)
             _rerun_workspace("Home")
-    else:
-        st.code(_reel_lines_prompt_with_context("", link), language="text")
 
-    if st.button("Close", key="workspace_reel_lines_prompt_close", width="stretch"):
-        _close_reel_lines_prompt_dialog(clear_inputs=True)
+    if st.button("Cancel", key="workspace_reel_lines_cancel", width="stretch"):
+        _close_reel_lines_dialog(clear_inputs=True)
         _rerun_workspace("Home")
 
 
@@ -5410,6 +5266,50 @@ def _tab_copy_preview(value: str, show_plain_text: bool = True, key: str = "") -
         _multiline_copy_preview("copy text", value or "(none)", preview_key)
 
 
+def _render_reel_lines_headlines_tab(
+    headlines: list[str],
+    caption_value: str,
+    top_comment: str,
+    source_url: str,
+    media_link: str,
+    is_instagram: bool,
+) -> None:
+    """The Reel Lines stand-in for the Slides tab.
+
+    Every headline gets its own one-line copy block with the full line spelled
+    out in small text underneath, so a headline that runs past the width of the
+    copy block can still be read. The caption to copy sits at the bottom.
+    """
+    drive_link = next(
+        (part.strip() for part in _cell_text(media_link).split(",") if part.strip()), ""
+    )
+    open_buttons: list[tuple[str, str]] = []
+    if source_url:
+        open_buttons.append(
+            ("Open in Instagram" if is_instagram else "Open source link", source_url)
+        )
+    if drive_link:
+        open_buttons.append(("Open video in Drive", drive_link))
+    if open_buttons:
+        columns = st.columns(len(open_buttons), gap="small")
+        for column, (label, target) in zip(columns, open_buttons):
+            with column:
+                st.link_button(label, target, width="stretch")
+
+    if headlines:
+        st.caption(f"{len(headlines)} headlines — copy the one you want")
+        for headline in headlines:
+            _tab_copy_preview(headline)
+    else:
+        st.info("No headlines were saved for this post.")
+
+    st.divider()
+    st.caption("Caption")
+    _tab_copy_preview(caption_value)
+    st.caption("Comment CTA")
+    st.code(top_comment or "(none)", language=None)
+
+
 def _render_slide_one_preview(
     handle: str,
     headline: str,
@@ -5720,17 +5620,21 @@ def _copy_tabs(
     thumbnail_link: str = "",
     slide_cta_options: dict[str, str] | None = None,
 ) -> None:
-    tab_labels = ["Slides", "Caption", "Original"]
+    # A Reel Lines row carries ten copyable headlines instead of slide copy, so
+    # its first tab is Headlines rather than Slides.
+    is_reel_lines = _is_reel_lines_row(prompt_row or {})
+    first_tab = "Headlines" if is_reel_lines else "Slides"
+    tab_labels = [first_tab, "Caption", "Original"]
     content_tab_key = f"workspace_row_content_tab_{row_num}"
     if content_tab_key not in st.session_state or st.session_state[content_tab_key] not in tab_labels:
-        st.session_state[content_tab_key] = "Slides"
+        st.session_state[content_tab_key] = first_tab
     selected_content_tab = st.segmented_control(
         "Content",
         tab_labels,
         key=content_tab_key,
         label_visibility="collapsed",
         width="stretch",
-    ) or "Slides"
+    ) or first_tab
     original_preview = _build_original_caption_preview(
         original_caption,
         username,
@@ -5770,7 +5674,8 @@ def _copy_tabs(
                 _rerun_workspace("Edit")
     elif selected_content_tab == "Original":
         _tab_copy_preview(original_preview)
-        if is_instagram:
+        # An uploaded video has no Instagram URL but still has a transcript to copy.
+        if is_instagram or transcript:
             st.caption("Transcript")
             _tab_copy_preview(transcript)
             # Both in one snippet, for pasting the caption and what was said together.
@@ -5778,6 +5683,22 @@ def _copy_tabs(
             _tab_copy_preview(
                 "\n\n".join(part for part in (original_preview, transcript) if (part or "").strip())
             )
+    elif selected_content_tab == "Headlines":
+        _render_reel_lines_headlines_tab(
+            _reel_lines_row_headlines(prompt_row or {}),
+            _caption_tab_value(
+                generated,
+                original_caption,
+                username,
+                top_comment,
+                required_hashtags,
+                is_instagram,
+            ),
+            top_comment,
+            source_url,
+            media_link,
+            is_instagram,
+        )
     elif selected_content_tab == "Slides":
         prompt_key = f"workspace_row_slides_prompt_{row_num}"
         if not st.session_state.get(prompt_key):
@@ -8528,8 +8449,8 @@ if active_section_tab == "Home":
         _render_workspace_slides_dialog(workspace_rows, workspace_rows_error)
     if st.session_state.get("workspace_create_from_link_dialog"):
         _render_create_from_link_dialog()
-    if st.session_state.get("workspace_reel_lines_prompt_dialog"):
-        _render_reel_lines_prompt_dialog()
+    if st.session_state.get("workspace_reel_lines_dialog"):
+        _render_reel_lines_dialog()
     if st.session_state.get("workspace_video_post_dialog"):
         _render_video_post_dialog()
     if st.session_state.get("workspace_election_post_dialog"):
@@ -8558,8 +8479,8 @@ if active_section_tab == "Home":
             _open_workspace_home_action_dialog("Create a Post")
             _rerun_workspace("Home")
 
-        if st.button("Reel Lines Prompt", key="workspace_open_reel_lines_prompt_dialog", width="stretch"):
-            _open_reel_lines_prompt_dialog()
+        if st.button("Create Reel Lines", key="workspace_open_reel_lines_dialog", width="stretch"):
+            _open_reel_lines_dialog()
             _rerun_workspace("Home")
 
         if st.button("Video Post", key="workspace_open_video_post_dialog", width="stretch"):
@@ -8870,7 +8791,9 @@ if active_section_tab == "Home":
                                 media_links[0],
                                 width="stretch",
                             )
-                        if st.button(
+                        # Slide copy is written into text1, which is where a Reel
+                        # Lines row keeps its headlines — so leave those rows out.
+                        if not _is_reel_lines_row(row) and st.button(
                             "Slides",
                             key=f"workspace_menu_post_slides_{row_num}",
                             width="stretch",
@@ -8882,7 +8805,7 @@ if active_section_tab == "Home":
                             _close_workspace_menu(row)
                             st.session_state["workspace_link_dialog_row"] = row_num
                             _rerun_workspace("Edit")
-                        if st.button(
+                        if not _is_reel_lines_row(row) and st.button(
                             "Make generic",
                             key=f"workspace_menu_generic_slides_{row_num}",
                             width="stretch",
