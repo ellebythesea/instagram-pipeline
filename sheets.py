@@ -17,14 +17,17 @@ Sheet layout:
 """
 
 import json
+import logging
 import os
 import random
+import re
 import time
 from datetime import datetime, timezone
 from json import JSONDecodeError
 from zoneinfo import ZoneInfo
 
 import gspread
+import requests
 from google.oauth2.service_account import Credentials
 
 from config import GOOGLE_SERVICE_ACCOUNT_JSON, GOOGLE_WORKSHEET_NAME
@@ -33,6 +36,28 @@ _SCOPES = [
     "https://spreadsheets.google.com/feeds",
     "https://www.googleapis.com/auth/drive",
 ]
+
+_log = logging.getLogger(__name__)
+
+# Transient Sheets API failures: quota pushback (429) and Google-side outages
+# (500/502/503/504) plus request timeouts. These are safe to retry; anything
+# else (401/403/404, WorksheetNotFound, bad input) is a real error and is raised
+# on the first attempt.
+_RETRYABLE_STATUS_CODES = frozenset({408, 429, 500, 502, 503, 504})
+_RETRYABLE_MESSAGE_FRAGMENTS = (
+    "exceeded in a metric read request",
+    "the service is currently unavailable",
+    "internal error encountered",
+    "backend error",
+    "try again later",
+)
+_RETRY_ATTEMPTS = 6
+_RETRY_BASE_DELAY_SECONDS = 1.0
+_RETRY_MAX_DELAY_SECONDS = 32.0
+# (connect, read) timeout so a stalled request fails fast enough to be retried
+# instead of hanging the run.
+_REQUEST_TIMEOUT_SECONDS = (10.0, 60.0)
+_STATUS_IN_MESSAGE_RE = re.compile(r"\[(\d{3})\]")
 
 _EXPECTED_HEADERS = [
     "Instagram URL",
@@ -134,7 +159,68 @@ def _get_client() -> gspread.Client:
             ) from exc
         creds = Credentials.from_service_account_info(creds_info, scopes=_SCOPES)
     _client = gspread.authorize(creds)
+    # Older gspread releases have no timeout knob; without it a stalled request
+    # can hang indefinitely and never reach the retry path.
+    if hasattr(_client, "set_timeout"):
+        _client.set_timeout(_REQUEST_TIMEOUT_SECONDS)
     return _client
+
+
+def _error_status_code(exc: Exception) -> int | None:
+    """Best-effort HTTP status for an exception raised by gspread/requests."""
+    response = getattr(exc, "response", None)
+    status = getattr(response, "status_code", None)
+    if isinstance(status, int):
+        return status
+    # gspread's APIError exposes the API's own code, which is -1 when the error
+    # body was not JSON (Google returns HTML for some 5xx responses).
+    code = getattr(exc, "code", None)
+    if isinstance(code, int) and code > 0:
+        return code
+    match = _STATUS_IN_MESSAGE_RE.search(str(exc))
+    return int(match.group(1)) if match else None
+
+
+def _is_retryable(exc: Exception) -> bool:
+    if isinstance(exc, (gspread.WorksheetNotFound, gspread.SpreadsheetNotFound)):
+        return False
+    if isinstance(
+        exc,
+        (
+            requests.exceptions.ConnectionError,
+            requests.exceptions.Timeout,
+            requests.exceptions.ChunkedEncodingError,
+        ),
+    ):
+        return True
+    status = _error_status_code(exc)
+    if status is not None:
+        return status in _RETRYABLE_STATUS_CODES
+    message = str(exc).lower()
+    return any(fragment in message for fragment in _RETRYABLE_MESSAGE_FRAGMENTS)
+
+
+def _with_backoff(fn, *args, **kwargs):
+    """Call `fn`, retrying transient Sheets API failures with jittered backoff."""
+    delay = _RETRY_BASE_DELAY_SECONDS
+    last_attempt = _RETRY_ATTEMPTS - 1
+    for attempt in range(_RETRY_ATTEMPTS):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as e:
+            if attempt == last_attempt or not _is_retryable(e):
+                raise
+            sleep_for = delay + random.uniform(0, 0.5)
+            _log.warning(
+                "Sheets API call %s failed (attempt %d/%d): %s — retrying in %.1fs",
+                getattr(fn, "__name__", repr(fn)),
+                attempt + 1,
+                _RETRY_ATTEMPTS,
+                e,
+                sleep_for,
+            )
+            time.sleep(sleep_for)
+            delay = min(delay * 2, _RETRY_MAX_DELAY_SECONDS)
 
 
 def _workbook(sheet_id: str):
@@ -151,23 +237,10 @@ def _named_worksheet(sheet_id: str, title: str) -> gspread.Worksheet:
     cleaned_title = (title or "").strip()
     cache_key = (cleaned_sheet_id, cleaned_title)
     if cache_key not in _worksheets:
-        _worksheets[cache_key] = _workbook(cleaned_sheet_id).worksheet(cleaned_title)
+        _worksheets[cache_key] = _with_backoff(
+            _workbook(cleaned_sheet_id).worksheet, cleaned_title
+        )
     return _worksheets[cache_key]
-
-
-def _with_backoff(fn, *args, **kwargs):
-    delay = 1.0
-    for attempt in range(5):
-        try:
-            return fn(*args, **kwargs)
-        except Exception as e:
-            message = str(e)
-            if "Exceeded in a metric read request" not in message and "429" not in message:
-                raise
-            if attempt == 4:
-                raise
-            time.sleep(delay + random.uniform(0, 0.5))
-            delay = min(delay * 2, 8.0)
 
 
 def _worksheet(sheet_id: str) -> gspread.Worksheet:
@@ -182,7 +255,7 @@ def _worksheet(sheet_id: str) -> gspread.Worksheet:
     if configured_title:
         try:
             ws = _named_worksheet(sheet_id, configured_title)
-            headers = {h.strip() for h in ws.row_values(1) if h.strip()}
+            headers = {h.strip() for h in _with_backoff(ws.row_values, 1) if h.strip()}
             if expected_headers.issubset(headers):
                 _ensure_headers(sheet_id, ws)
                 _worksheets[cache_key] = ws
@@ -190,8 +263,8 @@ def _worksheet(sheet_id: str) -> gspread.Worksheet:
         except gspread.WorksheetNotFound:
             pass
 
-    for ws in workbook.worksheets():
-        headers = {h.strip() for h in ws.row_values(1) if h.strip()}
+    for ws in _with_backoff(workbook.worksheets):
+        headers = {h.strip() for h in _with_backoff(ws.row_values, 1) if h.strip()}
         if expected_headers.issubset(headers):
             _ensure_headers(sheet_id, ws)
             _worksheets[cache_key] = ws
@@ -202,7 +275,7 @@ def _worksheet(sheet_id: str) -> gspread.Worksheet:
             f"Worksheet '{configured_title}' was not found or does not contain the expected pipeline headers."
         )
 
-    ws = workbook.sheet1
+    ws = _with_backoff(workbook.get_worksheet, 0)
     _ensure_headers(sheet_id, ws)
     _worksheets[cache_key] = ws
     return ws
@@ -213,7 +286,9 @@ def _metadata_worksheet(sheet_id: str) -> gspread.Worksheet:
     try:
         ws = _named_worksheet(sheet_id, _METADATA_SHEET_TITLE)
     except gspread.WorksheetNotFound:
-        ws = workbook.add_worksheet(title=_METADATA_SHEET_TITLE, rows=10, cols=2)
+        ws = _with_backoff(
+            workbook.add_worksheet, title=_METADATA_SHEET_TITLE, rows=10, cols=2
+        )
         _worksheets[(sheet_id, _METADATA_SHEET_TITLE)] = ws
         _with_backoff(ws.update, "A1:B1", [["key", "value"]])
     return ws
