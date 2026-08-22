@@ -21,6 +21,11 @@ from config import (
 
 _SCOPES = ["https://www.googleapis.com/auth/drive"]
 
+# googleapiclient retries these with exponential backoff on 5xx, 429, and
+# rate-limit 403s. Drive blips like the Sheets 503 are transient, so every
+# request below opts in rather than failing the row on the first hiccup.
+DRIVE_NUM_RETRIES = 5
+
 
 def _raise_drive_step_error(step: str, exc: Exception) -> None:
     raise RuntimeError(f"Google Drive step failed during {step}. Raw error: {exc}") from exc
@@ -82,7 +87,7 @@ def _find_file_in_folder(service, folder_id: str, filename: str) -> dict:
                 supportsAllDrives=True,
                 includeItemsFromAllDrives=True,
             )
-            .execute()
+            .execute(num_retries=DRIVE_NUM_RETRIES)
         )
     except Exception as exc:
         _raise_drive_step_error("listing files in the target folder", exc)
@@ -107,7 +112,7 @@ def upload_to_drive(file_path: str, filename: str, folder_id: str, overwrite: bo
                     fields="id,webViewLink",
                     supportsAllDrives=True,
                 )
-                .execute()
+                .execute(num_retries=DRIVE_NUM_RETRIES)
             )
         else:
             uploaded = (
@@ -118,7 +123,7 @@ def upload_to_drive(file_path: str, filename: str, folder_id: str, overwrite: bo
                     fields="id,webViewLink",
                     supportsAllDrives=True,
                 )
-                .execute()
+                .execute(num_retries=DRIVE_NUM_RETRIES)
             )
     except Exception as exc:
         step = "updating an existing Drive file" if existing.get("id") else "creating a Drive file"
@@ -129,7 +134,7 @@ def upload_to_drive(file_path: str, filename: str, folder_id: str, overwrite: bo
             fileId=uploaded["id"],
             body={"type": "anyone", "role": "reader"},
             supportsAllDrives=True,
-        ).execute()
+        ).execute(num_retries=DRIVE_NUM_RETRIES)
     except Exception as exc:
         _raise_drive_step_error("setting public reader permission on the uploaded file", exc)
 
@@ -157,7 +162,7 @@ def get_drive_file_metadata(link_or_file_id: str) -> dict:
                 fields="id,name,webViewLink,mimeType",
                 supportsAllDrives=True,
             )
-            .execute()
+            .execute(num_retries=DRIVE_NUM_RETRIES)
         )
     except Exception as exc:
         _raise_drive_step_error("reading Drive file metadata", exc)
@@ -181,7 +186,7 @@ def _export_by_file_id(file_id: str, mime_type: str) -> str:
     """
     service = _get_service()
     try:
-        exported = service.files().export(fileId=file_id, mimeType=mime_type).execute()
+        exported = service.files().export(fileId=file_id, mimeType=mime_type).execute(num_retries=DRIVE_NUM_RETRIES)
     except Exception as exc:
         _raise_drive_step_error(f"exporting a Google Doc as {mime_type}", exc)
     return exported.decode("utf-8", "replace") if isinstance(exported, bytes) else str(exported)
@@ -245,7 +250,7 @@ def copy_drive_file_to_folder(link_or_file_id: str, folder_id: str, filename: st
                 fields="id,webViewLink",
                 supportsAllDrives=True,
             )
-            .execute()
+            .execute(num_retries=DRIVE_NUM_RETRIES)
         )
     except Exception as exc:
         _raise_drive_step_error("copying a Drive file into the target folder", exc)
@@ -254,7 +259,7 @@ def copy_drive_file_to_folder(link_or_file_id: str, folder_id: str, filename: st
             fileId=copied["id"],
             body={"type": "anyone", "role": "reader"},
             supportsAllDrives=True,
-        ).execute()
+        ).execute(num_retries=DRIVE_NUM_RETRIES)
     except Exception as exc:
         _raise_drive_step_error("setting public reader permission on the copied file", exc)
     return copied.get("webViewLink", "")
@@ -269,7 +274,7 @@ def download_drive_file(link_or_file_id: str, dest_path: str) -> str:
         downloader = MediaIoBaseDownload(buffer, request)
         done = False
         while not done:
-            _status, done = downloader.next_chunk()
+            _status, done = downloader.next_chunk(num_retries=DRIVE_NUM_RETRIES)
     except Exception as exc:
         _raise_drive_step_error("downloading a Drive file", exc)
     with open(dest_path, "wb") as handle:
@@ -296,7 +301,7 @@ def get_or_create_subfolder(parent_folder_id: str, folder_name: str) -> str:
                 supportsAllDrives=True,
                 includeItemsFromAllDrives=True,
             )
-            .execute()
+            .execute(num_retries=DRIVE_NUM_RETRIES)
         )
     except Exception as exc:
         _raise_drive_step_error("listing subfolders in the target Drive folder", exc)
@@ -316,7 +321,7 @@ def get_or_create_subfolder(parent_folder_id: str, folder_name: str) -> str:
                 fields="id",
                 supportsAllDrives=True,
             )
-            .execute()
+            .execute(num_retries=DRIVE_NUM_RETRIES)
         )
     except Exception as exc:
         _raise_drive_step_error("creating a Drive subfolder", exc)
