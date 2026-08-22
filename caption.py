@@ -85,6 +85,9 @@ def transcribe_video(video_path: str) -> Optional[str]:
             result = client.audio.transcriptions.create(model="whisper-1", file=f)
         return result.text
     except Exception as e:
+        # Callers treat None as "no transcript", which is indistinguishable from
+        # a silent clip — so say out loud that this was a failure.
+        print(f"    transcription failed: {e}", flush=True)
         return None
     finally:
         if processed and os.path.exists(processed):

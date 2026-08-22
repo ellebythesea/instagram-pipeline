@@ -8,18 +8,51 @@ import zipfile
 import mimetypes
 from urllib.parse import urlparse
 
+import random
+import time
+
 import requests
 
 from config import GOOGLE_DRIVE_FOLDER_ID, GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER
 from drive import get_or_create_subfolder, upload_to_drive
 
+_DOWNLOAD_ATTEMPTS = 4
+_RETRYABLE_DOWNLOAD_STATUS = frozenset({408, 429, 500, 502, 503, 504})
+
 
 def download_file(url: str, dest: str) -> None:
-    resp = requests.get(url, timeout=120, stream=True)
-    resp.raise_for_status()
-    with open(dest, "wb") as f:
-        for chunk in resp.iter_content(chunk_size=8192):
-            f.write(chunk)
+    """Stream a URL to disk, retrying transient CDN failures.
+
+    Instagram's CDN times out and 5xxes often enough that a single failed GET
+    should not cost the whole row. Permanent responses (403 on an expired
+    signed URL, 404) raise on the first attempt.
+    """
+    delay = 1.0
+    for attempt in range(_DOWNLOAD_ATTEMPTS):
+        last = attempt == _DOWNLOAD_ATTEMPTS - 1
+        try:
+            resp = requests.get(url, timeout=120, stream=True)
+            if resp.status_code in _RETRYABLE_DOWNLOAD_STATUS and not last:
+                resp.close()
+                raise requests.exceptions.HTTPError(f"HTTP {resp.status_code}")
+            resp.raise_for_status()
+            with open(dest, "wb") as f:
+                for chunk in resp.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            return
+        except (
+            requests.exceptions.ConnectionError,
+            requests.exceptions.Timeout,
+            requests.exceptions.ChunkedEncodingError,
+            requests.exceptions.HTTPError,
+        ) as exc:
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            retryable = status is None or status in _RETRYABLE_DOWNLOAD_STATUS
+            if last or not retryable:
+                raise
+            print(f"    download failed ({exc}); retrying in {delay:.1f}s", flush=True)
+            time.sleep(delay + random.uniform(0, 0.5))
+            delay = min(delay * 2, 8.0)
 
 
 def _compact_post_date(post_date: str) -> str:

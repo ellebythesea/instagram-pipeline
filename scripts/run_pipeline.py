@@ -17,7 +17,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import traceback
 from pathlib import Path
+from typing import NamedTuple
 from urllib.parse import urlparse
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -28,6 +30,7 @@ from article_source import fetch_article_source
 from caption import transcribe_video
 from config import GOOGLE_DRIVE_FOLDER_ID, GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER, GOOGLE_SHEET_ID
 from drive import (
+    DRIVE_NUM_RETRIES,
     _get_service,
     download_drive_file,
     get_drive_file_metadata,
@@ -52,6 +55,13 @@ generate_row_caption = pipeline_caption_ops.generate_row_caption
 row_ready_for_caption = pipeline_caption_ops.row_ready_for_caption
 
 PREVIEW_UPLOAD_SUBFOLDER = "previews"
+
+
+class StepResult(NamedTuple):
+    """What one step got done, so the run can report honestly and exit non-zero."""
+
+    succeeded: int = 0
+    failed: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -453,21 +463,21 @@ def _ingest_and_caption_row(sheet_id: str, row: dict) -> bool:
         return False
 
 
-def step1_ingest(sheet_id: str) -> int:
+def step1_ingest(sheet_id: str) -> StepResult:
     pending = get_pending_rows(sheet_id)
     if not pending:
         print("Step 1: No pending rows.")
-        return 0
+        return StepResult()
     print(f"Step 1: Ingesting {len(pending)} pending row(s)…")
     succeeded = 0
     for row in pending:
         if _ingest_and_caption_row(sheet_id, row):
             succeeded += 1
     print(f"Step 1: {succeeded}/{len(pending)} row(s) ingested.")
-    return len(pending)
+    return StepResult(succeeded, len(pending) - succeeded)
 
 
-def step2_transcribe(sheet_id: str, all_rows: list[dict]) -> int:
+def step2_transcribe(sheet_id: str, all_rows: list[dict]) -> StepResult:
     untranscribed = [
         r for r in all_rows
         if r.get("Media Type", "").strip().lower() == "reel"
@@ -476,7 +486,7 @@ def step2_transcribe(sheet_id: str, all_rows: list[dict]) -> int:
     ]
     if not untranscribed:
         print("Step 2: No untranscribed reels.")
-        return 0
+        return StepResult()
     print(f"Step 2: Transcribing {len(untranscribed)} reel(s) with Whisper…")
     succeeded = 0
     for row in untranscribed:
@@ -503,10 +513,10 @@ def step2_transcribe(sheet_id: str, all_rows: list[dict]) -> int:
         except Exception as e:
             print(f"  Row {row_num}: {e}")
     print(f"Step 2: {succeeded}/{len(untranscribed)} reel(s) transcribed.")
-    return succeeded
+    return StepResult(succeeded, len(untranscribed) - succeeded)
 
 
-def step3_split(all_rows: list[dict]) -> int:
+def step3_split(all_rows: list[dict]) -> StepResult:
     reels = [
         r for r in all_rows
         if r.get("Media Type", "").strip().lower() == "reel"
@@ -514,7 +524,7 @@ def step3_split(all_rows: list[dict]) -> int:
     ]
     if not reels:
         print("Step 3: No reels to split.")
-        return 0
+        return StepResult()
     print(f"Step 3: Splitting {len(reels)} reel(s)…")
     succeeded = 0
     for row in reels:
@@ -534,17 +544,17 @@ def step3_split(all_rows: list[dict]) -> int:
         except Exception as e:
             print(f"  Row {row_num}: {e}")
     print(f"Step 3: {succeeded}/{len(reels)} reel(s) split.")
-    return succeeded
+    return StepResult(succeeded, len(reels) - succeeded)
 
 
 SAFE_DELETE_SUBFOLDER = "safe_for_deletion"
 
 
-def step4_cleanup(all_rows: list[dict]) -> int:
+def step4_cleanup(all_rows: list[dict]) -> StepResult:
     """Move Drive preview subfolders and orphaned root-level items into safe_for_deletion."""
     if not GOOGLE_DRIVE_FOLDER_ID:
         print("Step 4: GOOGLE_DRIVE_FOLDER_ID not configured, skipped.")
-        return 0
+        return StepResult()
     service = _get_service()
     from datetime import datetime
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -565,6 +575,7 @@ def step4_cleanup(all_rows: list[dict]) -> int:
 
     # --- Phase 1: orphaned preview subfolders ---
     moved = 0
+    move_failures = 0
     preview_root_id = get_or_create_subfolder(GOOGLE_DRIVE_FOLDER_ID, PREVIEW_UPLOAD_SUBFOLDER)
     result = service.files().list(
         q=(
@@ -576,7 +587,7 @@ def step4_cleanup(all_rows: list[dict]) -> int:
         pageSize=1000,
         supportsAllDrives=True,
         includeItemsFromAllDrives=True,
-    ).execute()
+    ).execute(num_retries=DRIVE_NUM_RETRIES)
     existing_folders: dict[str, str] = {
         f["name"]: f["id"] for f in result.get("files", [])
         if f["name"] != SAFE_DELETE_SUBFOLDER
@@ -611,11 +622,12 @@ def step4_cleanup(all_rows: list[dict]) -> int:
                     removeParents=preview_root_id,
                     fields="id,parents",
                     supportsAllDrives=True,
-                ).execute()
+                ).execute(num_retries=DRIVE_NUM_RETRIES)
                 print(f"  Moved preview folder to safe_for_deletion: {name}")
                 moved += 1
             except Exception as e:
                 print(f"  Could not move '{name}': {e}")
+                move_failures += 1
         print(f"Step 4: Moved {moved} orphaned preview folder(s) to safe_for_deletion/{timestamp}.")
     else:
         print("Step 4: No orphaned preview folders.")
@@ -627,7 +639,7 @@ def step4_cleanup(all_rows: list[dict]) -> int:
         pageSize=1000,
         supportsAllDrives=True,
         includeItemsFromAllDrives=True,
-    ).execute()
+    ).execute(num_retries=DRIVE_NUM_RETRIES)
     root_items = root_result.get("files", [])
 
     root_moved = 0
@@ -663,19 +675,45 @@ def step4_cleanup(all_rows: list[dict]) -> int:
                     removeParents=GOOGLE_DRIVE_FOLDER_ID,
                     fields="id,parents",
                     supportsAllDrives=True,
-                ).execute()
+                ).execute(num_retries=DRIVE_NUM_RETRIES)
                 print(f"  Moved ({reason}) to safe_for_deletion: {name}")
                 root_moved += 1
             except Exception as e:
                 print(f"  Could not move '{name}': {e}")
+                move_failures += 1
 
     print(f"Step 4: Moved {root_moved} root-level orphan(s) to safe_for_deletion/{timestamp}.")
-    return moved + root_moved
+    return StepResult(moved + root_moved, move_failures)
 
 
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
+def _run_step(label: str, fn, *args) -> StepResult:
+    """Run one step. A step that dies outright must not skip the steps after it."""
+    try:
+        return fn(*args)
+    except Exception as e:
+        print(f"ERROR: {label} failed outright — {e}")
+        traceback.print_exc()
+        return StepResult(0, 1)
+
+
+def _report(results: list[tuple[str, StepResult]]) -> int:
+    """Print a per-step tally and return the process exit code."""
+    print()
+    print("=== Run summary ===")
+    total_failed = 0
+    for label, result in results:
+        total_failed += result.failed
+        print(f"  {label}: {result.succeeded} ok, {result.failed} failed")
+    if total_failed:
+        print(f"=== Run finished with {total_failed} failure(s) ===")
+        return 1
+    print("=== Run complete, no failures ===")
+    return 0
+
 
 def main() -> int:
     print("=== Instagram Pipeline Run ===")
@@ -684,21 +722,26 @@ def main() -> int:
         print("ERROR: GOOGLE_SHEET_ID is not configured.")
         return 1
 
-    step1_ingest(GOOGLE_SHEET_ID)
+    results: list[tuple[str, StepResult]] = []
+
+    # Step 1 used to run unguarded, so one transient Sheets error skipped
+    # steps 2-4 as well — even though none of them depend on it succeeding.
+    results.append(("Step 1 ingest", _run_step("Step 1 (ingest)", step1_ingest, GOOGLE_SHEET_ID)))
 
     print("Reloading sheet…")
     try:
         all_rows = get_all_rows(GOOGLE_SHEET_ID)
     except Exception as e:
         print(f"ERROR: Could not reload sheet after ingest: {e}")
+        results.append(("Sheet reload", StepResult(0, 1)))
+        _report(results)
         return 1
 
-    step2_transcribe(GOOGLE_SHEET_ID, all_rows)
-    step3_split(all_rows)
-    step4_cleanup(all_rows)
+    results.append(("Step 2 transcribe", _run_step("Step 2 (transcribe)", step2_transcribe, GOOGLE_SHEET_ID, all_rows)))
+    results.append(("Step 3 split", _run_step("Step 3 (split)", step3_split, all_rows)))
+    results.append(("Step 4 cleanup", _run_step("Step 4 (cleanup)", step4_cleanup, all_rows)))
 
-    print("=== Run complete ===")
-    return 0
+    return _report(results)
 
 
 if __name__ == "__main__":
