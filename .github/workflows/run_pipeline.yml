@@ -1,9 +1,8 @@
 name: Run Pipeline
 
 on:
-  schedule:
-    - cron: "0 6 * * *"   # 2:00 AM ET
-    - cron: "0 19 * * *"  # 3:00 PM ET
+  # No scheduled runs — the pipeline is triggered manually from the Actions tab
+  # (or via the API/CLI). Re-add a `schedule:` block here to automate it again.
   workflow_dispatch:
 
 jobs:
