@@ -39,6 +39,19 @@ Main Instagram pipeline. 24 columns A–X. **The app restores this header row au
 
 **Media Type values:** `post`, `reel`, `article`
 
+### Reel Lines rows
+
+Rows created by the `Create Reel Lines` app action use this same schema with two columns repurposed:
+
+- `Slide CTA` (col U) is set to `reel lines`. This is what marks the row as a Reel Lines post, so the
+  editor shows a `Headlines` tab instead of `Slides`. Nothing else writes col U unless a slide CTA is
+  picked, and the Slides tab — the only place that offers one — is replaced for these rows.
+- `text1` (col R) holds the ten headlines, one per line, instead of slide copy. `text2`–`text6` and
+  `quote` stay empty.
+
+Everything else is ordinary: `Transcript` holds the transcription, `Generated Caption` the caption,
+`Media Drive Link` the video, and `Top Comment` the comment link when one was given.
+
 ---
 
 ## Tab: substack
