@@ -246,13 +246,27 @@ The local transcription script auto-detects the synced media folder from common 
 /Users/lisamollica/Library/CloudStorage/GoogleDrive-voteinorout@gmail.com/My Drive/_apps/vioo instagram pipeline/instagram pipeline media/
 ```
 
+## Automated Pipeline (GitHub Actions)
+
+`.github/workflows/run_pipeline.yml` runs `scripts/run_pipeline.py` on GitHub's runners: ingest
+pending rows, transcribe reels, split videos, then sweep orphaned Drive files.
+
+There is **no schedule** — the workflow is manual only. Trigger it from the repo's **Actions** tab
+(*Run Pipeline* → *Run workflow*), or with `gh workflow run run_pipeline.yml`. To automate it again,
+add a `schedule:` block back to the `on:` trigger in that file.
+
+The run needs only the `GOOGLE_SERVICE_ACCOUNT_JSON` repository secret; everything else is pulled
+from Google Secret Manager by `config.py`.
+
 ## Local Helper Scripts
 
 These are the local scripts in `scripts/` and what they do.
 
-### Ingest reels via yt-dlp (when Apify is blocked)
+### Ingest reels via yt-dlp with your own Chrome session
 
-When Instagram is blocking Apify's scrapers, use this script to ingest pending reel rows using yt-dlp and your Chrome session instead.
+The scrapers already try yt-dlp first and only fall back to Apify when yt-dlp fails. Use this script
+when you want to ingest pending reel rows from your own logged-in Chrome session instead — it avoids
+the Apify fallback entirely, which helps when Instagram is blocking unauthenticated yt-dlp requests.
 
 **One-time setup:** Install the Chrome extension **"Get cookies.txt LOCALLY"**, navigate to instagram.com while logged in, click the extension, and export. Save the file to the repo root as `www.instagram.com_cookies.txt` (it's gitignored).
 
