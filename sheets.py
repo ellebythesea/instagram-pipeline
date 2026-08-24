@@ -346,6 +346,8 @@ def get_all_rows(sheet_id: str) -> list[dict]:
 # An article row whose page could not be read keeps this status prefix followed by
 # the reason, e.g. "needs source: Article access blocked or paywalled (403)". The
 # row still exists so the text can be pasted in by hand from the app.
+# pages/workspace.py spells this same value out rather than importing it — see the
+# note there — so keep the two in step.
 NEEDS_SOURCE_PREFIX = "needs source"
 
 
