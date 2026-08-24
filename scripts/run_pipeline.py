@@ -311,6 +311,11 @@ def _ingest_row(row: dict) -> dict:
     try:
         if _is_article_url(url):
             article = fetch_article_source(url)
+            if article.get("alternate_source"):
+                print(
+                    f"    could not read {url[:60]}; using coverage from "
+                    f"{article.get('domain', '')} — {article.get('source_url', '')}"
+                )
             article_source_text = (
                 (article.get("source_text") or "").strip()
                 or (article.get("summary_text") or "").strip()
