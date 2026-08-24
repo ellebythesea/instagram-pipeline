@@ -3024,6 +3024,8 @@ def _upload_preview_pngs(
     slide_text4: str,
     slide_text5: str,
     slide_text6: str,
+    slide_text7: str,
+    slide_text8: str,
     background_url: str,
     media_link: str = "",
     preview_folder_id: str = "",
@@ -3055,16 +3057,16 @@ def _upload_preview_pngs(
 
     try:
         slides_to_render: list[tuple[str, callable, dict]] = []
-        last_cta_slide_number = 3
-        for candidate_slide_number, candidate_text in (
-            (6, slide_text6),
-            (5, slide_text5),
-            (4, slide_text4),
-            (3, slide_text3),
-        ):
-            if (candidate_text or "").strip():
-                last_cta_slide_number = candidate_slide_number
-                break
+        later_slide_texts = {
+            4: slide_text4,
+            5: slide_text5,
+            6: slide_text6,
+            7: slide_text7,
+            8: slide_text8,
+        }
+        last_cta_slide_number = _last_slide_with_text(
+            {3: slide_text3, **later_slide_texts}
+        )
         if (slide_text1 or "").strip():
             slides_to_render.append(
                 (
@@ -3105,43 +3107,17 @@ def _upload_preview_pngs(
                     },
                 )
             )
-        if (slide_text4 or "").strip():
+        for slide_number, slide_body in later_slide_texts.items():
+            if not (slide_body or "").strip():
+                continue
             slides_to_render.append(
                 (
-                    "slide4",
+                    f"slide{slide_number}",
                     _render_text_slide_png,
                     {
-                        "body_text": slide_text4,
+                        "body_text": slide_body,
                         "font_adjust_px": slide_three_font_adjust,
-                        "include_link_cta": last_cta_slide_number == 4,
-                        "link_cta_target": slide_three_cta_target,
-                        "link_cta_text": slide_three_cta_text,
-                    },
-                )
-            )
-        if (slide_text5 or "").strip():
-            slides_to_render.append(
-                (
-                    "slide5",
-                    _render_text_slide_png,
-                    {
-                        "body_text": slide_text5,
-                        "font_adjust_px": slide_three_font_adjust,
-                        "include_link_cta": last_cta_slide_number == 5,
-                        "link_cta_target": slide_three_cta_target,
-                        "link_cta_text": slide_three_cta_text,
-                    },
-                )
-            )
-        if (slide_text6 or "").strip():
-            slides_to_render.append(
-                (
-                    "slide6",
-                    _render_text_slide_png,
-                    {
-                        "body_text": slide_text6,
-                        "font_adjust_px": slide_three_font_adjust,
-                        "include_link_cta": last_cta_slide_number == 6,
+                        "include_link_cta": last_cta_slide_number == slide_number,
                         "link_cta_target": slide_three_cta_target,
                         "link_cta_text": slide_three_cta_text,
                     },
@@ -3292,7 +3268,33 @@ def _upload_split_videos(media_link: str, preview_folder_id: str, mode: str = "f
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
-_SLIDE_JSON_KEYS = {"name", "text1", "text2", "text3", "text4", "text5", "text6", "slide_cta", "caption", "generated_caption"}
+# A carousel is text1 through text8. Slides past text3 are optional: each one is
+# shown, previewed and exported only when it actually carries copy, so a row with
+# three slides looks exactly as it did before text7 and text8 existed.
+SLIDE_TEXT_COUNT = 8
+SLIDE_TEXT_KEYS = tuple(f"text{n}" for n in range(1, SLIDE_TEXT_COUNT + 1))
+
+_SLIDE_JSON_KEYS = {"name", *SLIDE_TEXT_KEYS, "slide_cta", "caption", "generated_caption"}
+
+
+def _writable_slide_text_keys() -> tuple[str, ...]:
+    """The slide columns the loaded sheets module can actually write.
+
+    text7 and text8 are newer than some deployed copies of sheets.py, and
+    Streamlit can re-run this page against a module still cached in sys.modules
+    from before a deploy. Ask the function what it takes rather than passing the
+    extra slides blind, so an older module keeps working on six.
+    """
+    if update_carousel_fields is None:
+        return SLIDE_TEXT_KEYS
+    try:
+        accepted = inspect.signature(update_carousel_fields).parameters
+    except (TypeError, ValueError):
+        return SLIDE_TEXT_KEYS
+    return tuple(key for key in SLIDE_TEXT_KEYS if key in accepted)
+
+
+WRITABLE_SLIDE_TEXT_KEYS = _writable_slide_text_keys()
 
 
 def _build_create_post_slide_prompt() -> str:
@@ -3494,6 +3496,8 @@ def _create_post_from_prompt(
             "text4": slide_data.get("text4", ""),
             "text5": slide_data.get("text5", ""),
             "text6": slide_data.get("text6", ""),
+            "text7": slide_data.get("text7", ""),
+            "text8": slide_data.get("text8", ""),
             "slide_cta": slide_data.get("slide_cta", ""),
         })
     else:
@@ -5047,12 +5051,7 @@ def _render_workspace_slide_action_dialog(row: dict) -> None:
     ).strip()
     current_values = {
         "prompt": st.session_state.get(prompt_key, "") or _build_single_row_chatgpt_prompt(row),
-        "text1": _cell_text(row.get("text1")).strip(),
-        "text2": _cell_text(row.get("text2")).strip(),
-        "text3": _cell_text(row.get("text3")).strip(),
-        "text4": _cell_text(row.get("text4")).strip(),
-        "text5": _cell_text(row.get("text5")).strip(),
-        "text6": _cell_text(row.get("text6")).strip(),
+        **{key: _cell_text(row.get(key)).strip() for key in SLIDE_TEXT_KEYS},
         "caption": _cell_text(row.get("Generated Caption")).strip(),
         "custom_link": _cell_text(row.get("Slide CTA")).strip() or "Say LINK for more",
         "speaker": current_speaker_for_dialog,
@@ -5060,12 +5059,7 @@ def _render_workspace_slide_action_dialog(row: dict) -> None:
     }
     dialog_labels = {
         "prompt": "Generate prompt",
-        "text1": "Edit text 1",
-        "text2": "Edit text 2",
-        "text3": "Edit text 3",
-        "text4": "Edit text 4",
-        "text5": "Edit text 5",
-        "text6": "Edit text 6",
+        **{key: f"Edit text {key.removeprefix('text')}" for key in SLIDE_TEXT_KEYS},
         "caption": "Edit caption",
         "custom_link": "Edit custom link",
         "speaker": "Update name",
@@ -5104,17 +5098,18 @@ def _render_workspace_slide_action_dialog(row: dict) -> None:
             if action == "prompt":
                 st.session_state[prompt_key] = edited_value
                 st.session_state["workspace_success"] = f"Row {row_num}: slide prompt saved."
-            elif action in {"text1", "text2", "text3", "text4", "text5", "text6"}:
+            elif action in set(SLIDE_TEXT_KEYS):
                 if update_carousel_fields is None:
                     raise RuntimeError("Carousel field updates are not supported in this build.")
                 name = _cell_text(row.get("name")).strip()
-                text1 = _single_paragraph_slide_text(edited_value if action == "text1" else row.get("text1"))
-                text2 = _single_paragraph_slide_text(edited_value if action == "text2" else row.get("text2"))
-                text3 = _single_paragraph_slide_text(edited_value if action == "text3" else row.get("text3"))
-                text4 = _single_paragraph_slide_text(edited_value if action == "text4" else row.get("text4"))
-                text5 = _single_paragraph_slide_text(edited_value if action == "text5" else row.get("text5"))
-                text6 = _single_paragraph_slide_text(edited_value if action == "text6" else row.get("text6"))
-                update_carousel_fields(GOOGLE_SHEET_ID, row_num, name, text1, text2, text3, text4, text5, text6)
+                # Every slide is rewritten, so the untouched ones have to be carried
+                # over as they are — including text7 and text8, which would otherwise
+                # be left behind by an edit to an earlier slide.
+                texts = [
+                    _single_paragraph_slide_text(edited_value if action == key else row.get(key))
+                    for key in WRITABLE_SLIDE_TEXT_KEYS
+                ]
+                update_carousel_fields(GOOGLE_SHEET_ID, row_num, name, *texts)
                 st.session_state["workspace_success"] = f"Row {row_num}: {dialog_labels[action].lower()} saved."
             elif action == "quote":
                 if update_quote is None:
@@ -5478,6 +5473,19 @@ def _render_reel_lines_headlines_tab(
     _tab_copy_preview(caption_value)
     st.caption("Comment CTA")
     st.code(top_comment or "(none)", language=None)
+
+
+def _last_slide_with_text(slide_texts: dict[int, str]) -> int:
+    """Highest-numbered slide that has copy — where the link CTA belongs.
+
+    Falls back to the lowest number offered so a carousel whose later slides are
+    all empty still puts the CTA on slide 3, the way it always has.
+    """
+    numbered = sorted(slide_texts)
+    for number in reversed(numbered):
+        if (slide_texts[number] or "").strip():
+            return number
+    return numbered[0]
 
 
 def _render_caption_tab_headlines(
@@ -5859,6 +5867,8 @@ def _copy_tabs(
     slide_text4: str = "",
     slide_text5: str = "",
     slide_text6: str = "",
+    slide_text7: str = "",
+    slide_text8: str = "",
     prompt_row: dict | None = None,
     thumbnail_link: str = "",
     slide_cta_options: dict[str, str] | None = None,
@@ -5967,9 +5977,14 @@ def _copy_tabs(
         slide_two_cta_key = f"workspace_slide_two_cta_row_{row_num}"
         slide_three_font_adjust_key = f"workspace_slide_three_preview_font_adjust_{row_num}"
         slide_three_cta_key = f"workspace_slide_three_cta_row_{row_num}"
-        slide_four_font_adjust_key = f"workspace_slide_four_preview_font_adjust_{row_num}"
-        slide_five_font_adjust_key = f"workspace_slide_five_preview_font_adjust_{row_num}"
-        slide_six_font_adjust_key = f"workspace_slide_six_preview_font_adjust_{row_num}"
+        # Slides 4 and up share one shape, so their font keys are built rather
+        # than spelled out. The first three keep their own names because slide 1
+        # and slide 2 carry extra controls.
+        _later_slide_words = {4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight"}
+        later_slide_font_adjust_keys = {
+            number: f"workspace_slide_{word}_preview_font_adjust_{row_num}"
+            for number, word in _later_slide_words.items()
+        }
         slide_merge_key = f"workspace_slide_merge_row_{row_num}"
         slide_merge_original_key = f"workspace_slide_merge_original_t3_{row_num}"
         slide_quote_show_key = f"workspace_slide_quote_show_{row_num}"
@@ -5993,12 +6008,10 @@ def _copy_tabs(
             st.session_state[slide_two_cta_key] = current_slide_two_cta
         _raw_s3_font = st.session_state.get(slide_three_font_adjust_key)
         current_slide_three_font_adjust = -2 if _raw_s3_font is None else int(_raw_s3_font)
-        _raw_s4_font = st.session_state.get(slide_four_font_adjust_key)
-        current_slide_four_font_adjust = -2 if _raw_s4_font is None else int(_raw_s4_font)
-        _raw_s5_font = st.session_state.get(slide_five_font_adjust_key)
-        current_slide_five_font_adjust = -2 if _raw_s5_font is None else int(_raw_s5_font)
-        _raw_s6_font = st.session_state.get(slide_six_font_adjust_key)
-        current_slide_six_font_adjust = -2 if _raw_s6_font is None else int(_raw_s6_font)
+        later_slide_font_adjusts = {}
+        for _number, _key in later_slide_font_adjust_keys.items():
+            _raw_font = st.session_state.get(_key)
+            later_slide_font_adjusts[_number] = -2 if _raw_font is None else int(_raw_font)
         _known_cta_options = {"more", "act", "article", "substack", "petition", "video", "custom link", "hidden"}
         _is_article = _is_article_url(source_url)
         default_slide_three_cta_option = "article" if (_is_article or _is_candidate_article_row(prompt_row or {})) else "hidden"
@@ -6039,16 +6052,16 @@ def _copy_tabs(
             slide_handle = pipeline_caption_ops.normalize_slide_name(
                 slide_name, "post", "", username
             )
-        last_cta_slide_number = 3
-        for candidate_slide_number, candidate_text in (
-            (6, slide_text6),
-            (5, slide_text5),
-            (4, slide_text4),
-            (3, slide_text3),
-        ):
-            if (candidate_text or "").strip():
-                last_cta_slide_number = candidate_slide_number
-                break
+        later_slide_texts = {
+            4: slide_text4,
+            5: slide_text5,
+            6: slide_text6,
+            7: slide_text7,
+            8: slide_text8,
+        }
+        last_cta_slide_number = _last_slide_with_text(
+            {3: slide_text3, **later_slide_texts}
+        )
         st.markdown('<div class="workspace-row-slides-anchor"></div>', unsafe_allow_html=True)
         if (slide_text1 or "").strip():
             _render_slide_one_preview(
@@ -6273,77 +6286,45 @@ def _copy_tabs(
                     with _s3_cols[3]:
                         _drive_label = "Open Reel in Drive" if media_type.lower() == "reel" else "Open in Drive"
                         st.link_button(_drive_label, media_link, width="stretch")
-        if (slide_text4 or "").strip():
+        # Slides 4 through 8 are all the same panel: the preview, A-/A+, and an
+        # edit button. Each is drawn only when it has copy, so adding text7 or
+        # text8 to a row is all it takes to get two more slides here.
+        for slide_number, slide_body in later_slide_texts.items():
+            if not (slide_body or "").strip():
+                continue
+            slide_font_adjust_key = later_slide_font_adjust_keys[slide_number]
+            slide_font_adjust = later_slide_font_adjusts[slide_number]
             _render_text_slide_preview(
-                4,
-                slide_text4,
-                current_slide_four_font_adjust,
-                include_link_cta=last_cta_slide_number == 4 and current_slide_three_cta != "hidden",
+                slide_number,
+                slide_body,
+                slide_font_adjust,
+                include_link_cta=(
+                    last_cta_slide_number == slide_number and current_slide_three_cta != "hidden"
+                ),
                 link_cta_target=current_slide_three_cta,
                 link_cta_text=_slide_three_cta_text(current_slide_three_cta, top_comment),
             )
             with st.container():
-                st.markdown('<div class="workspace-slide4-ctrl-anchor"></div>', unsafe_allow_html=True)
-                _s4_cols = st.columns(3, gap="small")
-                with _s4_cols[0]:
-                    if st.button("A-", key=f"workspace_preview_{row_num}_slide4_font_down", width="stretch"):
-                        st.session_state[slide_four_font_adjust_key] = max(-80, current_slide_four_font_adjust - 2)
+                st.markdown(
+                    f'<div class="workspace-slide{slide_number}-ctrl-anchor"></div>',
+                    unsafe_allow_html=True,
+                )
+                slide_columns = st.columns(3, gap="small")
+                with slide_columns[0]:
+                    if st.button("A-", key=f"workspace_preview_{row_num}_slide{slide_number}_font_down", width="stretch"):
+                        st.session_state[slide_font_adjust_key] = max(-80, slide_font_adjust - 2)
                         _rerun_workspace("Edit")
-                with _s4_cols[1]:
-                    if st.button("A+", key=f"workspace_preview_{row_num}_slide4_font_up", width="stretch"):
-                        st.session_state[slide_four_font_adjust_key] = min(200, current_slide_four_font_adjust + 2)
+                with slide_columns[1]:
+                    if st.button("A+", key=f"workspace_preview_{row_num}_slide{slide_number}_font_up", width="stretch"):
+                        st.session_state[slide_font_adjust_key] = min(200, slide_font_adjust + 2)
                         _rerun_workspace("Edit")
-                with _s4_cols[2]:
-                    if st.button("Edit Text 4", key=f"workspace_inline_edit_text4_{row_num}", width="stretch"):
-                        _open_workspace_slide_action_dialog(row_num, "text4")
-                        _rerun_workspace("Edit")
-        if (slide_text5 or "").strip():
-            _render_text_slide_preview(
-                5,
-                slide_text5,
-                current_slide_five_font_adjust,
-                include_link_cta=last_cta_slide_number == 5 and current_slide_three_cta != "hidden",
-                link_cta_target=current_slide_three_cta,
-                link_cta_text=_slide_three_cta_text(current_slide_three_cta, top_comment),
-            )
-            with st.container():
-                st.markdown('<div class="workspace-slide5-ctrl-anchor"></div>', unsafe_allow_html=True)
-                _s5_cols = st.columns(3, gap="small")
-                with _s5_cols[0]:
-                    if st.button("A-", key=f"workspace_preview_{row_num}_slide5_font_down", width="stretch"):
-                        st.session_state[slide_five_font_adjust_key] = max(-80, current_slide_five_font_adjust - 2)
-                        _rerun_workspace("Edit")
-                with _s5_cols[1]:
-                    if st.button("A+", key=f"workspace_preview_{row_num}_slide5_font_up", width="stretch"):
-                        st.session_state[slide_five_font_adjust_key] = min(200, current_slide_five_font_adjust + 2)
-                        _rerun_workspace("Edit")
-                with _s5_cols[2]:
-                    if st.button("Edit Text 5", key=f"workspace_inline_edit_text5_{row_num}", width="stretch"):
-                        _open_workspace_slide_action_dialog(row_num, "text5")
-                        _rerun_workspace("Edit")
-        if (slide_text6 or "").strip():
-            _render_text_slide_preview(
-                6,
-                slide_text6,
-                current_slide_six_font_adjust,
-                include_link_cta=last_cta_slide_number == 6 and current_slide_three_cta != "hidden",
-                link_cta_target=current_slide_three_cta,
-                link_cta_text=_slide_three_cta_text(current_slide_three_cta, top_comment),
-            )
-            with st.container():
-                st.markdown('<div class="workspace-slide6-ctrl-anchor"></div>', unsafe_allow_html=True)
-                _s6_cols = st.columns(3, gap="small")
-                with _s6_cols[0]:
-                    if st.button("A-", key=f"workspace_preview_{row_num}_slide6_font_down", width="stretch"):
-                        st.session_state[slide_six_font_adjust_key] = max(-80, current_slide_six_font_adjust - 2)
-                        _rerun_workspace("Edit")
-                with _s6_cols[1]:
-                    if st.button("A+", key=f"workspace_preview_{row_num}_slide6_font_up", width="stretch"):
-                        st.session_state[slide_six_font_adjust_key] = min(200, current_slide_six_font_adjust + 2)
-                        _rerun_workspace("Edit")
-                with _s6_cols[2]:
-                    if st.button("Edit Text 6", key=f"workspace_inline_edit_text6_{row_num}", width="stretch"):
-                        _open_workspace_slide_action_dialog(row_num, "text6")
+                with slide_columns[2]:
+                    if st.button(
+                        f"Edit Text {slide_number}",
+                        key=f"workspace_inline_edit_text{slide_number}_{row_num}",
+                        width="stretch",
+                    ):
+                        _open_workspace_slide_action_dialog(row_num, f"text{slide_number}")
                         _rerun_workspace("Edit")
         with st.popover("Slide actions", key=f"slide_actions_popover_{row_num}_{st.session_state.get('_workspace_rerun_nonce', 0)}", use_container_width=True):
             if st.button("Generate prompt", key=f"workspace_row_slides_build_{row_num}", width="stretch"):
@@ -7409,6 +7390,18 @@ def _generate_quote_for_row(row: dict) -> str:
 def _write_specific_carousel_fields(row_number: int, carousel: dict[str, str]) -> None:
     if update_carousel_fields is None:
         return
+    # text7 and text8 are only written when the caller actually has a value for
+    # them: a carousel dict that predates the extra slides leaves whatever is on
+    # the row alone rather than blanking it.
+    later_texts = {
+        key: (
+            _single_paragraph_slide_text(carousel[key])
+            if carousel.get(key) is not None
+            else None
+        )
+        for key in ("text7", "text8")
+        if key in WRITABLE_SLIDE_TEXT_KEYS
+    }
     update_carousel_fields(
         GOOGLE_SHEET_ID,
         row_number,
@@ -7419,6 +7412,7 @@ def _write_specific_carousel_fields(row_number: int, carousel: dict[str, str]) -
         _single_paragraph_slide_text(carousel.get("text4")),
         _single_paragraph_slide_text(carousel.get("text5")),
         _single_paragraph_slide_text(carousel.get("text6")),
+        **later_texts,
     )
     quote = (carousel.get("quote") or "").strip().strip('"').strip("'").rstrip(".")
     if quote and update_quote is not None:
@@ -8104,15 +8098,7 @@ def _row_ready_for_chatgpt(row: dict) -> bool:
     status = _cell_text(row.get("Status")).strip().lower()
     if status.startswith("error") or status == "slides":
         return False
-    slide_fields = (
-        "text1",
-        "text2",
-        "text3",
-        "text4",
-        "text5",
-        "text6",
-    )
-    if any(_cell_text(row.get(field)).strip() for field in slide_fields):
+    if any(_cell_text(row.get(field)).strip() for field in SLIDE_TEXT_KEYS):
         return False
     normalized_row = dict(row)
     normalized_row["Instagram URL"] = _cell_text(row.get("Instagram URL")).strip()
@@ -8343,7 +8329,7 @@ def _create_generic_post_from_result(original_row: dict, raw_text: str) -> int:
     return new_row_num
 
 
-_SLIDE_KEYS = ["row_number", "name", "quote", "text1", "text2", "text3", "text4", "text5", "text6", "generated_caption"]
+_SLIDE_KEYS = ["row_number", "name", "quote", *SLIDE_TEXT_KEYS, "generated_caption"]
 
 
 def _normalize_slide_paste(text: str) -> str:
@@ -8451,7 +8437,7 @@ def _extract_json_payload(raw_text: str):
         return repaired
 
     def _parse_by_known_keys(candidate: str) -> list:
-        known = ["row_number", "name", "quote", "text1", "text2", "text3", "text4", "text5", "text6", "generated_caption"]
+        known = list(_SLIDE_KEYS)
         key_pat = '"(' + "|".join(re.escape(k) for k in known) + r')"\s*:\s*'
         raw = candidate.strip().lstrip("[").rstrip("]")
         blocks = re.split(r"}\s*,\s*{", raw)
@@ -8603,16 +8589,10 @@ def _apply_slide_result_to_specific_row(
         "text4": _single_paragraph_slide_text(selected.get("text4")),
         "text5": _single_paragraph_slide_text(selected.get("text5")),
         "text6": _single_paragraph_slide_text(selected.get("text6")),
+        "text7": _single_paragraph_slide_text(selected.get("text7")),
+        "text8": _single_paragraph_slide_text(selected.get("text8")),
     }
-    if not (
-        carousel["name"]
-        or carousel["text1"]
-        or carousel["text2"]
-        or carousel["text3"]
-        or carousel["text4"]
-        or carousel["text5"]
-        or carousel["text6"]
-    ):
+    if not (carousel["name"] or any(carousel[key] for key in SLIDE_TEXT_KEYS)):
         return 0, [f"Row {row_number}: no name or slide text values were provided."]
 
     _write_specific_carousel_fields(row_number, carousel)
@@ -8660,14 +8640,11 @@ def _apply_chatgpt_handoff_results(sheet_id: str, raw_text: str) -> tuple[int, l
             _cell_text(row.get("Speaker Name")),
             _cell_text(row.get("Source Username")),
         )
-        text1 = _single_paragraph_slide_text(item.get("text1"))
-        text2 = _single_paragraph_slide_text(item.get("text2"))
-        text3 = _single_paragraph_slide_text(item.get("text3"))
-        text4 = _single_paragraph_slide_text(item.get("text4"))
-        text5 = _single_paragraph_slide_text(item.get("text5"))
-        text6 = _single_paragraph_slide_text(item.get("text6"))
+        texts = [
+            _single_paragraph_slide_text(item.get(key)) for key in WRITABLE_SLIDE_TEXT_KEYS
+        ]
 
-        if not (name or text1 or text2 or text3 or text4 or text5 or text6):
+        if not (name or any(texts)):
             issues.append(
                 f"Item {index} / row {row_number}: no name or slide text values were provided."
             )
@@ -8675,7 +8652,7 @@ def _apply_chatgpt_handoff_results(sheet_id: str, raw_text: str) -> tuple[int, l
 
         quote = _cell_text(item.get("quote")).strip().strip('"').strip("'").strip().rstrip(".")
         if update_carousel_fields is not None:
-            update_carousel_fields(sheet_id, row_number, name, text1, text2, text3, text4, text5, text6)
+            update_carousel_fields(sheet_id, row_number, name, *texts)
         if quote and update_quote is not None:
             update_quote(sheet_id, row_number, quote)
         updated_count += 1
@@ -9320,6 +9297,8 @@ if active_section_tab == "Home":
                         _cell_text(row.get("text4")).strip(),
                         _cell_text(row.get("text5")).strip(),
                         _cell_text(row.get("text6")).strip(),
+                        _cell_text(row.get("text7")).strip(),
+                        _cell_text(row.get("text8")).strip(),
                         row,
                         _cell_text(row.get("Thumbnail Drive Link")).strip(),
                         slide_cta_options,
