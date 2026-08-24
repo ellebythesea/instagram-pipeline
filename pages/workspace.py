@@ -228,7 +228,12 @@ EDITABLE_STATUSES = {"ingested", "done", "slides"}
 # An article row whose page could not be read keeps this status prefix followed by
 # the reason. The row is still created so the text can be pasted in by hand from
 # the opened article, or from anywhere else.
-NEEDS_SOURCE_PREFIX = sheet_ops.NEEDS_SOURCE_PREFIX
+#
+# Spelled out here rather than read off sheets.py: Streamlit can re-run this page
+# against a copy of an imported module still cached in sys.modules, so reading a
+# newly added attribute off one at import time crashes the whole app until the
+# next full restart. Keep this in step with NEEDS_SOURCE_PREFIX in sheets.py.
+NEEDS_SOURCE_PREFIX = "needs source"
 TRANSCRIPT_SIZE_WARNING_BYTES = 100 * 1024 * 1024
 EDITOR_INITIAL_RENDER_LIMIT = 12
 WORKSPACE_SLIDES_BATCH_SIZE = 4
