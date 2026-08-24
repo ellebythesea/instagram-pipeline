@@ -571,8 +571,8 @@ than failing the row, `article_source.py` recovers in this order:
 4. **Search snippets** — only if no alternate article can be read either, the
    Serper snippets are stitched into source text, as before.
 
-If nothing topically relevant comes back, the row errors instead of being
-captioned from an unrelated story.
+If nothing topically relevant comes back, the row is still created — it just
+needs the text by hand. See [Pasting article text by hand](#pasting-article-text-by-hand).
 
 When step 3 supplies the text:
 
@@ -586,8 +586,36 @@ When step 3 supplies the text:
 The payload carries `alternate_source: True`, `source_url` (the article that was
 read) and `requested_url` (the link you pasted) if you need them elsewhere.
 
-Everything here needs `SERPER_API_KEY`. Without it, unreadable articles fail as
-they always did.
+Everything here needs `SERPER_API_KEY`. Without it, the chain stops after step 2
+and the row goes straight to the paste step below.
+
+### Pasting article text by hand
+
+When every automatic route fails, the row is **not** lost. Ingest still creates the
+post with:
+
+- `Media Type` = `article`
+- `Source Username` = the domain of the link you pasted
+- `Status` = `needs source: [reason]`, e.g.
+  `needs source: Article access blocked or paywalled (403).`
+
+The row opens in the Edit tab like any other, and carries an extra panel under the
+post header:
+
+- the reason it could not be read
+- an `Open article link` button
+- a text area for the article text — or any other context you want the post written
+  from, pasted from anywhere
+- a `Build post from this text` button
+
+Submitting writes the text to `Original Caption`, `Transcript`, and `Caption Context`,
+flips the row to `ingested`, and then runs the same generation the automatic path
+would have: caption first, then slide copy. The row lands on `done` with slide text,
+exactly as if the article had been readable.
+
+The pasted text is the only source used, so paste the body of the story rather than a
+headline if you want a caption with substance. The grid shows a `!` badge on rows
+still waiting for text.
 
 ## Useful Commands
 

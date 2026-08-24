@@ -38,10 +38,12 @@ from drive import (
     upload_to_drive,
 )
 from ingest_helpers import build_filename_prefix, download_file, upload_media_bundle
+from utils.error_labels import describe_error
 import pipeline_caption as pipeline_caption_ops
 from post_scraper import process_url as process_post_url
 from reel_scraper import process_url as process_reel_url
 from sheets import (
+    NEEDS_SOURCE_PREFIX,
     get_all_rows,
     get_pending_rows,
     update_caption,
@@ -349,6 +351,14 @@ def _ingest_row(row: dict) -> dict:
             "status": "ingested",
         }
     except Exception as e:
+        if _is_article_url(url):
+            # Keep the post so the text can be pasted in by hand from the app.
+            return {
+                "username": urlparse(url).netloc.replace("www.", ""),
+                "media_type": "article", "photo_count": "",
+                "media_link": "", "thumbnail_link": "", "original_caption": "",
+                "transcript": "", "status": f"{NEEDS_SOURCE_PREFIX}: {describe_error(e)}",
+            }
         return {
             "username": "", "media_type": "", "photo_count": "",
             "media_link": "", "thumbnail_link": "", "original_caption": "",
@@ -460,6 +470,12 @@ def _ingest_and_caption_row(sheet_id: str, row: dict) -> bool:
             else:
                 print(f"  Row {row_num}: ingested ({result['media_type']}); waiting for transcript before captioning")
             return True
+        elif result["status"].startswith(NEEDS_SOURCE_PREFIX):
+            print(
+                f"  Row {row_num}: could not read the article — open the row in the app "
+                "and paste the text to build the post."
+            )
+            return False
         else:
             print(f"  Row {row_num}: {result['status']}")
             return False
