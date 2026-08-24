@@ -224,6 +224,11 @@ ORG_HASHTAG_MAP = {
 }
 
 EDITABLE_STATUSES = {"ingested", "done", "slides"}
+
+# An article row whose page could not be read keeps this status prefix followed by
+# the reason. The row is still created so the text can be pasted in by hand from
+# the opened article, or from anywhere else.
+NEEDS_SOURCE_PREFIX = sheet_ops.NEEDS_SOURCE_PREFIX
 TRANSCRIPT_SIZE_WARNING_BYTES = 100 * 1024 * 1024
 EDITOR_INITIAL_RENDER_LIMIT = 12
 WORKSPACE_SLIDES_BATCH_SIZE = 4
@@ -1819,12 +1824,17 @@ def _run_workspace_home_action(mode: str, link_value: str, org_hashtag: str = ""
     if mode == "Process this":
         with st.spinner("Processing link end-to-end..."):
             try:
-                row_number = _process_single_url_to_editor(links_to_process[0], selected_hashtag)
+                row_number, needs_source = _process_single_url_to_editor(
+                    links_to_process[0], selected_hashtag
+                )
             except Exception as e:
                 st.error(f"Process this failed: {describe_error(e)}")
                 return
         st.session_state["workspace_home_notice"] = (
-            f"Processed row {row_number}: ingest, caption, and slide text complete."
+            f"Created row {row_number}, but the article could not be read. "
+            "Open it in Edit and paste the article text to build the post."
+            if needs_source
+            else f"Processed row {row_number}: ingest, caption, and slide text complete."
         )
         st.session_state["workspace_selected_row_num"] = row_number
         st.query_params["workspace_row"] = str(row_number)
@@ -1926,6 +1936,7 @@ def _clear_row_num_keyed_state(row_num: int) -> None:
         f"workspace_preview_upload_links_{row_num}",
         f"workspace_quote_picker_{row_num}",
         f"workspace_quote_options_{row_num}",
+        f"workspace_article_source_paste_{row_num}",
     ]:
         st.session_state.pop(key, None)
     st.session_state.get("workspace_original_thumbnails", {}).pop(str(row_num), None)
@@ -2030,6 +2041,10 @@ def _is_editable_row(row: dict) -> bool:
     if status in EDITABLE_STATUSES:
         return True
 
+    # Article rows waiting on hand-pasted text are shown so the paste box is reachable.
+    if status.startswith(NEEDS_SOURCE_PREFIX):
+        return True
+
     # Rows without a URL and without an editable status are hidden.
     if not _cell_text(row.get("Instagram URL")).strip():
         return False
@@ -2053,6 +2068,32 @@ def _is_editable_row(row: dict) -> bool:
 def _default_editor_status(row: dict) -> str:
     generated_caption = (row.get("Generated Caption") or "").strip()
     return "done" if generated_caption else "ingested"
+
+
+def _row_needs_pasted_source(row: dict) -> bool:
+    """True when an article row has no source text to build a post from.
+
+    Covers both a fresh ingest failure (status prefix) and an article row that
+    lost its status some other way but still has nothing to write a caption from.
+    """
+    if _cell_text(row.get("Status")).strip().lower().startswith(NEEDS_SOURCE_PREFIX):
+        return True
+    if _cell_text(row.get("Media Type")).strip().lower() != "article":
+        return False
+    if _cell_text(row.get("Generated Caption")).strip():
+        return False
+    return not any(
+        _cell_text(row.get(field)).strip()
+        for field in ("Original Caption", "Transcript", "Caption Context")
+    )
+
+
+def _needs_source_reason(row: dict) -> str:
+    """The failure reason stored after the status prefix, if there is one."""
+    status = _cell_text(row.get("Status")).strip()
+    if not status.lower().startswith(NEEDS_SOURCE_PREFIX):
+        return ""
+    return status.partition(":")[2].strip()
 
 
 def _sort_editor_rows(rows: list[dict]) -> list[dict]:
@@ -2088,6 +2129,8 @@ def _grid_badges(row: dict) -> list[tuple[str, str]]:
         badges.append(("S", "Slide text complete"))
     if status == "skipped":
         badges.append(("Skip", "Skipped"))
+    if _row_needs_pasted_source(row):
+        badges.append(("!", "Needs pasted article text"))
     try:
         photo_count = int(row.get("Photo Count") or 0)
     except Exception:
@@ -3804,13 +3847,21 @@ def _render_create_from_link_dialog() -> None:
     ):
         try:
             with st.spinner("Processing link end-to-end…"):
-                row_num = _process_single_url_to_editor(url)
-            with st.spinner("Splitting video into 60-second segments…"):
-                split = _split_row_video_into_segments(row_num)
+                row_num, needs_source = _process_single_url_to_editor(url)
+            if needs_source:
+                split = False
+            else:
+                with st.spinner("Splitting video into 60-second segments…"):
+                    split = _split_row_video_into_segments(row_num)
         except Exception as e:
             st.error(f"Could not create post from link: {describe_error(e)}")
         else:
-            if split:
+            if needs_source:
+                notice = (
+                    f"Created row {row_num}, but the article could not be read. "
+                    "Paste the article text on the row to build the post."
+                )
+            elif split:
                 notice = (
                     f"Created row {row_num}: ingest, caption, slide text, "
                     "and 60-second video segments complete."
@@ -5156,6 +5207,51 @@ def _render_workspace_thumbnail_dialog(row: dict) -> None:
 
     if st.button("Cancel", key=f"workspace_thumbnail_cancel_{row_num}", width="stretch"):
         _close_workspace_thumbnail_dialog(row)
+        _rerun_workspace("Edit")
+
+
+def _render_article_source_paste_panel(row: dict) -> None:
+    """Paste box shown under an article post whose page could not be read."""
+    row_num = row["row_number"]
+    url = _cell_text(row.get("Instagram URL")).strip()
+    reason = _needs_source_reason(row)
+    paste_key = f"workspace_article_source_paste_{row_num}"
+
+    st.warning(
+        f"Could not read this article automatically — {reason}"
+        if reason
+        else "Could not read this article automatically."
+    )
+    st.caption(
+        "Open the link, copy the article text, and paste it below. Anything else that "
+        "describes the story works too. The caption and slide copy are built from whatever you paste."
+    )
+    if url:
+        st.link_button("Open article link", url, width="stretch")
+
+    st.text_area(
+        "Article text",
+        key=paste_key,
+        height=220,
+        placeholder="Paste the article text, or any other context to write the post from…",
+        label_visibility="collapsed",
+    )
+    pasted = _cell_text(st.session_state.get(paste_key, "")).strip()
+
+    if st.button(
+        "Build post from this text",
+        key=f"workspace_article_source_submit_{row_num}",
+        type="primary",
+        width="stretch",
+        disabled=not pasted,
+    ):
+        try:
+            _apply_pasted_article_source(row, pasted)
+        except Exception as e:
+            st.session_state[f"workspace_row_error_{row_num}"] = f"Row {row_num}: {describe_error(e)}"
+        else:
+            st.session_state.pop(paste_key, None)
+            _queue_workspace_action(row_num, "article_source")
         _rerun_workspace("Edit")
 
 
@@ -6676,6 +6772,14 @@ def _process_pending_rows_from_sheet() -> int:
             else:
                 if result["status"].startswith("error"):
                     status_box.update(label=f"Row {row_num}: {result['status']}", state="error")
+                elif result["status"].startswith(NEEDS_SOURCE_PREFIX):
+                    status_box.update(
+                        label=(
+                            f"Row {row_num}: could not read the article - "
+                            "open the row in Edit and paste the text to build the post."
+                        ),
+                        state="error",
+                    )
                 else:
                     action_word = "ingested + captioned" if row_ready_for_caption(ingested_row) else "ingested"
                     display_name = f"@{result['username']}" if result["username"] and result["media_type"] != "article" else result["username"]
@@ -6717,12 +6821,18 @@ def _append_url_and_get_new_row(url: str, required_hashtags: str = "") -> dict:
     return max(new_rows, key=lambda row: int(row.get("row_number") or 0))
 
 
-def _process_single_url_to_editor(url: str, required_hashtags: str = "") -> int:
+def _process_single_url_to_editor(url: str, required_hashtags: str = "") -> tuple[int, bool]:
+    """Ingest one URL into a new editor row.
+
+    Returns the row number and whether the row is waiting on hand-pasted source
+    text, which happens when an article page could not be read.
+    """
     row = _append_url_and_get_new_row(url, required_hashtags)
     row_num = int(row["row_number"])
 
     result = _ingest_row(row)
-    if result["status"] != "ingested":
+    needs_source = result["status"].startswith(NEEDS_SOURCE_PREFIX)
+    if result["status"] != "ingested" and not needs_source:
         raise ValueError(result["status"])
 
     default_top_comment = ""
@@ -6754,6 +6864,9 @@ def _process_single_url_to_editor(url: str, required_hashtags: str = "") -> int:
         "",
     )
 
+    if needs_source:
+        return row_num, True
+
     working_row = _reload_row_from_sheet(row_num)
     media_type = _cell_text(working_row.get("Media Type")).strip().lower()
     if _is_reel_url(row_url):
@@ -6775,7 +6888,7 @@ def _process_single_url_to_editor(url: str, required_hashtags: str = "") -> int:
             carousel = _generate_reliable_carousel_copy(working_row, model="gpt-5.2")
             _write_specific_carousel_fields(row_num, carousel)
 
-    return row_num
+    return row_num, False
 
 
 def _split_row_video_into_segments(row_num: int, mode: str = "fill") -> bool:
@@ -6841,6 +6954,19 @@ def _ingest_row(row: dict) -> dict:
             "status": "ingested",
         }
     except Exception as e:
+        if _is_article_url(url):
+            # Keep the post: the text can be pasted in by hand from the opened
+            # article, or from anywhere else, instead of losing the row.
+            return {
+                "username": urlparse(url).netloc.replace("www.", ""),
+                "media_type": "article",
+                "photo_count": "",
+                "media_link": "",
+                "thumbnail_link": "",
+                "original_caption": "",
+                "transcript": "",
+                "status": f"{NEEDS_SOURCE_PREFIX}: {describe_error(e)}",
+            }
         return {
             "username": "",
             "media_type": "",
@@ -7309,6 +7435,61 @@ def _process_photo_post_online(row: dict) -> None:
     _verify_carousel_fields_saved(row_num)
 
 
+def _apply_pasted_article_source(row: dict, pasted_text: str) -> None:
+    """Save hand-pasted text onto an article row that could not be read.
+
+    Writes the text as both the original caption and the transcript so every
+    downstream step — caption, slide copy, quotes — has the same source, and
+    promotes the row out of the needs-source state.
+    """
+    text = _cell_text(pasted_text).strip()
+    if not text:
+        raise ValueError("Paste the article text first.")
+
+    row_num = row["row_number"]
+    url = _cell_text(row.get("Instagram URL")).strip()
+    username = (
+        _cell_text(row.get("Source Username")).strip()
+        or (urlparse(url).netloc.replace("www.", "") if url else "")
+    )
+
+    updated_row = dict(row)
+    updated_row["Original Caption"] = text
+    updated_row["Transcript"] = text
+    inputs = _current_row_caption_inputs(updated_row)
+
+    update_ingest_result(
+        GOOGLE_SHEET_ID,
+        row_num,
+        username,
+        "article",
+        "",
+        "",
+        _cell_text(row.get("Thumbnail Drive Link")).strip(),
+        text,
+        text,
+        "ingested",
+    )
+    update_metadata(
+        GOOGLE_SHEET_ID,
+        row_num,
+        inputs["Caption Context"] or text,
+        inputs["Speaker Name"],
+        inputs["Required Hashtags"],
+        inputs["Top Comment"],
+        "",
+    )
+
+
+def _generate_post_from_source_text(row: dict) -> None:
+    """Build caption and slide copy for a row whose source text is already saved.
+
+    Shares the photo-post path: for a non-photo row the OCR enrichment step is a
+    no-op, so what runs is caption generation followed by carousel copy.
+    """
+    _process_photo_post_online(row)
+
+
 def _queue_workspace_action(row_number: int, action: str) -> None:
     queue = st.session_state.setdefault("workspace_action_queue", [])
     queue.append({"row_number": row_number, "action": action})
@@ -7689,6 +7870,12 @@ def _process_next_workspace_action(for_row_number: int | None = None) -> None:
                 preview_folder_id, _, _ = _ensure_preview_folder(row_number, username, handle_text, media_link)
                 _upload_split_videos(media_link, preview_folder_id, mode="fit")
                 success_message = f"Row {row_number}: video scaled to fit and uploaded to Drive."
+                _s.update(label=success_message, state="complete")
+        elif action == "article_source":
+            with st.status(f"Building post for row {row_number}…", expanded=True) as _s:
+                st.write("Generating caption and slide copy from the pasted text…")
+                _generate_post_from_source_text(row)
+                success_message = f"Row {row_number}: caption and slide copy built from the pasted text."
                 _s.update(label=success_message, state="complete")
         else:
             raise ValueError(f"Unknown action: {action}")
@@ -8942,6 +9129,9 @@ if active_section_tab == "Home":
                     if row_error:
                         st.error(row_error)
                     _process_next_workspace_action(for_row_number=row_num)
+
+                    if _row_needs_pasted_source(row):
+                        _render_article_source_paste_panel(row)
 
                     _copy_tabs(
                         row_num,

@@ -343,6 +343,12 @@ def get_all_rows(sheet_id: str) -> list[dict]:
     return [row.copy() for row in records]
 
 
+# An article row whose page could not be read keeps this status prefix followed by
+# the reason, e.g. "needs source: Article access blocked or paywalled (403)". The
+# row still exists so the text can be pasted in by hand from the app.
+NEEDS_SOURCE_PREFIX = "needs source"
+
+
 def get_pending_rows(sheet_id: str) -> list[dict]:
     """Rows where Status is empty and URL is present."""
     return [

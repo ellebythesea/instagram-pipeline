@@ -35,7 +35,9 @@ Main Instagram pipeline. 24 columns A–X. **The app restores this header row au
 | W | text5 |
 | X | text6 |
 
-**Status values:** empty (pending), `ingested`, `done`, `slides`, `error: [reason]`
+**Status values:** empty (pending), `ingested`, `done`, `slides`, `needs source: [reason]`, `error: [reason]`
+
+`needs source: [reason]` marks an article row whose page could not be read. The row is still created so the article text can be pasted in by hand on the Edit tab, which builds the caption and slide copy and moves the row to `ingested`.
 
 **Media Type values:** `post`, `reel`, `article`
 
