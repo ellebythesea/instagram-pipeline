@@ -2055,8 +2055,13 @@ def _is_editable_row(row: dict) -> bool:
     if status in EDITABLE_STATUSES:
         return True
 
-    # Article rows waiting on hand-pasted text are shown so the paste box is reachable.
+    # Article rows waiting on hand-pasted text are shown so the paste box is
+    # reachable. That includes rows left on "error:" by an ingest from before the
+    # needs-source status existed — nothing else would ever surface them again,
+    # so the post stays stranded and invisible in the grid.
     if status.startswith(NEEDS_SOURCE_PREFIX):
+        return True
+    if status.startswith("error") and _is_article_url(_cell_text(row.get("Instagram URL")).strip()):
         return True
 
     # Rows without a URL and without an editable status are hidden.
@@ -2084,15 +2089,24 @@ def _default_editor_status(row: dict) -> str:
     return "done" if generated_caption else "ingested"
 
 
+def _is_article_row(row: dict) -> bool:
+    """True for an article post, including one whose ingest never set a media type."""
+    media_type = _cell_text(row.get("Media Type")).strip().lower()
+    if media_type:
+        return media_type == "article"
+    return _is_article_url(_cell_text(row.get("Instagram URL")).strip())
+
+
 def _row_needs_pasted_source(row: dict) -> bool:
     """True when an article row has no source text to build a post from.
 
-    Covers both a fresh ingest failure (status prefix) and an article row that
-    lost its status some other way but still has nothing to write a caption from.
+    Covers a fresh ingest failure (the needs-source status), an older failure
+    left on "error:", and an article row that lost its status some other way but
+    still has nothing to write a caption from.
     """
     if _cell_text(row.get("Status")).strip().lower().startswith(NEEDS_SOURCE_PREFIX):
         return True
-    if _cell_text(row.get("Media Type")).strip().lower() != "article":
+    if not _is_article_row(row):
         return False
     if _cell_text(row.get("Generated Caption")).strip():
         return False
@@ -2103,9 +2117,10 @@ def _row_needs_pasted_source(row: dict) -> bool:
 
 
 def _needs_source_reason(row: dict) -> str:
-    """The failure reason stored after the status prefix, if there is one."""
+    """Why the article could not be read, from either status prefix."""
     status = _cell_text(row.get("Status")).strip()
-    if not status.lower().startswith(NEEDS_SOURCE_PREFIX):
+    lowered = status.lower()
+    if not (lowered.startswith(NEEDS_SOURCE_PREFIX) or lowered.startswith("error")):
         return ""
     return status.partition(":")[2].strip()
 
