@@ -5480,6 +5480,58 @@ def _render_reel_lines_headlines_tab(
     st.code(top_comment or "(none)", language=None)
 
 
+def _render_caption_tab_headlines(
+    row_num: int,
+    source_text: str,
+    caption_value: str,
+    speaker_name: str,
+    username: str,
+) -> None:
+    """Headlines button for the Caption tab, plus whatever it last produced.
+
+    Same ten clickbait headlines a Reel Lines row carries, but generated on
+    demand for an ordinary row and kept in session state so they survive the
+    reruns the rest of the tab triggers. They are not written to the sheet —
+    this is a copy-and-go list.
+    """
+    headlines_key = f"workspace_caption_headlines_{row_num}"
+    error_key = f"workspace_caption_headlines_error_{row_num}"
+    source_text = (source_text or "").strip()
+
+    if st.button(
+        "Headlines",
+        key=f"workspace_caption_headlines_btn_{row_num}",
+        width="stretch",
+        help=f"Write {REEL_LINES_HEADLINE_COUNT} clickbait headlines for this post",
+        disabled=not source_text,
+    ):
+        st.session_state.pop(error_key, None)
+        try:
+            with st.spinner("Writing headlines…"):
+                st.session_state[headlines_key] = _generate_reel_lines_headlines(
+                    source_text,
+                    caption=caption_value,
+                    speaker_name=speaker_name,
+                    username=username,
+                )
+        except Exception as error:
+            st.session_state.pop(headlines_key, None)
+            st.session_state[error_key] = describe_error(error)
+
+    if not source_text:
+        st.caption("No transcript or caption to write headlines from.")
+
+    error = st.session_state.get(error_key)
+    if error:
+        st.error(f"Could not write headlines — {error}")
+
+    headlines = st.session_state.get(headlines_key) or []
+    if headlines:
+        st.caption(f"{len(headlines)} headlines — copy the one you want")
+        for headline in headlines:
+            st.code(headline, language=None, wrap_lines=True)
+
+
 def _render_slide_one_preview(
     handle: str,
     headline: str,
@@ -5834,21 +5886,29 @@ def _copy_tabs(
         is_instagram=is_instagram,
     )
     if selected_content_tab == "Caption":
-        _tab_copy_preview(
-            _caption_tab_value(
-                generated,
-                original_caption,
-                username,
-                top_comment,
-                required_hashtags,
-                is_instagram,
-            )
+        caption_value = _caption_tab_value(
+            generated,
+            original_caption,
+            username,
+            top_comment,
+            required_hashtags,
+            is_instagram,
         )
+        _tab_copy_preview(caption_value)
         st.caption("Comment CTA")
         st.code(top_comment or "(none)", language=None)
         if st.button("Add custom link", key=f"workspace_caption_link_open_{row_num}", width="stretch"):
             st.session_state["workspace_link_dialog_row"] = row_num
             _rerun_workspace("Edit")
+        _render_caption_tab_headlines(
+            row_num,
+            # Prefer what was actually said; fall back to the post's own words.
+            (transcript or "").strip() or (original_caption or "").strip() or caption_value,
+            caption_value,
+            # A name typed on the row wins over the one stored on the sheet.
+            _cell_text(st.session_state.get(f"workspace_speaker_row_{row_num}", speaker_name)).strip(),
+            username,
+        )
         if prompt_row:
             st.markdown("<div style='padding-top:100px'></div>", unsafe_allow_html=True)
             if st.button(
