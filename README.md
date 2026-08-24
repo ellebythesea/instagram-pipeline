@@ -617,6 +617,28 @@ The pasted text is the only source used, so paste the body of the story rather t
 headline if you want a caption with substance. The grid shows a `!` badge on rows
 still waiting for text.
 
+### Video upload or transcription that seems stuck
+
+Every ffmpeg/ffprobe call and every OpenAI call in the media path is bounded, so a
+step that cannot finish now fails with a reason instead of sitting there:
+
+- **ffmpeg audio extraction** — 300s, then the original file is tried as-is
+- **Whisper transcription** — 240s, one attempt, no retry (a retry would re-upload
+  the whole file)
+- **Other ffmpeg work** — 60s for probes, 120s for single-frame grabs, 900s for
+  re-encodes and 60-second splits
+- **Chat completions in `caption.py`** — 60s, one retry
+
+Whisper also rejects uploads over 25MB. Audio extracted at the pipeline's settings
+runs about 4MB/hour, so a normal video is nowhere near it — that limit only bites
+when ffmpeg could not read the file and the raw video is sent instead. When that
+happens the app now says so and names the size rather than attempting the upload.
+
+If an upload still appears to do nothing, the file is most likely still travelling
+from the browser to the server. `maxUploadSize` in `.streamlit/config.toml` is 400MB,
+which is large enough that a phone video can take a while on a slow connection, and
+Streamlit shows no progress for that leg.
+
 ## Useful Commands
 
 Run the app locally in Streamlit:

@@ -118,6 +118,7 @@ def _crop_video_to_bytes(src_path: str, ratio_w: int, ratio_h: int) -> bytes:
         ],
         capture_output=True,
         text=True,
+        timeout=MEDIA_PROBE_TIMEOUT_SECONDS,
     )
     if result.returncode != 0 or not result.stdout.strip():
         raise RuntimeError(f"Could not read video dimensions: {result.stderr}")
@@ -146,7 +147,7 @@ def _crop_video_to_bytes(src_path: str, ratio_w: int, ratio_h: int) -> bytes:
             "-c:a", "copy",
             out_path,
         ]
-        proc = subprocess.run(cmd, capture_output=True)
+        proc = subprocess.run(cmd, capture_output=True, timeout=MEDIA_ENCODE_TIMEOUT_SECONDS)
         if proc.returncode != 0:
             raise RuntimeError(proc.stderr.decode(errors="replace"))
         with open(out_path, "rb") as f:
@@ -169,6 +170,7 @@ def _fit_video_to_bytes(src_path: str) -> bytes:
         ],
         capture_output=True,
         text=True,
+        timeout=MEDIA_PROBE_TIMEOUT_SECONDS,
     )
     if result.returncode != 0 or not result.stdout.strip():
         raise RuntimeError(f"Could not read video dimensions: {result.stderr}")
@@ -200,6 +202,7 @@ def _fit_video_to_bytes(src_path: str) -> bytes:
                 out_path,
             ],
             capture_output=True,
+            timeout=MEDIA_ENCODE_TIMEOUT_SECONDS,
         )
         if proc.returncode != 0:
             raise RuntimeError(proc.stderr.decode(errors="replace"))
@@ -222,6 +225,12 @@ ORG_HASHTAG_MAP = {
     "Good Influence": "#usapolitics",
     "American Experiment Project": "#usa",
 }
+
+# ffmpeg and ffprobe run against files people upload, so every call is bounded:
+# a malformed file otherwise stalls the whole Streamlit run with no feedback.
+MEDIA_PROBE_TIMEOUT_SECONDS = 60
+MEDIA_FRAME_TIMEOUT_SECONDS = 120
+MEDIA_ENCODE_TIMEOUT_SECONDS = 900
 
 EDITABLE_STATUSES = {"ingested", "done", "slides"}
 
@@ -2669,7 +2678,13 @@ def _video_duration_seconds(path: str) -> float:
         "default=noprint_wrappers=1:nokey=1",
         path,
     ]
-    result = subprocess.run(command, capture_output=True, text=True, check=True)
+    result = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=MEDIA_PROBE_TIMEOUT_SECONDS,
+    )
     duration_text = (result.stdout or "").strip()
     return float(duration_text) if duration_text else 0.0
 
@@ -2724,7 +2739,7 @@ def _refresh_row_thumbnail_from_video(row: dict, offset_seconds: float = 5.0) ->
             "1",
             screenshot_path,
         ]
-        subprocess.run(command, check=True)
+        subprocess.run(command, check=True, timeout=MEDIA_FRAME_TIMEOUT_SECONDS)
         thumbnail_link = upload_to_drive(screenshot_path, screenshot_name, screenshots_folder_id)
         update_thumbnail_link(GOOGLE_SHEET_ID, row_num, thumbnail_link)
         clear_original_thumbnail(GOOGLE_SHEET_ID, row_num)
@@ -2805,7 +2820,7 @@ def _blur_row_thumbnail(row: dict, sigma: int = 10) -> str:
             "-q:v", "2",
             out_path,
         ]
-        proc = subprocess.run(cmd, capture_output=True)
+        proc = subprocess.run(cmd, capture_output=True, timeout=MEDIA_ENCODE_TIMEOUT_SECONDS)
         if proc.returncode != 0:
             raise RuntimeError(proc.stderr.decode(errors="replace"))
 
@@ -2910,7 +2925,7 @@ def _render_slide_one_png(
         filter_graph,
         output_path,
     ]
-    subprocess.run(command, check=True)
+    subprocess.run(command, check=True, timeout=MEDIA_FRAME_TIMEOUT_SECONDS)
 
 
 def _render_text_slide_png(
@@ -2966,7 +2981,7 @@ def _render_text_slide_png(
         ",".join(filter_parts),
         output_path,
     ]
-    subprocess.run(command, check=True)
+    subprocess.run(command, check=True, timeout=MEDIA_FRAME_TIMEOUT_SECONDS)
 
 
 def _upload_preview_pngs(
@@ -3209,7 +3224,7 @@ def _split_video_to_folder(local_video_path: str, output_dir: str, mode: str = "
             "192k",
             output_path,
         ]
-        proc = subprocess.run(command, capture_output=True)
+        proc = subprocess.run(command, capture_output=True, timeout=MEDIA_ENCODE_TIMEOUT_SECONDS)
         if proc.returncode != 0:
             raise RuntimeError(proc.stderr.decode(errors="replace"))
         outputs.append(output_path)
@@ -4030,6 +4045,7 @@ def _make_reel_thumbnail(video_path: str) -> str:
                 "-frames:v", "1", thumb_path,
             ],
             check=True,
+            timeout=MEDIA_FRAME_TIMEOUT_SECONDS,
         )
         screenshots_folder_id = get_or_create_subfolder(
             GOOGLE_DRIVE_FOLDER_ID, GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER
@@ -4127,10 +4143,10 @@ def _create_reel_lines_post(link: str, uploaded_video, speaker_name: str = "") -
         media_link = ""
         thumbnail_link = ""
         if video_path:
-            with st.spinner("Transcribing…"):
-                transcript = (transcribe_video(video_path) or "").strip()
+            with st.spinner("Transcribing… this can take a few minutes for a long video."):
+                transcript = (transcribe_video(video_path, raise_on_error=True) or "").strip()
             if not transcript:
-                raise RuntimeError("Could not transcribe that video.")
+                raise RuntimeError("That video transcribed as silence — there is no speech to work from.")
             source_text = transcript
             with st.spinner("Saving the video to Drive…"):
                 media_link = _upload_reel_lines_video(video_path, video_filename)
@@ -4201,7 +4217,8 @@ def _render_reel_lines_dialog() -> None:
         f"transcribed, then the transcript becomes a caption plus {REEL_LINES_HEADLINE_COUNT} "
         "clickbait headlines you copy one at a time. A link is also saved as the comment link. "
         "Upload a video and paste a link together to use the upload as the media and the link as "
-        "the comment link."
+        "the comment link. A large upload has to reach the server before anything starts, so give "
+        "it a moment; transcribing a long video can take a few minutes after that."
     )
 
     link = st.text_input(
@@ -4282,8 +4299,8 @@ def _render_video_post_dialog() -> None:
             with open(src_path, "wb") as f:
                 f.write(uploaded.getbuffer())
 
-            with st.spinner("Transcribing…"):
-                transcript = (transcribe_video(src_path) or "").strip()
+            with st.spinner("Transcribing… this can take a few minutes for a long video."):
+                transcript = (transcribe_video(src_path, raise_on_error=True) or "").strip()
 
             file_name = uploaded.name or f"video{suffix}"
             with st.spinner("Uploading to Drive…"):
@@ -4302,6 +4319,7 @@ def _render_video_post_dialog() -> None:
                         "-frames:v", "1", thumb_path,
                     ],
                     check=True,
+                    timeout=MEDIA_FRAME_TIMEOUT_SECONDS,
                 )
                 screenshots_folder_id = get_or_create_subfolder(
                     GOOGLE_DRIVE_FOLDER_ID, GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER
