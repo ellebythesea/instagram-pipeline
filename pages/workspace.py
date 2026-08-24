@@ -5280,7 +5280,18 @@ def _render_article_source_paste_panel(row: dict) -> None:
         "describes the story works too. The caption and slide copy are built from whatever you paste."
     )
     if url:
-        st.link_button("Open article link", url, width="stretch")
+        link_col, retry_col = st.columns(2, gap="small")
+        with link_col:
+            st.link_button("Open article link", url, width="stretch")
+        with retry_col:
+            if st.button(
+                "Try reading it again",
+                key=f"workspace_article_retry_{row_num}",
+                width="stretch",
+                help="Re-read the link. Worth a try for a timeout, or for a row that failed before the alternate-article lookup existed.",
+            ):
+                _queue_workspace_action(row_num, "article_retry")
+                _rerun_workspace("Edit")
 
     st.text_area(
         "Article text",
@@ -7481,12 +7492,18 @@ def _process_photo_post_online(row: dict) -> None:
     _verify_carousel_fields_saved(row_num)
 
 
-def _apply_pasted_article_source(row: dict, pasted_text: str) -> None:
-    """Save hand-pasted text onto an article row that could not be read.
+def _apply_pasted_article_source(
+    row: dict,
+    pasted_text: str,
+    username: str = "",
+    thumbnail_link: str = "",
+) -> None:
+    """Save article text onto a row that could not be read, pasted or re-fetched.
 
     Writes the text as both the original caption and the transcript so every
     downstream step — caption, slide copy, quotes — has the same source, and
-    promotes the row out of the needs-source state.
+    promotes the row out of the needs-source state. A successful re-read passes
+    the outlet and thumbnail it found; a hand paste leaves them to the row.
     """
     text = _cell_text(pasted_text).strip()
     if not text:
@@ -7495,9 +7512,13 @@ def _apply_pasted_article_source(row: dict, pasted_text: str) -> None:
     row_num = row["row_number"]
     url = _cell_text(row.get("Instagram URL")).strip()
     username = (
-        _cell_text(row.get("Source Username")).strip()
+        _cell_text(username).strip()
+        or _cell_text(row.get("Source Username")).strip()
         or (urlparse(url).netloc.replace("www.", "") if url else "")
     )
+    thumbnail_link = _cell_text(thumbnail_link).strip() or _cell_text(
+        row.get("Thumbnail Drive Link")
+    ).strip()
 
     updated_row = dict(row)
     updated_row["Original Caption"] = text
@@ -7511,7 +7532,7 @@ def _apply_pasted_article_source(row: dict, pasted_text: str) -> None:
         "article",
         "",
         "",
-        _cell_text(row.get("Thumbnail Drive Link")).strip(),
+        thumbnail_link,
         text,
         text,
         "ingested",
@@ -7524,6 +7545,39 @@ def _apply_pasted_article_source(row: dict, pasted_text: str) -> None:
         inputs["Required Hashtags"],
         inputs["Top Comment"],
         "",
+    )
+
+
+def _retry_article_source(row: dict) -> None:
+    """Read the article again for a row that failed, and save what comes back.
+
+    Worth offering because the row may have failed before the reader and
+    alternate-article fallbacks existed, and because a timeout is often just
+    transient. A retry that fails again refreshes the reason on the row.
+    """
+    row_num = row["row_number"]
+    url = _cell_text(row.get("Instagram URL")).strip()
+    if not url:
+        raise ValueError("This row has no link to read.")
+
+    try:
+        article = _fetch_article_source_data(url)
+        text = (
+            _cell_text(article.get("source_text")).strip()
+            or _cell_text(article.get("summary_text")).strip()
+        )
+        if not text:
+            raise RuntimeError("The article was reached but no usable text came back.")
+    except Exception as error:
+        update_status(GOOGLE_SHEET_ID, row_num, f"{NEEDS_SOURCE_PREFIX}: {describe_error(error)}")
+        raise
+
+    domain = _cell_text(article.get("domain")).strip()
+    _apply_pasted_article_source(
+        row,
+        text,
+        username=domain,
+        thumbnail_link=_upload_article_thumbnail(article.get("image_url", ""), row_num, domain),
     )
 
 
@@ -7916,6 +7970,14 @@ def _process_next_workspace_action(for_row_number: int | None = None) -> None:
                 preview_folder_id, _, _ = _ensure_preview_folder(row_number, username, handle_text, media_link)
                 _upload_split_videos(media_link, preview_folder_id, mode="fit")
                 success_message = f"Row {row_number}: video scaled to fit and uploaded to Drive."
+                _s.update(label=success_message, state="complete")
+        elif action == "article_retry":
+            with st.status(f"Reading the article again for row {row_number}…", expanded=True) as _s:
+                st.write("Fetching the article…")
+                _retry_article_source(row)
+                st.write("Generating caption and slide copy…")
+                _generate_post_from_source_text(_reload_row_from_sheet(row_number))
+                success_message = f"Row {row_number}: article read and post built."
                 _s.update(label=success_message, state="complete")
         elif action == "article_source":
             with st.status(f"Building post for row {row_number}…", expanded=True) as _s:
