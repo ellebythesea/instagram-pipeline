@@ -14,6 +14,7 @@ Sheet layout:
   U  Slide CTA          V  text4             W  text5
   X  text6
   Y  quote
+  Z  text7             AA  text8
 """
 
 import json
@@ -85,6 +86,8 @@ _EXPECTED_HEADERS = [
     "text5",
     "text6",
     "quote",
+    "text7",
+    "text8",
 ]
 
 _headers_checked: set[tuple[str, str]] = set()
@@ -301,9 +304,44 @@ def _optional_worksheet(sheet_id: str, title: str) -> gspread.Worksheet | None:
         return None
 
 
+# Columns added after the original A-Y layout. Reads pad missing columns, so an
+# older sheet still loads, but a write to Z/AA fails on a grid that never grew
+# past the default 26 columns - hence the widen below.
+_LATE_ADDED_HEADERS = ("text7", "text8")
+
+
 def _ensure_headers(sheet_id: str, ws: gspread.Worksheet) -> None:
-    """No-op: all reads use positional indexing; all writes use direct column letters."""
-    pass
+    """Make room for the columns added after the original layout, and label them.
+
+    Reads are positional and writes use direct column letters, so nothing here is
+    needed to map fields. What is needed is that the grid is wide enough to write
+    the later slide columns at all, and that they carry their header name so the
+    sheet still reads as documentation. Only blank header cells are filled, so a
+    sheet already using those columns for something else is left alone.
+    """
+    cache_key = (sheet_id, f"posts-columns:{ws.title}")
+    if cache_key in _headers_checked:
+        return
+    _headers_checked.add(cache_key)
+    try:
+        needed = len(_EXPECTED_HEADERS)
+        if ws.col_count < needed:
+            _with_backoff(ws.add_cols, needed - ws.col_count)
+        first_late_index = len(_EXPECTED_HEADERS) - len(_LATE_ADDED_HEADERS)
+        header_row = _with_backoff(ws.row_values, 1)
+        updates = []
+        for offset, name in enumerate(_LATE_ADDED_HEADERS):
+            index = first_late_index + offset
+            current = header_row[index].strip() if index < len(header_row) else ""
+            if not current:
+                updates.append({"range": f"{_column_letter(index + 1)}1", "values": [[name]]})
+        if updates:
+            _with_backoff(ws.batch_update, updates)
+    except Exception as error:
+        # Never block a read or a write on housekeeping - the worst case is that
+        # the two columns stay unlabeled.
+        _log.warning("could not prepare the later slide columns: %s", error)
+
 
 
 def _invalidate_rows_cache(sheet_id: str) -> None:
@@ -426,6 +464,8 @@ def append_generated_post_rows(sheet_id: str, rows: list[dict]) -> None:
         row[21] = source.get("text4", "").strip()
         row[22] = source.get("text5", "").strip()
         row[23] = source.get("text6", "").strip()
+        row[25] = source.get("text7", "").strip()
+        row[26] = source.get("text8", "").strip()
         values.append(row)
 
     ws = _worksheet(sheet_id)
@@ -458,6 +498,8 @@ def append_manual_post_row(sheet_id: str, row_data: dict) -> None:
     row[22] = (row_data.get("text5") or "").strip()
     row[23] = (row_data.get("text6") or "").strip()
     row[24] = (row_data.get("quote") or "").strip()
+    row[25] = (row_data.get("text7") or "").strip()
+    row[26] = (row_data.get("text8") or "").strip()
     ws = _worksheet(sheet_id)
     _with_backoff(ws.append_row, row, value_input_option="USER_ENTERED")
     _invalidate_rows_cache(sheet_id)
@@ -615,19 +657,32 @@ def update_carousel_fields(
     text4: str = "",
     text5: str = "",
     text6: str = "",
+    text7: str | None = None,
+    text8: str | None = None,
 ) -> None:
-    """Write carousel fields to cols Q-X and set status to 'slides'."""
+    """Write carousel fields to cols Q-X (and Z-AA) and set status to 'slides'.
+
+    text7 and text8 live past the original layout, so they are only touched when
+    the caller passes them. None means "leave whatever is there" — that way a
+    caller that predates the extra slides cannot blank them out, while a caller
+    rewriting the whole carousel passes "" to clear them.
+    """
     ws = _worksheet(sheet_id)
-    _with_backoff(
-        ws.batch_update,
-        [
-            {"range": f"N{row_number}", "values": [["slides"]]},
+    updates = [
+        {"range": f"N{row_number}", "values": [["slides"]]},
+        {
+            "range": f"Q{row_number}:X{row_number}",
+            "values": [[name, text1, text2, text3, "", text4, text5, text6]],
+        },
+    ]
+    if text7 is not None or text8 is not None:
+        updates.append(
             {
-                "range": f"Q{row_number}:X{row_number}",
-                "values": [[name, text1, text2, text3, "", text4, text5, text6]],
-            },
-        ],
-    )
+                "range": f"Z{row_number}:AA{row_number}",
+                "values": [[text7 or "", text8 or ""]],
+            }
+        )
+    _with_backoff(ws.batch_update, updates)
     _invalidate_rows_cache(sheet_id)
 
 

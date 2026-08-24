@@ -6,7 +6,7 @@ This documents every tab in the Google Sheet well enough to recreate it from scr
 
 ## Tab: posts
 
-Main Instagram pipeline. 24 columns A–X. **The app restores this header row automatically if it is missing.**
+Main Instagram pipeline. 27 columns A–AA. **The app restores this header row automatically if it is missing.**
 
 | Col | Header |
 |-----|--------|
@@ -34,6 +34,20 @@ Main Instagram pipeline. 24 columns A–X. **The app restores this header row au
 | V | text4 |
 | W | text5 |
 | X | text6 |
+| Y | quote |
+| Z | text7 |
+| AA | text8 |
+
+### Slide columns
+
+A carousel runs from `text1` to `text8`. Slide generation fills `text1`–`text3`; the rest are filled
+by pasted slide results or by hand. The editor draws a slide for every one of these columns that has
+copy, so a row with `text7` and `text8` filled in shows eight slides, each with its own preview,
+font controls, and edit button, and the link CTA moves to whichever slide is last.
+
+`text7` and `text8` (Z and AA) came after the original A–Y layout. Rows are read positionally with
+missing columns treated as empty, so a sheet that never grew those columns still loads; the first
+time the app writes them it widens the grid and fills in the two header cells if they are blank.
 
 **Status values:** empty (pending), `ingested`, `done`, `slides`, `needs source: [reason]`, `error: [reason]`
 
@@ -48,7 +62,7 @@ Rows created by the `Create Reel Lines` app action use this same schema with two
 - `Slide CTA` (col U) is set to `reel lines`. This is what marks the row as a Reel Lines post, so the
   editor shows a `Headlines` tab instead of `Slides`. Nothing else writes col U unless a slide CTA is
   picked, and the Slides tab — the only place that offers one — is replaced for these rows.
-- `text1` (col R) holds the ten headlines, one per line, instead of slide copy. `text2`–`text6` and
+- `text1` (col R) holds the ten headlines, one per line, instead of slide copy. `text2`–`text8` and
   `quote` stay empty.
 
 Everything else is ordinary: `Transcript` holds the transcription, `Generated Caption` the caption,
@@ -195,13 +209,16 @@ Known keys written by the app:
 Where deleted rows go. The app creates this tab the first time a row is deleted, so
 nothing is removed from the workbook outright.
 
-Columns A–Y match the `posts` tab exactly, followed by one extra column:
+Columns A–AA match the `posts` tab exactly, followed by one extra column:
 
 | Col | Header |
 |-----|--------|
-| Z | Deleted At |
+| AB | Deleted At |
 
-`Deleted At` is a `YYYY-MM-DD HH:MM:SS` stamp of when the row was moved here.
+`Deleted At` is a `YYYY-MM-DD HH:MM:SS` stamp of when the row was moved here. A tab created before
+`text7`/`text8` existed keeps its old header row, so its `Deleted At` label sits in column Z while
+newly archived rows write the stamp in AB. Nothing in the app reads this tab, so the mismatch is
+cosmetic — relabel the header row if you want it tidy.
 
-To restore a row, copy its A–Y cells back into a `posts` row and delete the copy
-here. Nothing in the app reads this tab.
+To restore a row, copy its A–AA cells back into a `posts` row and delete the copy
+here.
