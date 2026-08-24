@@ -2,6 +2,7 @@
 from datetime import datetime, time as dt_time, timedelta
 import ast
 import hashlib
+import inspect
 import json
 import html
 import os
@@ -575,6 +576,20 @@ ELECTION_POST_PROMPT_TEMPLATE = textwrap.dedent(
     }
     """
 )
+
+
+# raise_on_error is newer than some deployed copies of caption.py. Streamlit can
+# re-run this page against a module still cached in sys.modules from before a
+# deploy, so check once for the parameter rather than passing it blind: an older
+# module then keeps its previous behaviour instead of failing with a TypeError.
+_TRANSCRIBE_REPORTS_ERRORS = "raise_on_error" in inspect.signature(transcribe_video).parameters
+
+
+def _transcribe_upload(video_path: str) -> str:
+    """Transcribe an uploaded video, surfacing why it failed when possible."""
+    if _TRANSCRIBE_REPORTS_ERRORS:
+        return (transcribe_video(video_path, raise_on_error=True) or "").strip()
+    return (transcribe_video(video_path) or "").strip()
 
 
 def _get_client() -> openai.OpenAI:
@@ -4159,7 +4174,7 @@ def _create_reel_lines_post(link: str, uploaded_video, speaker_name: str = "") -
         thumbnail_link = ""
         if video_path:
             with st.spinner("Transcribing… this can take a few minutes for a long video."):
-                transcript = (transcribe_video(video_path, raise_on_error=True) or "").strip()
+                transcript = _transcribe_upload(video_path)
             if not transcript:
                 raise RuntimeError("That video transcribed as silence — there is no speech to work from.")
             source_text = transcript
@@ -4315,7 +4330,7 @@ def _render_video_post_dialog() -> None:
                 f.write(uploaded.getbuffer())
 
             with st.spinner("Transcribing… this can take a few minutes for a long video."):
-                transcript = (transcribe_video(src_path, raise_on_error=True) or "").strip()
+                transcript = _transcribe_upload(src_path)
 
             file_name = uploaded.name or f"video{suffix}"
             with st.spinner("Uploading to Drive…"):
