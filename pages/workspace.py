@@ -582,7 +582,17 @@ def _get_apify_client_class():
 
 def _fetch_article_source_data(url: str) -> dict:
     from article_source import fetch_article_source
-    return fetch_article_source(url)
+
+    data = fetch_article_source(url)
+    if data.get("alternate_source"):
+        # The pasted link could not be read, so the text came from another outlet
+        # covering the same story. Say so instead of swapping it in silently.
+        st.info(
+            f"Could not read {urlparse(url).netloc.replace('www.', '')}. "
+            f"Used coverage from {data.get('domain', 'another outlet')} instead: "
+            f"{data.get('source_url', '')}"
+        )
+    return data
 
 
 def _today_eastern_label() -> str:

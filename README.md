@@ -544,11 +544,50 @@ Notes:
 ### Article rows
 
 - article source text is extracted from the page
+- when the page cannot be read — connection error, bot wall, paywall, consent
+  screen, or a hang that trips the 40s timeout — the pipeline searches Serper for
+  the same story and reads a **full article from a different outlet** instead.
+  See [Unreadable articles](#unreadable-articles).
 - captions are not auto-generated during `Process for editing`
 - article captions prepend:
   - `Comment LINK (on instagram) and we will DM you the link to https://...`
 - article rows do not show a transcript tab
 - article rows do not append source text back under the generated caption
+
+### Unreadable articles
+
+Some outlets will not serve the page to the pipeline: they refuse the connection,
+return a bot check, sit behind a paywall or consent wall, or simply hang. Rather
+than failing the row, `article_source.py` recovers in this order:
+
+1. **The page itself** — direct fetch and HTML extraction.
+2. **Reader fallback** — the same URL through `r.jina.ai`.
+3. **Alternate article** — Serper searches for the same story, and the pipeline
+   fetches and extracts a *full article from a different outlet*. Candidates are
+   filtered so they are recent (14 days), on a different registrable domain than
+   the one that failed, not a social/aggregator host, and topically matched to the
+   original headline or URL slug. The first candidate that yields readable body
+   text wins.
+4. **Search snippets** — only if no alternate article can be read either, the
+   Serper snippets are stitched into source text, as before.
+
+If nothing topically relevant comes back, the row errors instead of being
+captioned from an unrelated story.
+
+When step 3 supplies the text:
+
+- `Instagram URL` and the `Comment LINK` CTA keep the link you pasted, so the post
+  still promotes your source.
+- `Source Username` becomes the outlet the text actually came from (for example
+  `apnews.com`), so attribution stays honest.
+- The app shows a notice naming the outlet and the alternate URL; `run_pipeline.py`
+  prints the same line.
+
+The payload carries `alternate_source: True`, `source_url` (the article that was
+read) and `requested_url` (the link you pasted) if you need them elsewhere.
+
+Everything here needs `SERPER_API_KEY`. Without it, unreadable articles fail as
+they always did.
 
 ## Useful Commands
 

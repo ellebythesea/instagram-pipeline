@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import multiprocessing
 import re
+import time
 from datetime import datetime, timedelta, timezone
 from html import unescape
 from html.parser import HTMLParser
@@ -32,6 +33,58 @@ _ARTICLE_TIMEOUT_SECONDS = 40
 _MAX_HTML_BYTES = 3 * 1024 * 1024
 _SERPER_TIMEOUT = 15
 _SERPER_MAX_AGE_DAYS = 14
+
+# Alternate-article lookup: when the pasted link cannot be read, search for the
+# same story on another outlet and extract that article instead of settling for
+# search-result snippets.
+_ALTERNATE_MAX_CANDIDATES = 4
+_ALTERNATE_REQUEST_TIMEOUT = (5, 12)
+_ALTERNATE_MIN_BUDGET_SECONDS = 14
+_ALTERNATE_CANDIDATE_BUDGET_SECONDS = 14
+_ALTERNATE_RETRY_TIMEOUT_SECONDS = 45
+_ALTERNATE_MIN_TOPIC_OVERLAP = 0.3
+_ALTERNATE_SKIP_HOSTS = {
+    "facebook.com",
+    "instagram.com",
+    "linkedin.com",
+    "news.google.com",
+    "pinterest.com",
+    "reddit.com",
+    "threads.net",
+    "tiktok.com",
+    "twitter.com",
+    "x.com",
+    "youtube.com",
+    "youtu.be",
+}
+_SECOND_LEVEL_TLDS = {"ac", "co", "com", "edu", "gov", "net", "org"}
+_STOPWORDS = {
+    "about", "after", "again", "against", "amid", "and", "are", "been", "before",
+    "being", "between", "but", "can", "could", "did", "does", "down", "during",
+    "for", "from", "had", "has", "have", "her", "here", "him", "his", "how",
+    "into", "its", "just", "may", "might", "more", "most", "new", "news", "not",
+    "now", "off", "once", "one", "only", "other", "our", "out", "over", "own",
+    "reuters", "said", "says", "she", "should", "some", "such", "than",
+    "that", "the", "their", "them", "then", "there", "these", "they", "this",
+    "those", "through", "under", "until", "very", "was", "were", "what", "when",
+    "where", "which", "while", "who", "why", "will", "with", "would", "you",
+    "your",
+}
+_BLOCKED_TEXT_MARKERS = (
+    "please enable js",
+    "enable javascript",
+    "verify you are human",
+    "are you a robot",
+    "checking your browser",
+    "access denied",
+    "subscribe to continue",
+    "subscribe to read",
+    "to continue reading",
+    "this content is not available in your",
+    "not available in your region",
+    "disable any ad blocker",
+    "captcha",
+)
 
 _NOISE_PATTERNS = [
     r"^copyright\s+\d{4}.*all rights reserved\.?$",
@@ -192,12 +245,69 @@ def _fallback_source_text(title: str, description: str) -> str:
     return "\n\n".join(parts).strip()
 
 
+def _looks_like_blocked_text(text: str) -> bool:
+    """True when the extracted text is a bot wall, paywall, or consent screen."""
+    lowered = _clean_text(text).lower()
+    if not lowered:
+        return False
+    return any(marker in lowered for marker in _BLOCKED_TEXT_MARKERS)
+
+
 def _looks_like_usable_source_text(text: str) -> bool:
     cleaned = _clean_text(text)
     if len(cleaned) < 140:
         return False
+    if _looks_like_blocked_text(cleaned):
+        return False
     sentence_count = len(re.findall(r"[.!?](?:\s|$)", cleaned))
     return sentence_count >= 2 or len(cleaned) >= 220
+
+
+def _seconds_left(deadline: float | None) -> float:
+    if deadline is None:
+        return float("inf")
+    return deadline - time.monotonic()
+
+
+def _has_budget(deadline: float | None, seconds: float) -> bool:
+    return _seconds_left(deadline) >= seconds
+
+
+def _registrable_domain(url: str) -> str:
+    host = (urlparse(url).netloc or "").lower().split(":")[0]
+    if host.startswith("www."):
+        host = host[4:]
+    parts = [part for part in host.split(".") if part]
+    if len(parts) >= 3 and parts[-2] in _SECOND_LEVEL_TLDS:
+        return ".".join(parts[-3:])
+    if len(parts) >= 2:
+        return ".".join(parts[-2:])
+    return host
+
+
+def _keyword_tokens(text: str) -> set[str]:
+    tokens = re.findall(r"[a-z0-9']+", (text or "").lower())
+    return {token for token in tokens if len(token) > 2 and token not in _STOPWORDS}
+
+
+def _topic_reference_tokens(url: str, title: str, description: str) -> set[str]:
+    tokens = _keyword_tokens(f"{_clean_text(title)} {_slug_terms(url)}")
+    if len(tokens) < 3:
+        tokens |= _keyword_tokens(_clean_text(description))
+    return tokens
+
+
+def _matches_topic(reference_tokens: set[str], candidate_text: str) -> bool:
+    """Guard against Serper handing back a recent-but-unrelated story."""
+    if not reference_tokens:
+        return True
+    candidate_tokens = _keyword_tokens(candidate_text)
+    if not candidate_tokens:
+        return False
+    overlap = len(reference_tokens & candidate_tokens)
+    if overlap < min(2, len(reference_tokens)):
+        return False
+    return overlap / min(len(reference_tokens), 12) >= _ALTERNATE_MIN_TOPIC_OVERLAP
 
 
 def _slug_terms(url: str) -> str:
@@ -253,52 +363,27 @@ def _parse_recent_date(value: str) -> datetime | None:
     return None
 
 
-def _fetch_serper_fallback(url: str, title: str, description: str, image_url: str = "") -> dict:
-    if not SERPER_API_KEY:
-        raise RuntimeError("SERPER_API_KEY is not configured.")
-
-    query = _build_serper_query(url, title, description)
-    if not query:
-        raise RuntimeError("Serper fallback could not build a search query.")
-
+def _serper_recent_results(query: str, *, num: int = 8) -> list[dict]:
+    """Return recent Serper results for a query, normalised to title/snippet/link."""
     headers = {"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"}
-    request_body = {
-        "q": query,
-        "num": 5,
-        "gl": "us",
-        "hl": "en",
-    }
     response = requests.post(
         "https://google.serper.dev/news",
-        json=request_body,
+        json={"q": query, "num": num, "gl": "us", "hl": "en"},
         headers=headers,
         timeout=_SERPER_TIMEOUT,
     )
     response.raise_for_status()
-    payload = response.json()
-    items = payload.get("news", []) or []
-    item_title_key = "title"
-    item_snippet_key = "snippet"
+    items = response.json().get("news", []) or []
 
     if not items:
-        fallback_body = {
-            "q": query,
-            "num": 5,
-            "tbs": "qdr:w",
-            "gl": "us",
-            "hl": "en",
-        }
         fallback_response = requests.post(
             "https://google.serper.dev/search",
-            json=fallback_body,
+            json={"q": query, "num": num, "tbs": "qdr:w", "gl": "us", "hl": "en"},
             headers=headers,
             timeout=_SERPER_TIMEOUT,
         )
         fallback_response.raise_for_status()
-        fallback_payload = fallback_response.json()
-        items = fallback_payload.get("organic", []) or []
-        item_title_key = "title"
-        item_snippet_key = "snippet"
+        items = fallback_response.json().get("organic", []) or []
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=_SERPER_MAX_AGE_DAYS)
     recent_items: list[dict] = []
@@ -306,19 +391,130 @@ def _fetch_serper_fallback(url: str, title: str, description: str, image_url: st
         published = _parse_recent_date(item.get("date", ""))
         if published is not None and published < cutoff:
             continue
-        recent_items.append(item)
+        recent_items.append(
+            {
+                "title": _clean_text(item.get("title", "")),
+                "snippet": _clean_text(item.get("snippet", "")),
+                "link": _clean_text(item.get("link", "")),
+                "image_url": _clean_text(item.get("imageUrl", "")),
+            }
+        )
+    return recent_items
 
-    if not recent_items:
-        raise RuntimeError(f"Serper fallback returned no recent results for query: {query}")
 
-    best_title = _clean_text(title) or _clean_text(recent_items[0].get(item_title_key, ""))
-    best_description = _clean_text(description) or _clean_text(recent_items[0].get(item_snippet_key, ""))
+def _relevant_serper_results(url: str, title: str, description: str, results: list[dict]) -> list[dict]:
+    """Drop results that are recent but about a different story."""
+    reference_tokens = _topic_reference_tokens(url, title, description)
+    return [
+        item
+        for item in results
+        if _matches_topic(reference_tokens, f"{item.get('title', '')} {item.get('snippet', '')}")
+    ]
+
+
+def _alternate_candidates(url: str, results: list[dict]) -> list[dict]:
+    """Pick readable-looking candidates published somewhere we have not failed."""
+    failed_domain = _registrable_domain(url)
+    seen_domains: set[str] = set()
+    candidates: list[dict] = []
+
+    for item in results:
+        link = item.get("link", "")
+        if not link.lower().startswith(("http://", "https://")):
+            continue
+        domain = _registrable_domain(link)
+        if not domain or domain == failed_domain or domain in _ALTERNATE_SKIP_HOSTS:
+            continue
+        if domain in seen_domains:
+            continue
+        seen_domains.add(domain)
+        candidates.append(item)
+        if len(candidates) >= _ALTERNATE_MAX_CANDIDATES:
+            break
+    return candidates
+
+
+def _fetch_candidate_article(link: str) -> dict | None:
+    """Read one alternate candidate, returning its payload only if it is usable."""
+    try:
+        final_url, html = _fetch_article_html(link, timeout=_ALTERNATE_REQUEST_TIMEOUT)
+    except Exception:
+        final_url, html = "", ""
+
+    if html:
+        payload = _extract_article_payload(final_url or link, html)
+        if _looks_like_usable_source_text(payload.get("source_text", "")):
+            return payload
+
+    try:
+        reader = _fetch_reader_fallback(
+            link, timeout=_ALTERNATE_REQUEST_TIMEOUT, max_attempts=1
+        )
+    except Exception:
+        return None
+
+    reader_text = reader.get("source_text", "")
+    if not _looks_like_usable_source_text(reader_text):
+        return None
+    reader_title = reader.get("title", "")
+    reader_description = reader.get("description", "")
+    return {
+        "url": link,
+        "domain": _registrable_domain(link),
+        "title": reader_title,
+        "description": reader_description,
+        "image_url": "",
+        "summary_text": _fallback_source_text(reader_title, reader_description),
+        "source_text": reader_text,
+    }
+
+
+def _fetch_alternate_article(
+    url: str,
+    results: list[dict],
+    image_url: str = "",
+    deadline: float | None = None,
+) -> dict | None:
+    """Read the same story from another outlet, in full, instead of the dead link.
+
+    Returns ``None`` when every candidate is just as unreadable as the original
+    link, or when there is not enough time budget left to try one.
+    """
+    if not _has_budget(deadline, _ALTERNATE_MIN_BUDGET_SECONDS):
+        return None
+
+    for candidate in _alternate_candidates(url, results):
+        if not _has_budget(deadline, _ALTERNATE_CANDIDATE_BUDGET_SECONDS):
+            break
+        link = candidate.get("link", "")
+        payload = _fetch_candidate_article(link)
+        if not payload:
+            continue
+        payload["title"] = payload.get("title") or candidate.get("title", "")
+        payload["description"] = payload.get("description") or candidate.get("snippet", "")
+        payload["image_url"] = payload.get("image_url") or image_url or candidate.get("image_url", "")
+        # Keep the pasted link as the row's identity; record where the text came from.
+        payload["source_url"] = payload.get("url", link)
+        payload["url"] = url
+        payload["requested_url"] = url
+        payload["alternate_source"] = True
+        return payload
+    return None
+
+
+def _serper_snippet_fallback(
+    url: str,
+    title: str,
+    description: str,
+    image_url: str,
+    results: list[dict],
+) -> dict:
+    """Stitch search-result snippets together when no full article can be read."""
+    best_title = _clean_text(title) or results[0].get("title", "")
+    best_description = _clean_text(description) or results[0].get("snippet", "")
     snippets: list[str] = []
-    for item in recent_items[:4]:
-        line = _clean_text(item.get(item_snippet_key, ""))
-        if not line:
-            title_line = _clean_text(item.get(item_title_key, ""))
-            line = title_line
+    for item in results[:4]:
+        line = item.get("snippet", "") or item.get("title", "")
         if line and line not in snippets:
             snippets.append(line)
 
@@ -397,13 +593,16 @@ def _parse_reader_fallback(text: str) -> dict:
     }
 
 
-def _fetch_reader_fallback(url: str) -> dict:
+def _fetch_reader_fallback(url: str, timeout=None, max_attempts: int | None = None) -> dict:
     last_error: Exception | None = None
-    for fallback_url in _reader_fallback_candidates(url):
+    attempts = _reader_fallback_candidates(url)
+    if max_attempts is not None:
+        attempts = attempts[:max_attempts]
+    for fallback_url in attempts:
         try:
             response = requests.get(
                 fallback_url,
-                timeout=_REQUEST_TIMEOUT,
+                timeout=timeout or _REQUEST_TIMEOUT,
                 headers=_REQUEST_HEADERS,
                 allow_redirects=True,
             )
@@ -419,11 +618,11 @@ def _fetch_reader_fallback(url: str) -> dict:
     raise RuntimeError("Reader fallback did not return any article text.")
 
 
-def _fetch_article_html(url: str) -> tuple[str, str]:
+def _fetch_article_html(url: str, timeout=None) -> tuple[str, str]:
     with requests.Session() as session:
         with session.get(
             url,
-            timeout=_REQUEST_TIMEOUT,
+            timeout=timeout or _REQUEST_TIMEOUT,
             headers=_REQUEST_HEADERS,
             allow_redirects=True,
             stream=True,
@@ -444,32 +643,8 @@ def _fetch_article_html(url: str) -> tuple[str, str]:
             return final_url, html
 
 
-def _fetch_article_source_inner(url: str) -> dict:
-    try:
-        final_url, html = _fetch_article_html(url)
-    except requests.RequestException:
-        fallback: dict | None = None
-        try:
-            fallback = _fetch_reader_fallback(url)
-        except Exception:
-            fallback = None
-        parsed = urlparse(url)
-        domain = parsed.netloc.replace("www.", "")
-        if fallback and fallback.get("source_text"):
-            return {
-                "url": url,
-                "domain": domain,
-                "title": fallback.get("title", ""),
-                "description": fallback.get("description", ""),
-                "image_url": "",
-                "summary_text": _fallback_source_text(
-                    fallback.get("title", ""),
-                    fallback.get("description", ""),
-                ),
-                "source_text": fallback.get("source_text", ""),
-            }
-        return _fetch_serper_fallback(url, "", "")
-
+def _extract_article_payload(final_url: str, html: str) -> dict:
+    """Turn fetched HTML into the standard article payload."""
     og_title = _extract_meta(html, "property", "og:title")
     og_description = _extract_meta(html, "property", "og:description")
     og_image = _extract_meta(html, "property", "og:image")
@@ -485,19 +660,92 @@ def _fetch_article_source_inner(url: str) -> dict:
     source_text = _compose_source_text(title, description, paragraphs)
     if not _looks_like_usable_source_text(source_text):
         source_text = summary_text
-    parsed = urlparse(final_url)
-    domain = parsed.netloc.replace("www.", "")
+
     image_url = og_image or twitter_image
     if image_url:
         image_url = urljoin(final_url, image_url)
-    if not _looks_like_usable_source_text(source_text):
+
+    return {
+        "url": final_url,
+        "domain": urlparse(final_url).netloc.replace("www.", ""),
+        "title": title,
+        "description": description,
+        "image_url": image_url,
+        "summary_text": summary_text,
+        "source_text": source_text,
+    }
+
+
+def _unreadable_article_fallback(
+    url: str,
+    title: str,
+    description: str,
+    image_url: str,
+    deadline: float | None,
+) -> dict:
+    """Last resort when the pasted link will not give up readable text.
+
+    Searches Serper once for the same story, prefers reading a full article from
+    another outlet, and settles for stitched search snippets only when no
+    alternate can be read either.
+    """
+    if not SERPER_API_KEY:
+        raise RuntimeError("SERPER_API_KEY is not configured.")
+
+    query = _build_serper_query(url, title, description)
+    if not query:
+        raise RuntimeError("Serper fallback could not build a search query.")
+
+    results = _serper_recent_results(query)
+    if not results:
+        raise RuntimeError(f"Serper fallback returned no recent results for query: {query}")
+
+    results = _relevant_serper_results(url, title, description, results)
+    if not results:
+        raise RuntimeError(f"Serper fallback found no coverage matching: {query}")
+
+    alternate = _fetch_alternate_article(url, results, image_url=image_url, deadline=deadline)
+    if alternate:
+        return alternate
+    return _serper_snippet_fallback(url, title, description, image_url, results)
+
+
+def _fetch_article_source_inner(url: str, deadline: float | None = None) -> dict:
+    try:
+        final_url, html = _fetch_article_html(url)
+    except requests.RequestException:
+        try:
+            fallback = _fetch_reader_fallback(url)
+        except Exception:
+            fallback = None
+        if fallback and fallback.get("source_text"):
+            return {
+                "url": url,
+                "domain": urlparse(url).netloc.replace("www.", ""),
+                "title": fallback.get("title", ""),
+                "description": fallback.get("description", ""),
+                "image_url": "",
+                "summary_text": _fallback_source_text(
+                    fallback.get("title", ""),
+                    fallback.get("description", ""),
+                ),
+                "source_text": fallback.get("source_text", ""),
+            }
+        return _unreadable_article_fallback(url, "", "", "", deadline)
+
+    payload = _extract_article_payload(final_url, html)
+    title = payload["title"]
+    description = payload["description"]
+    image_url = payload["image_url"]
+
+    if not _looks_like_usable_source_text(payload["source_text"]):
         try:
             fallback = _fetch_reader_fallback(url)
             fallback_text = fallback.get("source_text", "")
             if _looks_like_usable_source_text(fallback_text):
                 return {
                     "url": final_url,
-                    "domain": domain,
+                    "domain": payload["domain"],
                     "title": fallback.get("title", "") or title,
                     "description": fallback.get("description", "") or description,
                     "image_url": image_url,
@@ -509,39 +757,45 @@ def _fetch_article_source_inner(url: str) -> dict:
                 }
         except Exception:
             pass
-        return _fetch_serper_fallback(final_url, title, description, image_url)
+        return _unreadable_article_fallback(final_url, title, description, image_url, deadline)
 
-    return {
-        "url": final_url,
-        "domain": domain,
-        "title": title,
-        "description": description,
-        "image_url": image_url,
-        "summary_text": summary_text,
-        "source_text": source_text,
-    }
+    return payload
 
 
-def _article_source_worker(url: str, output_queue) -> None:
+def _fetch_article_alternate_only(url: str, deadline: float | None = None) -> dict:
+    """Skip the unreachable link entirely and source the story elsewhere."""
+    return _unreadable_article_fallback(url, "", "", "", deadline)
+
+
+def _article_source_worker(url: str, output_queue, mode: str = "full", budget: float = 0.0) -> None:
+    # Leave a little headroom so we return a result instead of being terminated.
+    deadline = time.monotonic() + budget - 3 if budget else None
     try:
-        output_queue.put(("ok", _fetch_article_source_inner(url)))
+        if mode == "alternate":
+            payload = _fetch_article_alternate_only(url, deadline)
+        else:
+            payload = _fetch_article_source_inner(url, deadline)
+        output_queue.put(("ok", payload))
     except Exception as error:
         status = getattr(getattr(error, "response", None), "status_code", None)
         output_queue.put(("error", error.__class__.__name__, str(error), status))
 
 
-def fetch_article_source(url: str) -> dict:
+def _run_article_source_worker(url: str, mode: str, timeout_seconds: int) -> dict:
     context = multiprocessing.get_context("spawn")
     output_queue = context.Queue(maxsize=1)
-    process = context.Process(target=_article_source_worker, args=(url, output_queue))
+    process = context.Process(
+        target=_article_source_worker,
+        args=(url, output_queue, mode, float(timeout_seconds)),
+    )
     process.daemon = True
     process.start()
-    process.join(_ARTICLE_TIMEOUT_SECONDS)
+    process.join(timeout_seconds)
 
     if process.is_alive():
         process.terminate()
         process.join(2)
-        raise TimeoutError(f"Article request timed out after {_ARTICLE_TIMEOUT_SECONDS} seconds.")
+        raise TimeoutError(f"Article request timed out after {timeout_seconds} seconds.")
 
     try:
         result = output_queue.get_nowait()
@@ -554,3 +808,17 @@ def fetch_article_source(url: str) -> dict:
     _, error_name, message, status = result
     status_label = f" ({status})" if status else ""
     raise RuntimeError(f"{error_name}{status_label}: {message}")
+
+
+def fetch_article_source(url: str) -> dict:
+    try:
+        return _run_article_source_worker(url, "full", _ARTICLE_TIMEOUT_SECONDS)
+    except TimeoutError as timeout_error:
+        # A hung site kills the worker before any fallback runs, so retry in a
+        # fresh process that goes straight to the alternate-article lookup.
+        if not SERPER_API_KEY:
+            raise
+        try:
+            return _run_article_source_worker(url, "alternate", _ALTERNATE_RETRY_TIMEOUT_SECONDS)
+        except Exception:
+            raise timeout_error

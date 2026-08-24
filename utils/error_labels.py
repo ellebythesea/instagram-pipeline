@@ -76,6 +76,18 @@ def describe_error(error: Exception) -> str:
         return "Article request timed out. Open the link manually or use another source."
     if any(token in lowered for token in ["please enable js", "disable any ad blocker", "captcha-delivery.com"]):
         return "Article access blocked by a bot check. Open the link manually or use another source."
+    if "serper fallback found no coverage matching" in lowered:
+        return (
+            "Article could not be read, and no other outlet was covering the same story. "
+            "Open the link manually or paste a different article."
+        )
+    if "serper fallback returned no recent results" in lowered:
+        return (
+            "Article could not be read, and the search for alternate coverage came back empty. "
+            "Open the link manually or paste a different article."
+        )
+    if "serper_api_key is not configured" in lowered:
+        return "Article could not be read, and SERPER_API_KEY is missing so no alternate article could be found."
 
     if "openai" in exc_name:
         if status == 401 or any(token in lowered for token in ["incorrect api key", "invalid_api_key", "unauthorized"]):
