@@ -5706,6 +5706,27 @@ def _build_single_row_chatgpt_prompt(row: dict) -> str:
     return _build_chatgpt_handoff_prompt([row])
 
 
+def _render_blur_toggle_button(row: dict, row_num: int) -> None:
+    """Blur/Unblur toggle for the row thumbnail, used in the slide-1 control bar."""
+    is_blurred = bool(st.session_state.get("workspace_original_thumbnails", {}).get(str(row_num)))
+    label = "Unblur" if is_blurred else "Blur"
+    if not st.button(label, key=f"workspace_blur_thumb_{row_num}", width="stretch"):
+        return
+    try:
+        if is_blurred:
+            with st.spinner("Restoring original…"):
+                _unblur_row_thumbnail(row)
+            st.session_state["workspace_success"] = f"Row {row_num}: original thumbnail restored."
+        else:
+            with st.spinner("Blurring thumbnail…"):
+                _blur_row_thumbnail(row)
+            st.session_state["workspace_success"] = f"Row {row_num}: thumbnail blurred."
+    except Exception as error:
+        action = "unblur" if is_blurred else "blur"
+        st.session_state["workspace_error"] = f"Row {row_num}: {action} failed — {describe_error(error)}"
+    _rerun_workspace("Edit")
+
+
 def _render_workspace_preview_control_bar(
     control_id: str,
     font_adjust_key: str,
@@ -6003,12 +6024,14 @@ def _copy_tabs(
                             st.session_state["workspace_preview_scroll_target"] = anchor_id
                             _rerun_workspace("Edit")
                     with s1_cols[7]:
+                        _render_blur_toggle_button(row, row_num)
+                    with s1_cols[8]:
                         fit_label = "Fill" if current_slide_one_fit_mode else "Fit"
                         if st.button(fit_label, key=f"workspace_preview_{row_num}_slide1_fit_toggle", width="stretch"):
                             st.session_state[slide_one_fit_toggle_key] = not current_slide_one_fit_mode
                             st.session_state["workspace_preview_scroll_target"] = anchor_id
                             _rerun_workspace("Edit")
-                    with s1_cols[8]:
+                    with s1_cols[9]:
                         hide_label = "Hide" if current_quote_show else "Show"
                         if st.button(hide_label, key=f"workspace_quote_toggle_{row_num}", width="stretch"):
                             slide_name = _cell_text((prompt_row or {}).get("name", "")).strip()
@@ -6032,29 +6055,13 @@ def _copy_tabs(
                                 })
                             st.session_state[slide_quote_show_key] = not current_quote_show
                             _rerun_workspace("Edit")
-                    with s1_cols[9]:
+                    with s1_cols[10]:
                         if st.button("Edit", key=f"workspace_quote_edit_btn_{row_num}", width="stretch"):
                             _open_workspace_slide_action_dialog(row_num, "quote")
                             _rerun_workspace("Edit")
-                    with s1_cols[10]:
+                    with s1_cols[11]:
                         if st.button("Edit Text 1", key=f"workspace_inline_edit_text1_{row_num}", width="stretch"):
                             _open_workspace_slide_action_dialog(row_num, "text1")
-                            _rerun_workspace("Edit")
-                    with s1_cols[11]:
-                        _is_blurred = bool(st.session_state.get("workspace_original_thumbnails", {}).get(str(row_num)))
-                        _blur_label = "Unblur" if _is_blurred else "Blur"
-                        if st.button(_blur_label, key=f"workspace_blur_thumb_{row_num}", width="stretch"):
-                            try:
-                                if _is_blurred:
-                                    with st.spinner("Restoring original…"):
-                                        _unblur_row_thumbnail(row)
-                                    st.session_state["workspace_success"] = f"Row {row_num}: original thumbnail restored."
-                                else:
-                                    with st.spinner("Blurring thumbnail…"):
-                                        _blur_row_thumbnail(row)
-                                    st.session_state["workspace_success"] = f"Row {row_num}: thumbnail blurred."
-                            except Exception as _be:
-                                st.session_state["workspace_error"] = f"Row {row_num}: {'unblur' if _is_blurred else 'blur'} failed — {describe_error(_be)}"
                             _rerun_workspace("Edit")
                 else:
                     with s1_cols[6]:
@@ -6068,34 +6075,20 @@ def _copy_tabs(
                             st.session_state["workspace_preview_scroll_target"] = anchor_id
                             _rerun_workspace("Edit")
                     with s1_cols[7]:
+                        _render_blur_toggle_button(row, row_num)
+                    with s1_cols[8]:
                         fit_label = "Fill" if current_slide_one_fit_mode else "Fit"
                         if st.button(fit_label, key=f"workspace_preview_{row_num}_slide1_fit_toggle", width="stretch"):
                             st.session_state[slide_one_fit_toggle_key] = not current_slide_one_fit_mode
                             st.session_state["workspace_preview_scroll_target"] = anchor_id
                             _rerun_workspace("Edit")
-                    with s1_cols[8]:
+                    with s1_cols[9]:
                         if st.button("Edit", key=f"workspace_quote_edit_btn_{row_num}", width="stretch"):
                             _open_workspace_slide_action_dialog(row_num, "quote")
                             _rerun_workspace("Edit")
-                    with s1_cols[9]:
+                    with s1_cols[10]:
                         if st.button("Edit Text 1", key=f"workspace_inline_edit_text1_{row_num}", width="stretch"):
                             _open_workspace_slide_action_dialog(row_num, "text1")
-                            _rerun_workspace("Edit")
-                    with s1_cols[10]:
-                        _is_blurred = bool(st.session_state.get("workspace_original_thumbnails", {}).get(str(row_num)))
-                        _blur_label = "Unblur" if _is_blurred else "Blur"
-                        if st.button(_blur_label, key=f"workspace_blur_thumb_{row_num}", width="stretch"):
-                            try:
-                                if _is_blurred:
-                                    with st.spinner("Restoring original…"):
-                                        _unblur_row_thumbnail(row)
-                                    st.session_state["workspace_success"] = f"Row {row_num}: original thumbnail restored."
-                                else:
-                                    with st.spinner("Blurring thumbnail…"):
-                                        _blur_row_thumbnail(row)
-                                    st.session_state["workspace_success"] = f"Row {row_num}: thumbnail blurred."
-                            except Exception as _be:
-                                st.session_state["workspace_error"] = f"Row {row_num}: {'unblur' if _is_blurred else 'blur'} failed — {describe_error(_be)}"
                             _rerun_workspace("Edit")
             if st.session_state.get(f"workspace_quote_picker_{row_num}"):
                 _quote_options = st.session_state.get(f"workspace_quote_options_{row_num}", [])
