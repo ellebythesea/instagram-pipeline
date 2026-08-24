@@ -20,7 +20,25 @@ from config import (
 from news import get_latest_news_summary
 
 
-client = openai.OpenAI(api_key=OPENAI_API_KEY)
+# Without an explicit timeout the OpenAI SDK waits 600s per attempt and retries
+# twice, so one stalled upload blocks a Streamlit run for half an hour with no
+# feedback. Bound both calls, and give transcription the longer budget because it
+# uploads a file rather than a prompt.
+_CAPTION_TIMEOUT_SECONDS = 60.0
+_TRANSCRIBE_TIMEOUT_SECONDS = 240.0
+
+# ffmpeg on a malformed or very large file can sit forever; cap it.
+_AUDIO_EXTRACT_TIMEOUT_SECONDS = 300
+
+# Whisper rejects uploads over 25MB. Extracted audio is ~4MB/hour at these
+# settings, so this only bites when extraction failed and the raw video is sent.
+WHISPER_MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+
+client = openai.OpenAI(
+    api_key=OPENAI_API_KEY,
+    timeout=_CAPTION_TIMEOUT_SECONDS,
+    max_retries=1,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -35,8 +53,22 @@ def _get_ffmpeg_path() -> str:
         return "ffmpeg"
 
 
+def _remove_quietly(path: Optional[str]) -> None:
+    if not path:
+        return
+    try:
+        os.unlink(path)
+    except Exception:
+        pass
+
+
 def _extract_audio(video_path: str) -> Optional[str]:
-    """Extract mono low-bitrate WAV from video for faster Whisper upload."""
+    """Extract mono low-bitrate WAV from video for faster Whisper upload.
+
+    Returns None when extraction fails, leaving the caller to decide whether the
+    original file is small enough to send as-is.
+    """
+    out = None
     try:
         ffmpeg = _get_ffmpeg_path()
         fd, out = tempfile.mkstemp(suffix=".wav")
@@ -57,15 +89,21 @@ def _extract_audio(video_path: str) -> Optional[str]:
             cmd.extend(["-af", af])
         cmd.append(out)
 
-        proc = subprocess.run(cmd, capture_output=True)
+        proc = subprocess.run(
+            cmd, capture_output=True, timeout=_AUDIO_EXTRACT_TIMEOUT_SECONDS
+        )
         if proc.returncode != 0:
-            try:
-                os.unlink(out)
-            except Exception:
-                pass
-            return None
+            stderr_lines = (proc.stderr or b"").decode("utf-8", "replace").strip().splitlines()
+            reason = stderr_lines[-1] if stderr_lines else "ffmpeg returned a non-zero exit code"
+            raise RuntimeError(reason)
         return out
-    except Exception:
+    except Exception as error:
+        if isinstance(error, subprocess.TimeoutExpired):
+            error = RuntimeError(
+                f"ffmpeg did not finish within {_AUDIO_EXTRACT_TIMEOUT_SECONDS}s"
+            )
+        print(f"    audio extraction failed: {error}", flush=True)
+        _remove_quietly(out)
         return None
 
 
@@ -73,28 +111,47 @@ def _extract_audio(video_path: str) -> Optional[str]:
 # Transcription
 # ---------------------------------------------------------------------------
 
-def transcribe_video(video_path: str) -> Optional[str]:
-    """Send video audio to Whisper and return the transcript text."""
+def transcribe_video(video_path: str, raise_on_error: bool = False) -> Optional[str]:
+    """Send video audio to Whisper and return the transcript text.
+
+    Returns None on failure so batch callers can keep going. Pass
+    raise_on_error=True to get the reason instead, which is what the app does so
+    it can show the user why a video would not transcribe.
+    """
     if not OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY is not configured.")
     processed = None
     try:
         processed = _extract_audio(video_path)
         src = processed or video_path
+
+        size_bytes = os.path.getsize(src)
+        if size_bytes > WHISPER_MAX_UPLOAD_BYTES:
+            limit_mb = WHISPER_MAX_UPLOAD_BYTES // (1024 * 1024)
+            what = "Audio" if processed else "Video"
+            extra = "" if processed else " Audio could not be extracted from it first."
+            raise RuntimeError(
+                f"{what} is {size_bytes / 1024 / 1024:.0f}MB, over Whisper's {limit_mb}MB "
+                f"limit, so it was not sent.{extra} Trim the video or convert it to audio "
+                "and upload that."
+            )
+
+        # Bound this separately from the chat calls: it uploads a file, and a
+        # retry would upload the whole thing again.
         with open(src, "rb") as f:
-            result = client.audio.transcriptions.create(model="whisper-1", file=f)
+            result = client.with_options(
+                timeout=_TRANSCRIBE_TIMEOUT_SECONDS, max_retries=0
+            ).audio.transcriptions.create(model="whisper-1", file=f)
         return result.text
     except Exception as e:
         # Callers treat None as "no transcript", which is indistinguishable from
         # a silent clip — so say out loud that this was a failure.
         print(f"    transcription failed: {e}", flush=True)
+        if raise_on_error:
+            raise
         return None
     finally:
-        if processed and os.path.exists(processed):
-            try:
-                os.unlink(processed)
-            except Exception:
-                pass
+        _remove_quietly(processed)
 
 
 # ---------------------------------------------------------------------------

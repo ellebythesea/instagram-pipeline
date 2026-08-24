@@ -2,6 +2,7 @@
 from datetime import datetime, time as dt_time, timedelta
 import ast
 import hashlib
+import inspect
 import json
 import html
 import os
@@ -118,6 +119,7 @@ def _crop_video_to_bytes(src_path: str, ratio_w: int, ratio_h: int) -> bytes:
         ],
         capture_output=True,
         text=True,
+        timeout=MEDIA_PROBE_TIMEOUT_SECONDS,
     )
     if result.returncode != 0 or not result.stdout.strip():
         raise RuntimeError(f"Could not read video dimensions: {result.stderr}")
@@ -146,7 +148,7 @@ def _crop_video_to_bytes(src_path: str, ratio_w: int, ratio_h: int) -> bytes:
             "-c:a", "copy",
             out_path,
         ]
-        proc = subprocess.run(cmd, capture_output=True)
+        proc = subprocess.run(cmd, capture_output=True, timeout=MEDIA_ENCODE_TIMEOUT_SECONDS)
         if proc.returncode != 0:
             raise RuntimeError(proc.stderr.decode(errors="replace"))
         with open(out_path, "rb") as f:
@@ -169,6 +171,7 @@ def _fit_video_to_bytes(src_path: str) -> bytes:
         ],
         capture_output=True,
         text=True,
+        timeout=MEDIA_PROBE_TIMEOUT_SECONDS,
     )
     if result.returncode != 0 or not result.stdout.strip():
         raise RuntimeError(f"Could not read video dimensions: {result.stderr}")
@@ -200,6 +203,7 @@ def _fit_video_to_bytes(src_path: str) -> bytes:
                 out_path,
             ],
             capture_output=True,
+            timeout=MEDIA_ENCODE_TIMEOUT_SECONDS,
         )
         if proc.returncode != 0:
             raise RuntimeError(proc.stderr.decode(errors="replace"))
@@ -222,6 +226,12 @@ ORG_HASHTAG_MAP = {
     "Good Influence": "#usapolitics",
     "American Experiment Project": "#usa",
 }
+
+# ffmpeg and ffprobe run against files people upload, so every call is bounded:
+# a malformed file otherwise stalls the whole Streamlit run with no feedback.
+MEDIA_PROBE_TIMEOUT_SECONDS = 60
+MEDIA_FRAME_TIMEOUT_SECONDS = 120
+MEDIA_ENCODE_TIMEOUT_SECONDS = 900
 
 EDITABLE_STATUSES = {"ingested", "done", "slides"}
 
@@ -566,6 +576,20 @@ ELECTION_POST_PROMPT_TEMPLATE = textwrap.dedent(
     }
     """
 )
+
+
+# raise_on_error is newer than some deployed copies of caption.py. Streamlit can
+# re-run this page against a module still cached in sys.modules from before a
+# deploy, so check once for the parameter rather than passing it blind: an older
+# module then keeps its previous behaviour instead of failing with a TypeError.
+_TRANSCRIBE_REPORTS_ERRORS = "raise_on_error" in inspect.signature(transcribe_video).parameters
+
+
+def _transcribe_upload(video_path: str) -> str:
+    """Transcribe an uploaded video, surfacing why it failed when possible."""
+    if _TRANSCRIBE_REPORTS_ERRORS:
+        return (transcribe_video(video_path, raise_on_error=True) or "").strip()
+    return (transcribe_video(video_path) or "").strip()
 
 
 def _get_client() -> openai.OpenAI:
@@ -2046,8 +2070,13 @@ def _is_editable_row(row: dict) -> bool:
     if status in EDITABLE_STATUSES:
         return True
 
-    # Article rows waiting on hand-pasted text are shown so the paste box is reachable.
+    # Article rows waiting on hand-pasted text are shown so the paste box is
+    # reachable. That includes rows left on "error:" by an ingest from before the
+    # needs-source status existed — nothing else would ever surface them again,
+    # so the post stays stranded and invisible in the grid.
     if status.startswith(NEEDS_SOURCE_PREFIX):
+        return True
+    if status.startswith("error") and _is_article_url(_cell_text(row.get("Instagram URL")).strip()):
         return True
 
     # Rows without a URL and without an editable status are hidden.
@@ -2075,15 +2104,24 @@ def _default_editor_status(row: dict) -> str:
     return "done" if generated_caption else "ingested"
 
 
+def _is_article_row(row: dict) -> bool:
+    """True for an article post, including one whose ingest never set a media type."""
+    media_type = _cell_text(row.get("Media Type")).strip().lower()
+    if media_type:
+        return media_type == "article"
+    return _is_article_url(_cell_text(row.get("Instagram URL")).strip())
+
+
 def _row_needs_pasted_source(row: dict) -> bool:
     """True when an article row has no source text to build a post from.
 
-    Covers both a fresh ingest failure (status prefix) and an article row that
-    lost its status some other way but still has nothing to write a caption from.
+    Covers a fresh ingest failure (the needs-source status), an older failure
+    left on "error:", and an article row that lost its status some other way but
+    still has nothing to write a caption from.
     """
     if _cell_text(row.get("Status")).strip().lower().startswith(NEEDS_SOURCE_PREFIX):
         return True
-    if _cell_text(row.get("Media Type")).strip().lower() != "article":
+    if not _is_article_row(row):
         return False
     if _cell_text(row.get("Generated Caption")).strip():
         return False
@@ -2094,9 +2132,10 @@ def _row_needs_pasted_source(row: dict) -> bool:
 
 
 def _needs_source_reason(row: dict) -> str:
-    """The failure reason stored after the status prefix, if there is one."""
+    """Why the article could not be read, from either status prefix."""
     status = _cell_text(row.get("Status")).strip()
-    if not status.lower().startswith(NEEDS_SOURCE_PREFIX):
+    lowered = status.lower()
+    if not (lowered.startswith(NEEDS_SOURCE_PREFIX) or lowered.startswith("error")):
         return ""
     return status.partition(":")[2].strip()
 
@@ -2669,7 +2708,13 @@ def _video_duration_seconds(path: str) -> float:
         "default=noprint_wrappers=1:nokey=1",
         path,
     ]
-    result = subprocess.run(command, capture_output=True, text=True, check=True)
+    result = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=MEDIA_PROBE_TIMEOUT_SECONDS,
+    )
     duration_text = (result.stdout or "").strip()
     return float(duration_text) if duration_text else 0.0
 
@@ -2724,7 +2769,7 @@ def _refresh_row_thumbnail_from_video(row: dict, offset_seconds: float = 5.0) ->
             "1",
             screenshot_path,
         ]
-        subprocess.run(command, check=True)
+        subprocess.run(command, check=True, timeout=MEDIA_FRAME_TIMEOUT_SECONDS)
         thumbnail_link = upload_to_drive(screenshot_path, screenshot_name, screenshots_folder_id)
         update_thumbnail_link(GOOGLE_SHEET_ID, row_num, thumbnail_link)
         clear_original_thumbnail(GOOGLE_SHEET_ID, row_num)
@@ -2805,7 +2850,7 @@ def _blur_row_thumbnail(row: dict, sigma: int = 10) -> str:
             "-q:v", "2",
             out_path,
         ]
-        proc = subprocess.run(cmd, capture_output=True)
+        proc = subprocess.run(cmd, capture_output=True, timeout=MEDIA_ENCODE_TIMEOUT_SECONDS)
         if proc.returncode != 0:
             raise RuntimeError(proc.stderr.decode(errors="replace"))
 
@@ -2910,7 +2955,7 @@ def _render_slide_one_png(
         filter_graph,
         output_path,
     ]
-    subprocess.run(command, check=True)
+    subprocess.run(command, check=True, timeout=MEDIA_FRAME_TIMEOUT_SECONDS)
 
 
 def _render_text_slide_png(
@@ -2966,7 +3011,7 @@ def _render_text_slide_png(
         ",".join(filter_parts),
         output_path,
     ]
-    subprocess.run(command, check=True)
+    subprocess.run(command, check=True, timeout=MEDIA_FRAME_TIMEOUT_SECONDS)
 
 
 def _upload_preview_pngs(
@@ -3209,7 +3254,7 @@ def _split_video_to_folder(local_video_path: str, output_dir: str, mode: str = "
             "192k",
             output_path,
         ]
-        proc = subprocess.run(command, capture_output=True)
+        proc = subprocess.run(command, capture_output=True, timeout=MEDIA_ENCODE_TIMEOUT_SECONDS)
         if proc.returncode != 0:
             raise RuntimeError(proc.stderr.decode(errors="replace"))
         outputs.append(output_path)
@@ -4030,6 +4075,7 @@ def _make_reel_thumbnail(video_path: str) -> str:
                 "-frames:v", "1", thumb_path,
             ],
             check=True,
+            timeout=MEDIA_FRAME_TIMEOUT_SECONDS,
         )
         screenshots_folder_id = get_or_create_subfolder(
             GOOGLE_DRIVE_FOLDER_ID, GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER
@@ -4127,10 +4173,10 @@ def _create_reel_lines_post(link: str, uploaded_video, speaker_name: str = "") -
         media_link = ""
         thumbnail_link = ""
         if video_path:
-            with st.spinner("Transcribing…"):
-                transcript = (transcribe_video(video_path) or "").strip()
+            with st.spinner("Transcribing… this can take a few minutes for a long video."):
+                transcript = _transcribe_upload(video_path)
             if not transcript:
-                raise RuntimeError("Could not transcribe that video.")
+                raise RuntimeError("That video transcribed as silence — there is no speech to work from.")
             source_text = transcript
             with st.spinner("Saving the video to Drive…"):
                 media_link = _upload_reel_lines_video(video_path, video_filename)
@@ -4201,7 +4247,8 @@ def _render_reel_lines_dialog() -> None:
         f"transcribed, then the transcript becomes a caption plus {REEL_LINES_HEADLINE_COUNT} "
         "clickbait headlines you copy one at a time. A link is also saved as the comment link. "
         "Upload a video and paste a link together to use the upload as the media and the link as "
-        "the comment link."
+        "the comment link. A large upload has to reach the server before anything starts, so give "
+        "it a moment; transcribing a long video can take a few minutes after that."
     )
 
     link = st.text_input(
@@ -4282,8 +4329,8 @@ def _render_video_post_dialog() -> None:
             with open(src_path, "wb") as f:
                 f.write(uploaded.getbuffer())
 
-            with st.spinner("Transcribing…"):
-                transcript = (transcribe_video(src_path) or "").strip()
+            with st.spinner("Transcribing… this can take a few minutes for a long video."):
+                transcript = _transcribe_upload(src_path)
 
             file_name = uploaded.name or f"video{suffix}"
             with st.spinner("Uploading to Drive…"):
@@ -4302,6 +4349,7 @@ def _render_video_post_dialog() -> None:
                         "-frames:v", "1", thumb_path,
                     ],
                     check=True,
+                    timeout=MEDIA_FRAME_TIMEOUT_SECONDS,
                 )
                 screenshots_folder_id = get_or_create_subfolder(
                     GOOGLE_DRIVE_FOLDER_ID, GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER
@@ -5673,6 +5721,27 @@ def _build_single_row_chatgpt_prompt(row: dict) -> str:
     return _build_chatgpt_handoff_prompt([row])
 
 
+def _render_blur_toggle_button(row: dict, row_num: int) -> None:
+    """Blur/Unblur toggle for the row thumbnail, used in the slide-1 control bar."""
+    is_blurred = bool(st.session_state.get("workspace_original_thumbnails", {}).get(str(row_num)))
+    label = "Unblur" if is_blurred else "Blur"
+    if not st.button(label, key=f"workspace_blur_thumb_{row_num}", width="stretch"):
+        return
+    try:
+        if is_blurred:
+            with st.spinner("Restoring original…"):
+                _unblur_row_thumbnail(row)
+            st.session_state["workspace_success"] = f"Row {row_num}: original thumbnail restored."
+        else:
+            with st.spinner("Blurring thumbnail…"):
+                _blur_row_thumbnail(row)
+            st.session_state["workspace_success"] = f"Row {row_num}: thumbnail blurred."
+    except Exception as error:
+        action = "unblur" if is_blurred else "blur"
+        st.session_state["workspace_error"] = f"Row {row_num}: {action} failed — {describe_error(error)}"
+    _rerun_workspace("Edit")
+
+
 def _render_workspace_preview_control_bar(
     control_id: str,
     font_adjust_key: str,
@@ -5970,12 +6039,14 @@ def _copy_tabs(
                             st.session_state["workspace_preview_scroll_target"] = anchor_id
                             _rerun_workspace("Edit")
                     with s1_cols[7]:
+                        _render_blur_toggle_button(row, row_num)
+                    with s1_cols[8]:
                         fit_label = "Fill" if current_slide_one_fit_mode else "Fit"
                         if st.button(fit_label, key=f"workspace_preview_{row_num}_slide1_fit_toggle", width="stretch"):
                             st.session_state[slide_one_fit_toggle_key] = not current_slide_one_fit_mode
                             st.session_state["workspace_preview_scroll_target"] = anchor_id
                             _rerun_workspace("Edit")
-                    with s1_cols[8]:
+                    with s1_cols[9]:
                         hide_label = "Hide" if current_quote_show else "Show"
                         if st.button(hide_label, key=f"workspace_quote_toggle_{row_num}", width="stretch"):
                             slide_name = _cell_text((prompt_row or {}).get("name", "")).strip()
@@ -5999,29 +6070,13 @@ def _copy_tabs(
                                 })
                             st.session_state[slide_quote_show_key] = not current_quote_show
                             _rerun_workspace("Edit")
-                    with s1_cols[9]:
+                    with s1_cols[10]:
                         if st.button("Edit", key=f"workspace_quote_edit_btn_{row_num}", width="stretch"):
                             _open_workspace_slide_action_dialog(row_num, "quote")
                             _rerun_workspace("Edit")
-                    with s1_cols[10]:
+                    with s1_cols[11]:
                         if st.button("Edit Text 1", key=f"workspace_inline_edit_text1_{row_num}", width="stretch"):
                             _open_workspace_slide_action_dialog(row_num, "text1")
-                            _rerun_workspace("Edit")
-                    with s1_cols[11]:
-                        _is_blurred = bool(st.session_state.get("workspace_original_thumbnails", {}).get(str(row_num)))
-                        _blur_label = "Unblur" if _is_blurred else "Blur"
-                        if st.button(_blur_label, key=f"workspace_blur_thumb_{row_num}", width="stretch"):
-                            try:
-                                if _is_blurred:
-                                    with st.spinner("Restoring original…"):
-                                        _unblur_row_thumbnail(row)
-                                    st.session_state["workspace_success"] = f"Row {row_num}: original thumbnail restored."
-                                else:
-                                    with st.spinner("Blurring thumbnail…"):
-                                        _blur_row_thumbnail(row)
-                                    st.session_state["workspace_success"] = f"Row {row_num}: thumbnail blurred."
-                            except Exception as _be:
-                                st.session_state["workspace_error"] = f"Row {row_num}: {'unblur' if _is_blurred else 'blur'} failed — {describe_error(_be)}"
                             _rerun_workspace("Edit")
                 else:
                     with s1_cols[6]:
@@ -6035,34 +6090,20 @@ def _copy_tabs(
                             st.session_state["workspace_preview_scroll_target"] = anchor_id
                             _rerun_workspace("Edit")
                     with s1_cols[7]:
+                        _render_blur_toggle_button(row, row_num)
+                    with s1_cols[8]:
                         fit_label = "Fill" if current_slide_one_fit_mode else "Fit"
                         if st.button(fit_label, key=f"workspace_preview_{row_num}_slide1_fit_toggle", width="stretch"):
                             st.session_state[slide_one_fit_toggle_key] = not current_slide_one_fit_mode
                             st.session_state["workspace_preview_scroll_target"] = anchor_id
                             _rerun_workspace("Edit")
-                    with s1_cols[8]:
+                    with s1_cols[9]:
                         if st.button("Edit", key=f"workspace_quote_edit_btn_{row_num}", width="stretch"):
                             _open_workspace_slide_action_dialog(row_num, "quote")
                             _rerun_workspace("Edit")
-                    with s1_cols[9]:
+                    with s1_cols[10]:
                         if st.button("Edit Text 1", key=f"workspace_inline_edit_text1_{row_num}", width="stretch"):
                             _open_workspace_slide_action_dialog(row_num, "text1")
-                            _rerun_workspace("Edit")
-                    with s1_cols[10]:
-                        _is_blurred = bool(st.session_state.get("workspace_original_thumbnails", {}).get(str(row_num)))
-                        _blur_label = "Unblur" if _is_blurred else "Blur"
-                        if st.button(_blur_label, key=f"workspace_blur_thumb_{row_num}", width="stretch"):
-                            try:
-                                if _is_blurred:
-                                    with st.spinner("Restoring original…"):
-                                        _unblur_row_thumbnail(row)
-                                    st.session_state["workspace_success"] = f"Row {row_num}: original thumbnail restored."
-                                else:
-                                    with st.spinner("Blurring thumbnail…"):
-                                        _blur_row_thumbnail(row)
-                                    st.session_state["workspace_success"] = f"Row {row_num}: thumbnail blurred."
-                            except Exception as _be:
-                                st.session_state["workspace_error"] = f"Row {row_num}: {'unblur' if _is_blurred else 'blur'} failed — {describe_error(_be)}"
                             _rerun_workspace("Edit")
             if st.session_state.get(f"workspace_quote_picker_{row_num}"):
                 _quote_options = st.session_state.get(f"workspace_quote_options_{row_num}", [])
