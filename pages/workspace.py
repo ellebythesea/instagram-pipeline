@@ -1733,6 +1733,7 @@ def _close_reel_lines_dialog(clear_inputs: bool = False) -> None:
         st.session_state.pop("workspace_reel_lines_link", None)
         st.session_state.pop("workspace_reel_lines_video", None)
         st.session_state.pop("workspace_reel_lines_speaker", None)
+        st.session_state.pop("workspace_reel_lines_context", None)
 
 
 def _dismiss_reel_lines_dialog() -> None:
@@ -3949,18 +3950,19 @@ REEL_LINES_HEADLINE_COUNT = 10
 
 REEL_LINES_HEADLINE_PROMPT = (
     "You write clickbait headlines for short-form political video posts.\n\n"
-    f"From the transcript, write exactly {REEL_LINES_HEADLINE_COUNT} headline options. Each one is "
-    "a single line that works both as the text overlay on a vertical video and as a headline. When "
-    "a caption is supplied it is the post this video is going out with — use it for the angle and "
-    "the detail it settled on, but write the headlines from the transcript.\n\n"
+    f"From the source material, write exactly {REEL_LINES_HEADLINE_COUNT} headline options. The "
+    "source is a transcript of what was said, an article, or notes written by the editor. Each "
+    "headline is a single line that works both as the text overlay on a vertical video and as a "
+    "headline. When a caption is supplied it is the post this is going out with — use it for the "
+    "angle and the detail it settled on, but write the headlines from the source material.\n\n"
     "Rules:\n"
     "* Sentence case only: capitalize the first word and proper nouns, nothing else. Never Title "
     "Case, never ALL CAPS, not even for emphasis.\n"
     "* One line each, roughly 5 to 12 words, no line breaks.\n"
     "* Clickbait in framing only — curiosity, stakes, conflict, contradiction, a number, a "
-    "consequence. Every claim must be supported by the transcript or the caption. Do not invent "
-    "facts, do not exaggerate past what they say, and do not imply anything they do not.\n"
-    "* Name the key person whenever the transcript names them.\n"
+    "consequence. Every claim must be supported by the source material or the caption. Do not "
+    "invent facts, do not exaggerate past what they say, and do not imply anything they do not.\n"
+    "* Name the key person whenever the source material names them.\n"
     "* No hashtags, no emojis, no quotation marks around the line, no numbering, no trailing "
     "ellipses.\n"
     f"* Make all {REEL_LINES_HEADLINE_COUNT} noticeably different from each other — a different "
@@ -3993,18 +3995,27 @@ def _generate_reel_lines_headlines(
     caption: str = "",
     speaker_name: str = "",
     username: str = "",
+    context: str = "",
+    source_label: str = "TRANSCRIPT",
 ) -> list[str]:
     """Ten one-line clickbait headlines in sentence case.
 
-    Written from the transcript plus the caption the post already got, so the
-    headlines and the caption pull in the same direction instead of landing on
-    two different angles.
+    Written from the source material — a transcript, a link's text, or the
+    context typed into the dialog — plus the caption the post already got, so
+    the headlines and the caption pull in the same direction instead of landing
+    on two different angles.
     """
     source_text = (source_text or "").strip()
     if not source_text:
-        raise ValueError("No transcript or source text to write headlines from.")
+        raise ValueError("No transcript, source text, or context to write headlines from.")
 
-    user_parts = [f"TRANSCRIPT:\n{source_text}"]
+    user_parts = [f"{source_label}:\n{source_text}"]
+    context = (context or "").strip()
+    if context and context != source_text:
+        user_parts.append(
+            "CONTEXT FROM THE EDITOR (facts to work from alongside the source — do not treat "
+            f"anything here as something the speaker said):\n{context}"
+        )
     caption = (caption or "").strip()
     if caption:
         user_parts.append(
@@ -4135,17 +4146,23 @@ def _reel_lines_source_from_link(link: str, tmp_dir: str) -> dict:
     }
 
 
-def _create_reel_lines_post(link: str, uploaded_video, speaker_name: str = "") -> int:
+def _create_reel_lines_post(
+    link: str, uploaded_video, speaker_name: str = "", context: str = ""
+) -> int:
     """Create one Reel Lines post row and return its row number.
 
     An uploaded video is transcribed as-is; a reel link is downloaded first.
     Either way the video lands in Drive, the transcript becomes both the caption
     source and the row's transcript, and a pasted link becomes the comment link.
+    Typed context always rides along into the caption and the headlines, and on
+    its own — with a name or without one — it is the whole source the post is
+    written from, with no media and nothing to transcribe.
     """
     link = (link or "").strip()
     speaker_name = (speaker_name or "").strip()
-    if not link and uploaded_video is None:
-        raise ValueError("Add a link or upload a video.")
+    context = (context or "").strip()
+    if not link and uploaded_video is None and not context:
+        raise ValueError("Add a link, upload a video, or write some context.")
 
     tmp_dir = tempfile.mkdtemp(prefix="reel_lines_")
     try:
@@ -4153,7 +4170,9 @@ def _create_reel_lines_post(link: str, uploaded_video, speaker_name: str = "") -
         video_filename = ""
         original_caption = ""
         username = ""
-        source_text = ""
+        # Text a link gave us when it had no video of its own — an article body
+        # or the caption of a non-reel post.
+        link_text = ""
 
         if uploaded_video is not None:
             suffix = os.path.splitext(uploaded_video.name)[-1].lower() or ".mp4"
@@ -4167,7 +4186,7 @@ def _create_reel_lines_post(link: str, uploaded_video, speaker_name: str = "") -
                 from_link = _reel_lines_source_from_link(link, tmp_dir)
             original_caption = from_link["original_caption"]
             username = from_link["username"]
-            source_text = from_link["source_text"]
+            link_text = from_link["source_text"]
             # An upload wins as the media — the link is then only the comment link.
             if not video_path and from_link["video_path"]:
                 video_path = from_link["video_path"]
@@ -4181,18 +4200,25 @@ def _create_reel_lines_post(link: str, uploaded_video, speaker_name: str = "") -
                 transcript = _transcribe_upload(video_path)
             if not transcript:
                 raise RuntimeError("That video transcribed as silence — there is no speech to work from.")
-            source_text = transcript
             with st.spinner("Saving the video to Drive…"):
                 media_link = _upload_reel_lines_video(video_path, video_filename)
             thumbnail_link = _make_reel_thumbnail(video_path)
 
+        # What the headlines get written from: what was said, else what the
+        # link said, else the context typed into the dialog.
+        source_text = transcript or link_text or context
         if not source_text:
             raise RuntimeError("No transcript or text could be read from that link.")
 
         media_type = "reel" if transcript else ("post" if _is_instagram_url(link) else "article")
         display_username = username or speaker_name
         top_comment = _build_link_cta(link) if link else ""
-        caption_context = "" if transcript else source_text
+        # The typed context always reaches the caption; a link with no video
+        # adds its text here too, since this is the only place the caption
+        # writer reads it.
+        caption_context = "\n\n".join(
+            part for part in (context, "" if transcript else link_text) if part
+        )
 
         row_for_caption = {
             "Instagram URL": link,
@@ -4211,7 +4237,12 @@ def _create_reel_lines_post(link: str, uploaded_video, speaker_name: str = "") -
             caption = generate_row_caption(row_for_caption)
         with st.spinner(f"Writing {REEL_LINES_HEADLINE_COUNT} headlines…"):
             headlines = _generate_reel_lines_headlines(
-                source_text, caption, speaker_name, display_username
+                source_text,
+                caption,
+                speaker_name,
+                display_username,
+                context,
+                "TRANSCRIPT" if transcript else "SOURCE TEXT",
             )
 
         append_manual_post_row(GOOGLE_SHEET_ID, {
@@ -4247,12 +4278,14 @@ def _create_reel_lines_post(link: str, uploaded_video, speaker_name: str = "") -
 @st.dialog("Create Reel Lines", width="large", on_dismiss=_dismiss_reel_lines_dialog)
 def _render_reel_lines_dialog() -> None:
     st.caption(
-        "Paste a link or upload a video. The video is downloaded (or taken from your upload) and "
-        f"transcribed, then the transcript becomes a caption plus {REEL_LINES_HEADLINE_COUNT} "
-        "clickbait headlines you copy one at a time. A link is also saved as the comment link. "
-        "Upload a video and paste a link together to use the upload as the media and the link as "
-        "the comment link. A large upload has to reach the server before anything starts, so give "
-        "it a moment; transcribing a long video can take a few minutes after that."
+        "Paste a link, upload a video, or just write the context. A link or an upload is "
+        f"transcribed and the transcript becomes a caption plus {REEL_LINES_HEADLINE_COUNT} "
+        "clickbait headlines you copy one at a time; context on its own is written from directly, "
+        "with no media. Context typed alongside a link or a video is extra material for both the "
+        "caption and the headlines. A link is also saved as the comment link. Upload a video and "
+        "paste a link together to use the upload as the media and the link as the comment link. A "
+        "large upload has to reach the server before anything starts, so give it a moment; "
+        "transcribing a long video can take a few minutes after that."
     )
 
     link = st.text_input(
@@ -4269,9 +4302,19 @@ def _render_reel_lines_dialog() -> None:
     )
 
     speaker_name = st.text_input(
-        "Speaker name (optional)",
+        "Name (optional)",
         key="workspace_reel_lines_speaker",
         placeholder="e.g. Bernie Sanders",
+    ).strip()
+
+    context = st.text_area(
+        "Context (optional)",
+        key="workspace_reel_lines_context",
+        height=160,
+        placeholder=(
+            "What the post is about — what happened, who said what, the numbers that matter. "
+            "On its own this is what the post gets written from."
+        ),
     ).strip()
 
     if st.button(
@@ -4279,10 +4322,10 @@ def _render_reel_lines_dialog() -> None:
         key="workspace_reel_lines_submit",
         type="primary",
         width="stretch",
-        disabled=not (link or uploaded_video),
+        disabled=not (link or uploaded_video or context),
     ):
         try:
-            row_num = _create_reel_lines_post(link, uploaded_video, speaker_name)
+            row_num = _create_reel_lines_post(link, uploaded_video, speaker_name, context)
         except Exception as e:
             st.error(f"Could not create the post: {describe_error(e)}")
         else:

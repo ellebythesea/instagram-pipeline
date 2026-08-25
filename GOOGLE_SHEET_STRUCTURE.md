@@ -66,7 +66,12 @@ Rows created by the `Create Reel Lines` app action use this same schema with two
   `quote` stay empty.
 
 Everything else is ordinary: `Transcript` holds the transcription, `Generated Caption` the caption,
-`Media Drive Link` the video, and `Top Comment` the comment link when one was given.
+`Media Drive Link` the video, `Caption Context` whatever was typed into the dialog's `Context` box,
+and `Top Comment` the comment link when one was given.
+
+A Reel Lines row made from context alone has no link and no video, so `Instagram URL`, `Transcript`,
+`Media Drive Link`, `Thumbnail Drive Link` and `Top Comment` are all empty and `Media Type` is
+`article` — `Caption Context` is the only source the row was written from.
 
 ---
 
