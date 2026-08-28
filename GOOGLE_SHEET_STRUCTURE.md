@@ -49,7 +49,9 @@ font controls, and edit button, and the link CTA moves to whichever slide is las
 missing columns treated as empty, so a sheet that never grew those columns still loads; the first
 time the app writes them it widens the grid and fills in the two header cells if they are blank.
 
-**Status values:** empty (pending), `ingested`, `done`, `slides`, `needs source: [reason]`, `error: [reason]`
+**Status values:** empty (pending), `reel` (pending, forced to process as a reel), `ingested`, `done`, `slides`, `needs source: [reason]`, `error: [reason]`
+
+Typing `reel` into Status on a pending row makes it process through the reel scraper and get transcribed, even when its link is a `/p/` one rather than `/reel/`. The marker is consumed on processing: the row comes out with the normal `ingested`/`done` status and a Media Type of `reel`. The Ingest page's **reel** checkbox writes the same marker.
 
 `needs source: [reason]` marks an article row whose page could not be read. The row is still created so the article text can be pasted in by hand on the Edit tab, which builds the caption and slide copy and moves the row to `ingested`.
 

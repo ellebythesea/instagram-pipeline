@@ -151,7 +151,9 @@ hand or in a pasted slide result) gives that post two more slides. `text7` and `
 after the original layout — the app widens the sheet and labels Z and AA the first time it writes
 them, and older rows with nothing in those columns are unaffected.
 
-Status values: empty (pending), `ingested`, `done`, `slides`, `error: [reason]`
+Status values: empty (pending), `reel` (pending, forced to process as a reel), `ingested`, `done`, `slides`, `error: [reason]`
+
+Type `reel` into Status on a pending row to have it transcribed as a reel even when its link is a `/p/` one; the Ingest page's **reel** checkbox writes the same marker. It is replaced by the normal status once the row is processed.
 
 The app restores headers if they are missing.
 

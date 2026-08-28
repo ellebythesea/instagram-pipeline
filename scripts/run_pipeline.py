@@ -46,6 +46,7 @@ from sheets import (
     NEEDS_SOURCE_PREFIX,
     get_all_rows,
     get_pending_rows,
+    is_reel_status,
     update_caption,
     update_caption_and_metadata,
     update_ingest_result,
@@ -81,6 +82,20 @@ def _cell_text(value) -> str:
 def _is_reel_url(url: str) -> bool:
     lowered = (url or "").lower()
     return "/reel/" in lowered or "/reels/" in lowered
+
+
+def _row_is_reel(row: dict) -> bool:
+    """Whether this row should be handled as a reel.
+
+    True for a /reel/ link, and also when the row is flagged as one by hand — 'reel'
+    typed into Status, or a Media Type of 'reel' — so a video posted at a /p/ link
+    still gets the reel treatment.
+    """
+    if _is_reel_url(_cell_text(row.get("Instagram URL"))):
+        return True
+    if is_reel_status(_cell_text(row.get("Status"))):
+        return True
+    return _cell_text(row.get("Media Type")).strip().lower() == "reel"
 
 
 def _is_instagram_url(url: str) -> bool:
@@ -333,7 +348,7 @@ def _ingest_row(row: dict) -> dict:
                 "transcript": article_source_text,
                 "status": "ingested",
             }
-        if _is_reel_url(url):
+        if _row_is_reel(row):
             data = process_reel_url(url, include_transcript=False)
         else:
             data = process_post_url(url)

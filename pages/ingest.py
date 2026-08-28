@@ -549,6 +549,23 @@ def _pick_key(index: int) -> str:
     return f"ingest_pick_{st.session_state.get('ingest_result_token', '')}_{index}"
 
 
+def _reel_key(index: int) -> str:
+    return f"ingest_reel_{st.session_state.get('ingest_result_token', '')}_{index}"
+
+
+def _is_reel_selectable(block: dict) -> bool:
+    """The 'reel' tick is offered on Instagram links only."""
+    return _is_selectable(block) and _is_instagram_url(block["url"])
+
+
+def _is_picked(block: dict) -> bool:
+    """Ticking 'reel' adds the link too, so a reel can be marked in one click."""
+    return bool(
+        st.session_state.get(_pick_key(block["index"]))
+        or st.session_state.get(_reel_key(block["index"]))
+    )
+
+
 def _set_all_picks(blocks: list[dict], value: bool) -> None:
     for block in _link_blocks(blocks):
         if not _is_selectable(block):
@@ -556,6 +573,9 @@ def _set_all_picks(blocks: list[dict], value: bool) -> None:
         if value and block.get("already_in_sheet"):
             continue
         st.session_state[_pick_key(block["index"])] = value
+        # Clearing has to drop the reel ticks as well, or they would keep the link picked.
+        if not value and _is_reel_selectable(block):
+            st.session_state[_reel_key(block["index"])] = False
 
 
 def _rich_paste_available() -> bool:
@@ -833,7 +853,8 @@ if blocks is not None:
         st.subheader(f"{len(selectable)} link{'s' if len(selectable) != 1 else ''} to pick from")
         st.caption(
             "The document is shown back in full, with a checkbox beside every link that can "
-            f"be added. {BLOCKED_LABEL} links are listed without one."
+            f"be added. {BLOCKED_LABEL} links are listed without one. Tick **reel** on an "
+            "Instagram link to have it transcribed as a reel even if it is not a /reel/ link."
         )
 
         select_col, clear_col = st.columns(2)
@@ -852,7 +873,9 @@ if blocks is not None:
         # False, so no seeding here.
         with st.container(border=True):
             for block in blocks:
-                check_col, text_col = st.columns([1, 20], vertical_alignment="center")
+                check_col, reel_col, text_col = st.columns(
+                    [1, 3, 17], vertical_alignment="center"
+                )
                 if block["kind"] == "text":
                     with text_col:
                         st.markdown(_text_row(block))
@@ -864,14 +887,20 @@ if blocks is not None:
                             key=_pick_key(block["index"]),
                             label_visibility="collapsed",
                         )
+                with reel_col:
+                    if _is_reel_selectable(block):
+                        st.checkbox(
+                            "reel",
+                            key=_reel_key(block["index"]),
+                            help=(
+                                "Process this link as a reel — transcribe the video — even "
+                                "if it is not a /reel/ link. Ticking this adds the link too."
+                            ),
+                        )
                 with text_col:
                     st.markdown(_link_row(block))
 
-        picked = [
-            block
-            for block in selectable
-            if st.session_state.get(_pick_key(block["index"]))
-        ]
+        picked = [block for block in selectable if _is_picked(block)]
         st.divider()
         if st.button(
             f"Add {len(picked)} to Google Sheets" if picked else "Add to Google Sheets",
@@ -881,9 +910,18 @@ if blocks is not None:
             disabled=not picked or not selected_hashtags,
         ):
             urls = [block["url"] for block in picked]
+            reel_urls = {
+                block["url"]
+                for block in picked
+                if st.session_state.get(_reel_key(block["index"]))
+            }
             try:
                 append_link_rows(
-                    GOOGLE_SHEET_ID, urls, selected_hashtags, selected_comment_link
+                    GOOGLE_SHEET_ID,
+                    urls,
+                    selected_hashtags,
+                    selected_comment_link,
+                    reel_urls=reel_urls,
                 )
             except Exception as e:
                 st.error(f"Could not add to the posts sheet: {describe_error(e)}")
@@ -891,6 +929,7 @@ if blocks is not None:
                 for block in picked:
                     block["added"] = True
                     st.session_state.pop(_pick_key(block["index"]), None)
+                    st.session_state.pop(_reel_key(block["index"]), None)
                 st.session_state["ingest_blocks"] = blocks
                 st.session_state["ingest_added"] = {
                     "count": len(urls),

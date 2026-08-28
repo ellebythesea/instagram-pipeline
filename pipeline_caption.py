@@ -187,6 +187,9 @@ def row_requires_transcript(row: dict) -> bool:
     media_type = _row_media_type(row)
     if media_type == "reel":
         return True
+    # "reel" typed into Status is a hand-written request to treat the row as a reel.
+    if (row.get("Status") or "").strip().lower() == "reel":
+        return True
     url = _row_url(row)
     return "/reel/" in url or "/reels/" in url
 
