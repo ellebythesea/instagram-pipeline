@@ -389,11 +389,23 @@ def get_all_rows(sheet_id: str) -> list[dict]:
 NEEDS_SOURCE_PREFIX = "needs source"
 
 
+# Typing this into the Status cell of a pending row forces it to be processed as a
+# reel, for a video that lives at a /p/ link rather than a /reel/ one. It is consumed
+# on processing: the row comes out with the normal ingested/done status.
+REEL_STATUS_MARKER = "reel"
+
+
+def is_reel_status(value: str) -> bool:
+    """Whether a Status cell is the hand-typed 'reel' marker rather than a real status."""
+    return (value or "").strip().lower() == REEL_STATUS_MARKER
+
+
 def get_pending_rows(sheet_id: str) -> list[dict]:
-    """Rows where Status is empty and URL is present."""
+    """Rows where Status is empty (or the 'reel' marker) and URL is present."""
     return [
         r for r in get_all_rows(sheet_id)
-        if not r.get("Status", "").strip() and r.get("Instagram URL", "").strip()
+        if (not r.get("Status", "").strip() or is_reel_status(r.get("Status", "")))
+        and r.get("Instagram URL", "").strip()
     ]
 
 
@@ -410,17 +422,22 @@ def append_link_rows(
     urls: list[str],
     required_hashtags: str = "",
     top_comment: str = "",
+    reel_urls: set[str] | None = None,
 ) -> None:
     """Append new rows with Instagram URL, optional required hashtags and top comment.
 
     `top_comment` goes into col K as written. A bare URL there is expanded into the
     standard "Comment LINK" CTA when the caption is generated, so the docs tab can
     carry just a link.
+
+    Any URL also listed in `reel_urls` gets the 'reel' Status marker, so it is processed
+    as a reel even when its link is not a /reel/ one.
     """
     cleaned_urls = [url.strip() for url in urls if url.strip()]
     if not cleaned_urls:
         return
 
+    reels = {url.strip() for url in (reel_urls or set()) if url.strip()}
     ws = _worksheet(sheet_id)
     rows = []
     for url in cleaned_urls:
@@ -428,6 +445,8 @@ def append_link_rows(
         row[0] = url
         row[1] = required_hashtags.strip()
         row[10] = top_comment.strip()
+        if url in reels:
+            row[13] = REEL_STATUS_MARKER
         rows.append(row)
     _with_backoff(ws.append_rows, rows, value_input_option="USER_ENTERED")
     _invalidate_rows_cache(sheet_id)

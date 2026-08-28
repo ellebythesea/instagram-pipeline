@@ -1463,6 +1463,11 @@ def _build_election_post_prompt(candidate_result: dict) -> str:
 
 get_all_rows = sheet_ops.get_all_rows
 get_pending_rows = sheet_ops.get_pending_rows
+is_reel_status = getattr(
+    sheet_ops,
+    "is_reel_status",
+    lambda value: (value or "").strip().lower() == "reel",
+)
 update_caption = sheet_ops.update_caption
 update_caption_and_metadata = getattr(sheet_ops, "update_caption_and_metadata", None)
 update_caption_context = sheet_ops.update_caption_context
@@ -1504,9 +1509,15 @@ def append_link_rows(
     urls: list[str],
     required_hashtags: str = "",
     top_comment: str = "",
+    reel_urls: set[str] | None = None,
 ) -> None:
     if hasattr(sheet_ops, "append_link_rows"):
-        sheet_ops.append_link_rows(sheet_id, urls, required_hashtags, top_comment)
+        try:
+            sheet_ops.append_link_rows(
+                sheet_id, urls, required_hashtags, top_comment, reel_urls=reel_urls
+            )
+        except TypeError:
+            sheet_ops.append_link_rows(sheet_id, urls, required_hashtags, top_comment)
         return
 
     cleaned_urls = [url.strip() for url in urls if url.strip()]
@@ -1595,6 +1606,28 @@ def _is_instagram_url(url: str) -> bool:
     return "instagram.com/" in (url or "").lower()
 
 
+def _row_is_reel(row: dict) -> bool:
+    """Whether this row should be handled as a reel.
+
+    True for a /reel/ link, and also when the row is flagged as one by hand — 'reel'
+    typed into Status, or a Media Type of 'reel' — so a video posted at a /p/ link
+    still gets the reel treatment.
+    """
+    if _is_reel_url(_cell_text(row.get("Instagram URL"))):
+        return True
+    if is_reel_status(_cell_text(row.get("Status"))):
+        return True
+    return _cell_text(row.get("Media Type")).strip().lower() == "reel"
+
+
+def _carried_status(row: dict, fallback: str) -> str:
+    """The status to write back, dropping the hand-typed 'reel' marker once it is used."""
+    status = _cell_text(row.get("Status")).strip()
+    if not status or is_reel_status(status):
+        return fallback
+    return status
+
+
 def _is_article_url(url: str) -> bool:
     return _is_https_url(url) and not _is_instagram_url(url)
 
@@ -1635,7 +1668,7 @@ def _get_remote_file_size(url: str) -> int:
 
 def _check_reel_transcript_risk(row: dict) -> dict | None:
     url = row.get("Instagram URL", "").strip()
-    if not _is_reel_url(url):
+    if not _row_is_reel(row):
         return None
 
     preview = process_reel_url(url, include_transcript=False)
@@ -3704,7 +3737,7 @@ def _apply_top_comment_to_caption(
     updated_row["Speaker Name"] = current_speaker
     updated_row["Required Hashtags"] = current_hashtags
     updated_row["Top Comment"] = top_comment
-    current_status = (row.get("Status") or "").strip() or "done"
+    current_status = _carried_status(row, "done")
     existing_caption = (row.get("Generated Caption") or "").strip()
     previous_top_comment = (row.get("Top Comment") or "").strip()
     clean_top_comment, pin_top_comment = _decode_top_comment(top_comment)
@@ -5213,7 +5246,6 @@ def _render_workspace_link_dialog(row: dict) -> None:
 @st.dialog("Update screenshot", on_dismiss=_dismiss_workspace_thumbnail_dialog)
 def _render_workspace_thumbnail_dialog(row: dict) -> None:
     row_num = row["row_number"]
-    url = _cell_text(row.get("Instagram URL")).strip()
     has_media = bool(_cell_text(row.get("Media Drive Link")).strip())
 
     uploaded_thumbnail = st.file_uploader(
@@ -5243,7 +5275,7 @@ def _render_workspace_thumbnail_dialog(row: dict) -> None:
             _close_workspace_thumbnail_dialog(row)
             _rerun_workspace("Edit")
 
-    if _is_reel_url(url) and has_media and st.button(
+    if _row_is_reel(row) and has_media and st.button(
         "Update screenshot (+5s)",
         key=f"workspace_thumbnail_refresh_5s_{row_num}",
         width="stretch",
@@ -6967,7 +6999,7 @@ def _process_single_url_to_editor(url: str, required_hashtags: str = "") -> tupl
 
     working_row = _reload_row_from_sheet(row_num)
     media_type = _cell_text(working_row.get("Media Type")).strip().lower()
-    if _is_reel_url(row_url):
+    if _row_is_reel(working_row):
         _process_post_online(working_row)
     elif media_type == "photo":
         _process_photo_post_online(working_row)
@@ -7033,7 +7065,7 @@ def _ingest_row(row: dict) -> dict:
                 "transcript": article_source_text,
                 "status": "ingested",
             }
-        if _is_reel_url(url):
+        if _row_is_reel(row):
             data = process_reel_url(url, include_transcript=False)
         else:
             data = process_post_url(url)
@@ -7093,7 +7125,7 @@ def _rerun_with_transcript(row: dict, force_remote: bool = False) -> bool:
 
 def _fetch_row_with_transcript(row: dict, download_media: bool = False, force_remote: bool = False) -> dict:
     url = row.get("Instagram URL", "").strip()
-    if not _is_reel_url(url):
+    if not _row_is_reel(row):
         raise ValueError("Transcript rerun is only available for reels.")
 
     row_num = row["row_number"]
@@ -7126,7 +7158,7 @@ def _fetch_row_with_transcript(row: dict, download_media: bool = False, force_re
             media_row_for_whisper["Thumbnail Drive Link"] = uploaded.get("thumbnail_link", "") or row.get("Thumbnail Drive Link", "")
             if not transcript:
                 transcript = (_transcribe_reel_from_drive(media_row_for_whisper) or "").strip()
-            status_value = (row.get("Status") or "").strip() or "ingested"
+            status_value = _carried_status(row, "ingested")
             update_ingest_result(
                 GOOGLE_SHEET_ID,
                 row_num,
@@ -7166,7 +7198,7 @@ def _download_media_to_drive(row: dict) -> None:
 
     tmp_dir = None
     try:
-        if _is_reel_url(url):
+        if _row_is_reel(row):
             data = process_reel_url(url, include_transcript=False)
         else:
             data = process_post_url(url)
@@ -7183,7 +7215,7 @@ def _download_media_to_drive(row: dict) -> None:
             uploaded["thumbnail_link"],
             data["original_caption"] or row.get("Original Caption", ""),
             row.get("Transcript", ""),
-            row.get("Status", "") or "ingested",
+            _carried_status(row, "ingested"),
         )
     finally:
         if tmp_dir:
@@ -7293,7 +7325,7 @@ def _redo_caption_from_image_text(row: dict) -> None:
 
 def _row_is_photo_post(row: dict) -> bool:
     url = _cell_text(row.get("Instagram URL")).strip()
-    return _is_instagram_url(url) and not _is_reel_url(url)
+    return _is_instagram_url(url) and not _row_is_reel(row)
 
 
 def _generate_caption_for_row(row: dict) -> None:
@@ -7960,8 +7992,7 @@ def _process_next_workspace_action(for_row_number: int | None = None) -> None:
 
     try:
         if action == "process_post":
-            row_url = _cell_text(row.get("Instagram URL")).strip()
-            is_reel = _is_reel_url(row_url)
+            is_reel = _row_is_reel(row)
             with st.status(
                 f"Transcribing and generating caption for row {row_number}…" if is_reel
                 else f"Generating caption for row {row_number}…",
@@ -9075,7 +9106,7 @@ if active_section_tab == "Home":
                         st.info("Thumbnail will appear here after ingest.")
 
                 with top_right:
-                    is_reel = _is_reel_url(url)
+                    is_reel = _row_is_reel(row)
                     is_photo_post = is_instagram and not is_reel
                     menu_label = "Process this post" if is_photo_post else "Process post"
                     schedule_suffix = (row.get("Scheduled Time", "") or "").strip()
@@ -9179,7 +9210,7 @@ if active_section_tab == "Home":
                         primary_action = "process_post" if is_instagram else "image_text"
                         primary_help = (
                             "Transcribe, generate the caption, and generate slide copy."
-                            if _is_reel_url(url)
+                            if is_reel
                             else "Use available post text and image text to generate the caption and slide copy."
                         )
                         if st.button("Edit caption", key=f"workspace_menu_edit_caption_{row_num}", width="stretch"):
