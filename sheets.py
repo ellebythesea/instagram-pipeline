@@ -1,6 +1,8 @@
 """Google Sheets helper — read rows and write pipeline results.
 
-Column order is fixed per spec. Rows are read positionally using _EXPECTED_HEADERS
+Column order is read off the sheet's own header row, so a column can be moved
+without a code change. _EXPECTED_HEADERS is the order a fresh sheet is built in
+and the fallback for a header the sheet does not carry
 so duplicate or misnamed sheet headers cannot corrupt field mapping.
 
 Sheet layout:
@@ -345,6 +347,89 @@ def _ensure_headers(sheet_id: str, ws: gspread.Worksheet) -> None:
 
 
 
+# ---------------------------------------------------------------------------
+# Where each posts column actually is
+#
+# _EXPECTED_HEADERS gives the order a fresh sheet is built in. It is no longer
+# what the code writes against: the sheet's own header row is, so a column can
+# be dragged somewhere else without a matching deploy, and nothing is left
+# pointing at the cell it used to occupy.
+# ---------------------------------------------------------------------------
+
+_posts_columns_cache: dict[str, tuple[float, dict[str, int]]] = {}
+
+
+def _normalized_header(name: str) -> str:
+    return " ".join((name or "").split()).lower()
+
+
+def _posts_column_map(header_row: list[str]) -> dict[str, int]:
+    """1-based column index for every expected header, read off the sheet.
+
+    A header the sheet does not carry keeps its canonical position, which is
+    what lets a sheet that never grew the late-added columns still be read and
+    written. The first of any duplicate header wins.
+    """
+    found: dict[str, int] = {}
+    for index, name in enumerate(header_row or []):
+        key = _normalized_header(name)
+        if key and key not in found:
+            found[key] = index + 1
+    return {
+        header: found.get(_normalized_header(header), position + 1)
+        for position, header in enumerate(_EXPECTED_HEADERS)
+    }
+
+
+def _cache_posts_columns(sheet_id: str, columns: dict[str, int]) -> None:
+    _posts_columns_cache[sheet_id] = (time.monotonic(), columns)
+
+
+def _posts_columns(sheet_id: str, ws: gspread.Worksheet) -> dict[str, int]:
+    """The posts column map, on the same clock as the rows cache.
+
+    get_all_rows already holds the header row and seeds this, so a write
+    normally reuses what the read before it saw rather than spending a call of
+    its own. Moving a column therefore takes effect on the next real read.
+    """
+    cached = _posts_columns_cache.get(sheet_id)
+    if cached and time.monotonic() - cached[0] <= _ROWS_CACHE_TTL_SECONDS:
+        return cached[1]
+    columns = _posts_column_map(_with_backoff(ws.row_values, 1))
+    _cache_posts_columns(sheet_id, columns)
+    return columns
+
+
+def _posts_cell(columns: dict[str, int], header: str, row_number: int) -> str:
+    return f"{_column_letter(columns[header])}{row_number}"
+
+
+def _posts_updates(
+    columns: dict[str, int],
+    row_number: int,
+    fields: dict[str, str],
+) -> list[dict]:
+    """One single-cell range per field, for a batch_update.
+
+    A cell at a time rather than a span: a span is only correct while the fields
+    inside it stay adjacent, and the whole point of reading the header row is
+    that they might not be. It is still one call however many fields there are.
+    """
+    return [
+        {"range": _posts_cell(columns, header, row_number), "values": [[value]]}
+        for header, value in fields.items()
+    ]
+
+
+def _posts_row_values(columns: dict[str, int], fields: dict[str, str]) -> list[str]:
+    """A row laid out for append, each value under its own header."""
+    row = [""] * max(columns.values())
+    for header, value in fields.items():
+        row[columns[header] - 1] = value
+    return row
+
+
+
 def _invalidate_rows_cache(sheet_id: str) -> None:
     stale_keys = [key for key in _rows_cache if key[0] == sheet_id]
     for key in stale_keys:
@@ -373,9 +458,16 @@ def get_all_rows(sheet_id: str) -> list[dict]:
         return cached
     ws = _worksheet(sheet_id)
     all_values = _with_backoff(ws.get_all_values)
+    # The header row is already in hand here, so this is where the column map is
+    # settled for everything that follows, reads and writes alike.
+    columns = _posts_column_map(all_values[0] if all_values else [])
+    _cache_posts_columns(sheet_id, columns)
     records = []
     for i, row in enumerate(all_values[1:]):  # skip header row
-        record = {key: (row[j] if j < len(row) else "") for j, key in enumerate(_EXPECTED_HEADERS)}
+        record = {
+            header: (row[index - 1] if index - 1 < len(row) else "")
+            for header, index in columns.items()
+        }
         record["row_number"] = i + 2
         records.append(record)
     _set_cached_rows(sheet_id, "posts", records)
@@ -452,16 +544,18 @@ def append_link_rows(
 
     reels = {url.strip() for url in (reel_urls or set()) if url.strip()}
     ws = _worksheet(sheet_id)
+    columns = _posts_columns(sheet_id, ws)
     rows = []
     for url in cleaned_urls:
-        row = [""] * len(_EXPECTED_HEADERS)
-        row[0] = url
-        row[1] = required_hashtags.strip()
-        row[10] = top_comment.strip()
+        fields = {
+            "Instagram URL": url,
+            "Required Hashtags": required_hashtags.strip(),
+            "Top Comment": top_comment.strip(),
+        }
         if url in reels:
-            row[13] = REEL_STATUS_MARKER
-            row[20] = REEL_LINES_SLIDE_CTA
-        rows.append(row)
+            fields["Status"] = REEL_STATUS_MARKER
+            fields["Slide CTA"] = REEL_LINES_SLIDE_CTA
+        rows.append(_posts_row_values(columns, fields))
     _with_backoff(ws.append_rows, rows, value_input_option="USER_ENTERED")
     _invalidate_rows_cache(sheet_id)
 
@@ -472,68 +566,80 @@ def append_generated_post_rows(sheet_id: str, rows: list[dict]) -> None:
     if not cleaned_rows:
         return
 
-    values = []
-    for source in cleaned_rows:
-        row = [""] * len(_EXPECTED_HEADERS)
-        row[0] = source.get("url", "").strip()
-        row[1] = source.get("required_hashtags", "").strip()
-        row[2] = source.get("source_username", "").strip()
-        row[3] = source.get("caption", "").strip()
-        row[4] = source.get("media_type", "").strip()
-        row[7] = source.get("thumbnail_link", "").strip()
-        row[8] = source.get("original_caption", "").strip()
-        row[9] = source.get("transcript", "").strip()
-        row[10] = source.get("top_comment", "").strip()
-        row[11] = source.get("speaker_name", "").strip()
-        row[12] = source.get("footer", "").strip()
-        row[13] = source.get("status", "").strip()
-        row[14] = source.get("caption_context", "").strip()
-        row[15] = source.get("scheduled_time", "").strip()
-        row[16] = source.get("name", "").strip()
-        row[17] = source.get("text1", "").strip()
-        row[18] = source.get("text2", "").strip()
-        row[19] = source.get("text3", "").strip()
-        row[20] = source.get("slide_cta", "").strip()
-        row[21] = source.get("text4", "").strip()
-        row[22] = source.get("text5", "").strip()
-        row[23] = source.get("text6", "").strip()
-        row[25] = source.get("text7", "").strip()
-        row[26] = source.get("text8", "").strip()
-        values.append(row)
-
     ws = _worksheet(sheet_id)
+    columns = _posts_columns(sheet_id, ws)
+    keys_by_header = {
+        "Instagram URL": "url",
+        "Required Hashtags": "required_hashtags",
+        "Source Username": "source_username",
+        "Generated Caption": "caption",
+        "Media Type": "media_type",
+        "Thumbnail Drive Link": "thumbnail_link",
+        "Original Caption": "original_caption",
+        "Transcript": "transcript",
+        "Top Comment": "top_comment",
+        "Speaker Name": "speaker_name",
+        "Footer": "footer",
+        "Status": "status",
+        "Caption Context": "caption_context",
+        "Scheduled Time": "scheduled_time",
+        "name": "name",
+        "text1": "text1",
+        "text2": "text2",
+        "text3": "text3",
+        "Slide CTA": "slide_cta",
+        "text4": "text4",
+        "text5": "text5",
+        "text6": "text6",
+        "text7": "text7",
+        "text8": "text8",
+    }
+    values = [
+        _posts_row_values(
+            columns,
+            {header: (source.get(key, "") or "").strip() for header, key in keys_by_header.items()},
+        )
+        for source in cleaned_rows
+    ]
+
     _with_backoff(ws.append_rows, values, value_input_option="USER_ENTERED")
     _invalidate_rows_cache(sheet_id)
 
 
 def append_manual_post_row(sheet_id: str, row_data: dict) -> None:
     """Append a manually created row to the posts tab (no URL required)."""
-    row = [""] * len(_EXPECTED_HEADERS)
-    row[0] = (row_data.get("url") or "").strip()
-    row[2] = (row_data.get("source_username") or "").strip()
-    row[3] = (row_data.get("caption") or "").strip()
-    row[4] = (row_data.get("media_type") or "").strip()
-    row[5] = str(row_data.get("photo_count") or "").strip()
-    row[6] = (row_data.get("media_link") or "").strip()
-    row[7] = (row_data.get("thumbnail_link") or "").strip()
-    row[8] = (row_data.get("original_caption") or "").strip()
-    row[9] = (row_data.get("transcript") or "").strip()
-    row[10] = (row_data.get("top_comment") or "").strip()
-    row[11] = (row_data.get("speaker_name") or "").strip()
-    row[13] = (row_data.get("status") or "").strip()
-    row[14] = (row_data.get("caption_context") or "").strip()
-    row[16] = (row_data.get("name") or "").strip()
-    row[17] = (row_data.get("text1") or "").strip()
-    row[18] = (row_data.get("text2") or "").strip()
-    row[19] = (row_data.get("text3") or "").strip()
-    row[20] = (row_data.get("slide_cta") or "").strip()
-    row[21] = (row_data.get("text4") or "").strip()
-    row[22] = (row_data.get("text5") or "").strip()
-    row[23] = (row_data.get("text6") or "").strip()
-    row[24] = (row_data.get("quote") or "").strip()
-    row[25] = (row_data.get("text7") or "").strip()
-    row[26] = (row_data.get("text8") or "").strip()
     ws = _worksheet(sheet_id)
+    columns = _posts_columns(sheet_id, ws)
+    keys_by_header = {
+        "Instagram URL": "url",
+        "Source Username": "source_username",
+        "Generated Caption": "caption",
+        "Media Type": "media_type",
+        "Photo Count": "photo_count",
+        "Media Drive Link": "media_link",
+        "Thumbnail Drive Link": "thumbnail_link",
+        "Original Caption": "original_caption",
+        "Transcript": "transcript",
+        "Top Comment": "top_comment",
+        "Speaker Name": "speaker_name",
+        "Status": "status",
+        "Caption Context": "caption_context",
+        "name": "name",
+        "text1": "text1",
+        "text2": "text2",
+        "text3": "text3",
+        "Slide CTA": "slide_cta",
+        "text4": "text4",
+        "text5": "text5",
+        "text6": "text6",
+        "quote": "quote",
+        "text7": "text7",
+        "text8": "text8",
+    }
+    row = _posts_row_values(
+        columns,
+        {header: str(row_data.get(key) or "").strip() for header, key in keys_by_header.items()},
+    )
     _with_backoff(ws.append_row, row, value_input_option="USER_ENTERED")
     _invalidate_rows_cache(sheet_id)
 
@@ -552,14 +658,14 @@ def update_generated_post_slides_and_status(
 ) -> None:
     """Write generated post slide fields and status to the main posts tab."""
     ws = _worksheet(sheet_id)
-    # Q=name, R=text1, S=text2, T=text3, U=Slide CTA (skip), V=text4, W=text5, X=text6, N=status
+    # Slide CTA is deliberately not in here: it sits between text3 and text4 and
+    # must keep whatever it holds.
     _with_backoff(
         ws.batch_update,
-        [
-            {"range": f"Q{row_number}:T{row_number}", "values": [[name, text1, text2, text3]]},
-            {"range": f"V{row_number}:X{row_number}", "values": [[text4, text5, text6]]},
-            {"range": f"N{row_number}", "values": [[status]]},
-        ],
+        _posts_updates(_posts_columns(sheet_id, ws), row_number, {
+            "name": name, "text1": text1, "text2": text2, "text3": text3,
+            "text4": text4, "text5": text5, "text6": text6, "Status": status,
+        }),
     )
     _invalidate_rows_cache(sheet_id)
 
@@ -587,31 +693,29 @@ def update_ingest_result(
         default_name = f"@{cleaned_username}"
     _with_backoff(
         ws.batch_update,
-        [
-            {"range": f"C{row_number}", "values": [[username]]},
-            {
-                "range": f"E{row_number}:J{row_number}",
-                "values": [[
-                    media_type,
-                    str(photo_count) if photo_count else "",
-                    media_link,
-                    thumbnail_link,
-                    original_caption,
-                    transcript,
-                ]],
-            },
-            {"range": f"N{row_number}", "values": [[status]]},
-            {"range": f"Q{row_number}", "values": [[default_name]]},
-        ],
+        _posts_updates(_posts_columns(sheet_id, ws), row_number, {
+            "Source Username": username,
+            "Media Type": media_type,
+            "Photo Count": str(photo_count) if photo_count else "",
+            "Media Drive Link": media_link,
+            "Thumbnail Drive Link": thumbnail_link,
+            "Original Caption": original_caption,
+            "Transcript": transcript,
+            "Status": status,
+            "name": default_name,
+        }),
     )
     _invalidate_rows_cache(sheet_id)
 
 
 def update_caption(sheet_id: str, row_number: int, caption: str, status: str) -> None:
-    """Write generated caption to col D and status to col N."""
+    """Write the generated caption and the status for a single row."""
     ws = _worksheet(sheet_id)
-    _with_backoff(ws.update, f"D{row_number}", [[caption]])
-    _with_backoff(ws.update, f"N{row_number}", [[status]])
+    _with_backoff(
+        ws.batch_update,
+        _posts_updates(_posts_columns(sheet_id, ws), row_number,
+                       {"Generated Caption": caption, "Status": status}),
+    )
     _invalidate_rows_cache(sheet_id)
 
 
@@ -630,12 +734,15 @@ def update_caption_and_metadata(
     ws = _worksheet(sheet_id)
     _with_backoff(
         ws.batch_update,
-        [
-            {"range": f"D{row_number}", "values": [[caption]]},
-            {"range": f"B{row_number}", "values": [[hashtags]]},
-            {"range": f"K{row_number}:M{row_number}", "values": [[top_comment, speaker_name, footer]]},
-            {"range": f"N{row_number}:O{row_number}", "values": [[status, caption_context]]},
-        ],
+        _posts_updates(_posts_columns(sheet_id, ws), row_number, {
+            "Generated Caption": caption,
+            "Required Hashtags": hashtags,
+            "Top Comment": top_comment,
+            "Speaker Name": speaker_name,
+            "Footer": footer,
+            "Status": status,
+            "Caption Context": caption_context,
+        }),
     )
     _invalidate_rows_cache(sheet_id)
 
@@ -643,21 +750,27 @@ def update_caption_and_metadata(
 def update_status(sheet_id: str, row_number: int, status: str) -> None:
     """Write status to col N for a single row."""
     ws = _worksheet(sheet_id)
-    _with_backoff(ws.update, f"N{row_number}", [[status]])
+    columns = _posts_columns(sheet_id, ws)
+    _with_backoff(ws.update, _posts_cell(columns, "Status", row_number),
+                  [[status]])
     _invalidate_rows_cache(sheet_id)
 
 
 def update_transcript(sheet_id: str, row_number: int, transcript: str) -> None:
     """Write transcript to col J for a single row."""
     ws = _worksheet(sheet_id)
-    _with_backoff(ws.update, f"J{row_number}", [[transcript]])
+    columns = _posts_columns(sheet_id, ws)
+    _with_backoff(ws.update, _posts_cell(columns, "Transcript", row_number),
+                  [[transcript]])
     _invalidate_rows_cache(sheet_id)
 
 
 def update_thumbnail_link(sheet_id: str, row_number: int, thumbnail_link: str) -> None:
     """Write thumbnail drive link to col H for a single row."""
     ws = _worksheet(sheet_id)
-    _with_backoff(ws.update, f"H{row_number}", [[thumbnail_link]])
+    columns = _posts_columns(sheet_id, ws)
+    _with_backoff(ws.update, _posts_cell(columns, "Thumbnail Drive Link", row_number),
+                  [[thumbnail_link]])
     _invalidate_rows_cache(sheet_id)
 
 
@@ -669,14 +782,17 @@ def update_reel_drive_link(sheet_id: str, row_number: int, reel_link: str) -> No
     another machine pick the post up with the reel already attached.
     """
     ws = _worksheet(sheet_id)
-    _with_backoff(ws.update, f"AB{row_number}", [[reel_link]])
+    columns = _posts_columns(sheet_id, ws)
+    _with_backoff(ws.update, _posts_cell(columns, "Reel Drive Link", row_number), [[reel_link]])
     _invalidate_rows_cache(sheet_id)
 
 
 def update_caption_context(sheet_id: str, row_number: int, caption_context: str) -> None:
     """Write caption context to col O for a single row."""
     ws = _worksheet(sheet_id)
-    _with_backoff(ws.update, f"O{row_number}", [[caption_context]])
+    columns = _posts_columns(sheet_id, ws)
+    _with_backoff(ws.update, _posts_cell(columns, "Caption Context", row_number),
+                  [[caption_context]])
     _invalidate_rows_cache(sheet_id)
 
 
@@ -685,9 +801,13 @@ def update_scheduled_times(sheet_id: str, assignments: dict[int, str]) -> None:
     if not assignments:
         return
     ws = _worksheet(sheet_id)
+    columns = _posts_columns(sheet_id, ws)
     _with_backoff(
         ws.batch_update,
-        [{"range": f"P{row_number}", "values": [[scheduled_time]]} for row_number, scheduled_time in assignments.items()],
+        [
+            {"range": _posts_cell(columns, "Scheduled Time", row_number), "values": [[scheduled_time]]}
+            for row_number, scheduled_time in assignments.items()
+        ],
     )
     _invalidate_rows_cache(sheet_id)
 
@@ -713,21 +833,19 @@ def update_carousel_fields(
     rewriting the whole carousel passes "" to clear them.
     """
     ws = _worksheet(sheet_id)
-    updates = [
-        {"range": f"N{row_number}", "values": [["slides"]]},
-        {
-            "range": f"Q{row_number}:X{row_number}",
-            "values": [[name, text1, text2, text3, "", text4, text5, text6]],
-        },
-    ]
+    columns = _posts_columns(sheet_id, ws)
+    fields = {
+        "Status": "slides",
+        "name": name, "text1": text1, "text2": text2, "text3": text3,
+        # The old span wrote Slide CTA blank as the cell between text3 and text4.
+        # Now that each field is addressed by name, keep clearing it explicitly.
+        "Slide CTA": "",
+        "text4": text4, "text5": text5, "text6": text6,
+    }
     if text7 is not None or text8 is not None:
-        updates.append(
-            {
-                "range": f"Z{row_number}:AA{row_number}",
-                "values": [[text7 or "", text8 or ""]],
-            }
-        )
-    _with_backoff(ws.batch_update, updates)
+        fields["text7"] = text7 or ""
+        fields["text8"] = text8 or ""
+    _with_backoff(ws.batch_update, _posts_updates(columns, row_number, fields))
     _invalidate_rows_cache(sheet_id)
 
 
@@ -795,7 +913,9 @@ def get_slide_cta_options(sheet_id: str) -> dict[str, str]:
 def update_slide_cta_option(sheet_id: str, row_number: int, option: str) -> None:
     """Persist a row's selected slide CTA in column U of the main sheet."""
     ws = _worksheet(sheet_id)
-    _with_backoff(ws.update, f"U{row_number}", [[(option or "").strip()]])
+    columns = _posts_columns(sheet_id, ws)
+    _with_backoff(ws.update, _posts_cell(columns, "Slide CTA", row_number),
+                  [[(option or "").strip()]])
 
 
 def update_reel_lines_fields(
@@ -814,11 +934,12 @@ def update_reel_lines_fields(
     ws = _worksheet(sheet_id)
     _with_backoff(
         ws.batch_update,
-        [
-            {"range": f"N{row_number}", "values": [[(status or "").strip()]]},
-            {"range": f"Q{row_number}:R{row_number}", "values": [[(name or "").strip(), headlines or ""]]},
-            {"range": f"U{row_number}", "values": [[REEL_LINES_SLIDE_CTA]]},
-        ],
+        _posts_updates(_posts_columns(sheet_id, ws), row_number, {
+            "Status": (status or "").strip(),
+            "name": (name or "").strip(),
+            "text1": headlines or "",
+            "Slide CTA": REEL_LINES_SLIDE_CTA,
+        }),
     )
     _invalidate_rows_cache(sheet_id)
 
@@ -826,7 +947,9 @@ def update_reel_lines_fields(
 def update_quote(sheet_id: str, row_number: int, quote: str) -> None:
     """Write a pull-quote to column Y of the main sheet."""
     ws = _worksheet(sheet_id)
-    _with_backoff(ws.update, f"Y{row_number}", [[(quote or "").strip()]])
+    columns = _posts_columns(sheet_id, ws)
+    _with_backoff(ws.update, _posts_cell(columns, "quote", row_number),
+                  [[(quote or "").strip()]])
     _invalidate_rows_cache(sheet_id)
 
 
@@ -1042,11 +1165,13 @@ def update_metadata(
     ws = _worksheet(sheet_id)
     _with_backoff(
         ws.batch_update,
-        [
-            {"range": f"B{row_number}", "values": [[hashtags]]},
-            {"range": f"K{row_number}:M{row_number}", "values": [[top_comment, speaker_name, footer]]},
-            {"range": f"O{row_number}", "values": [[caption_context]]},
-        ],
+        _posts_updates(_posts_columns(sheet_id, ws), row_number, {
+            "Required Hashtags": hashtags,
+            "Top Comment": top_comment,
+            "Speaker Name": speaker_name,
+            "Footer": footer,
+            "Caption Context": caption_context,
+        }),
     )
     _invalidate_rows_cache(sheet_id)
 
@@ -1056,8 +1181,9 @@ def update_speaker_names_batch(sheet_id: str, updates: dict[int, str]) -> None:
     if not updates:
         return
     ws = _worksheet(sheet_id)
+    columns = _posts_columns(sheet_id, ws)
     requests = [
-        {"range": f"L{row_number}", "values": [[speaker_name]]}
+        {"range": _posts_cell(columns, "Speaker Name", row_number), "values": [[speaker_name]]}
         for row_number, speaker_name in sorted(updates.items())
     ]
     _with_backoff(ws.batch_update, requests)
@@ -1081,13 +1207,26 @@ def _deleted_at_stamp() -> str:
     return stamp.strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _archive_source_headers(sheet_id: str) -> list[str]:
+    """The posts headers in the order the posts tab actually holds them.
+
+    archive_row copies a row across cell for cell, so the archive's header row
+    has to match the source's order or a moved column ends up filed under its
+    old neighbour's name.
+    """
+    columns = _posts_columns(sheet_id, _worksheet(sheet_id))
+    return [header for header, _index in sorted(columns.items(), key=lambda item: item[1])]
+
+
 def _archive_worksheet(sheet_id: str) -> gspread.Worksheet:
     """The "Safe to Delete" tab, created with a header row the first time it is needed."""
     if sheet_id in _archive_ready:
         # Header row already confirmed for this process, and the worksheet is cached,
         # so this costs no call at all.
         return _named_worksheet(sheet_id, _ARCHIVE_SHEET_TITLE)
-    headers = [*_EXPECTED_HEADERS, "Deleted At"]
+    # Mirrors whatever order the posts tab is in, since archive_row copies the
+    # row across verbatim; a canonical order here would mislabel a moved column.
+    headers = [*_archive_source_headers(sheet_id), "Deleted At"]
     try:
         ws = _named_worksheet(sheet_id, _ARCHIVE_SHEET_TITLE)
     except gspread.WorksheetNotFound:
@@ -1117,7 +1256,8 @@ def archive_row(sheet_id: str, row_number: int) -> None:
     values = _with_backoff(ws.row_values, row_number)
     # row_values trims trailing empties, so pad to the full column set before adding
     # the timestamp - otherwise it lands in whichever column happened to be last.
-    padded = [*values, *[""] * (len(_EXPECTED_HEADERS) - len(values))][:len(_EXPECTED_HEADERS)]
+    width = max(_posts_columns(sheet_id, ws).values())
+    padded = [*values, *[""] * (width - len(values))][:width]
     archive_ws = _archive_worksheet(sheet_id)
     # Copy first, delete second: a failed append must not lose the row.
     _with_backoff(

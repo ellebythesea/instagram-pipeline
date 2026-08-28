@@ -6,7 +6,13 @@ This documents every tab in the Google Sheet well enough to recreate it from scr
 
 ## Tab: posts
 
-Main Instagram pipeline. 28 columns A–AB. **The app restores this header row automatically if it is missing.**
+Main Instagram pipeline. 28 columns. **The app restores this header row automatically if it is missing.**
+
+**Columns can be reordered.** The app reads every column's position from this header row rather than from a
+fixed letter, so dragging a column somewhere else needs no code change — the header travels with it and the
+app follows. The letters below are where a fresh sheet is built, and where a header the sheet does not carry
+is assumed to be. After moving a column, reload the app: positions are cached for up to two minutes, and a
+write in that window would still use the old one.
 
 | Col | Header |
 |-----|--------|
