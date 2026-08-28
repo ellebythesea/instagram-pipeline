@@ -50,10 +50,18 @@ BLOCKED_HOSTS = (
     "threads.com",
     "threads.net",
     "reddit.com",
+    "youtube.com",
+    "youtu.be",
+    "facebook.com",
+    "fb.com",
+    "fb.watch",
+    "tiktok.com",
     "docs.google.com",
     "drive.google.com",
 )
-BLOCKED_LABEL = "Twitter/X, Threads, Reddit, or Google Docs/Drive"
+BLOCKED_LABEL = (
+    "Twitter/X, Threads, Reddit, YouTube, Facebook, TikTok, or Google Docs/Drive"
+)
 
 # A highlighted run in the HTML export is a span with a non-white background colour.
 HIGHLIGHT_SPAN_RE = re.compile(

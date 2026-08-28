@@ -8199,8 +8199,11 @@ def _reload_row_from_sheet(row_number: int) -> dict:
 def _process_post_online(row: dict) -> None:
     row_num = row["row_number"]
     # Read before anything writes to the row: processing spends the 'reel' Status
-    # marker, so the intent has to be captured and persisted up front.
+    # marker, so the intent has to be captured and persisted up front. The same
+    # goes for whether this is a reel at all — 'reel' in Status is one of the
+    # things that says so, and it will not survive the ingest write.
     wants_reel_lines = _wants_reel_lines(row)
+    is_reel = _row_is_reel(row)
     if wants_reel_lines:
         _claim_reel_lines_row(row_num, row)
     has_media = bool(_cell_text(row.get("Media Drive Link")).strip())
@@ -8235,6 +8238,13 @@ def _process_post_online(row: dict) -> None:
         # finish, applied to a row the pipeline transcribed rather than one built
         # from a pasted link.
         _finish_reel_lines_row(row_num, updated_row, caption, next_status)
+        st.session_state.pop(f"workspace_preview_upload_links_{row_num}", None)
+        return
+
+    if is_reel or _row_is_reel(updated_row):
+        # A reel is posted as a video, so carousel slide copy is never used and
+        # is not worth the model call. Headlines are on demand in the Reels tab;
+        # a row that asked for them up front took the branch above.
         st.session_state.pop(f"workspace_preview_upload_links_{row_num}", None)
         return
 

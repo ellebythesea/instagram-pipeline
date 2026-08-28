@@ -70,6 +70,11 @@ The marker is typed by hand, so `reel`, `reels`, `reel line`, `reel lines` and `
 
 Typing `reel` into Media Type instead forces the reel treatment on its own, without the Reel Lines finish.
 
+No reel gets carousel slide copy, however it came to be one — a `/reel/` link, `reel` in Status, or `reel` in
+Media Type. A reel is posted as a video, so slides would never be used and the model call is skipped. Rows
+carrying the Reel Lines marker get their ten headlines instead; any other reel gets none up front, and the
+**Reels** tab writes them on demand.
+
 `needs source: [reason]` marks an article row whose page could not be read. The row is still created so the article text can be pasted in by hand on the Edit tab, which builds the caption and slide copy and moves the row to `ingested`.
 
 **Media Type values:** `post`, `reel`, `article`
