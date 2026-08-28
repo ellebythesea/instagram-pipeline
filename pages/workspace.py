@@ -1783,6 +1783,7 @@ get_fundraising_links = getattr(sheet_ops, "get_fundraising_links", lambda _shee
 get_slide_cta_options = getattr(sheet_ops, "get_slide_cta_options", lambda _sheet_id: {})
 update_slide_cta_option = getattr(sheet_ops, "update_slide_cta_option", lambda _sheet_id, _row_number, _option: None)
 update_reel_lines_fields = getattr(sheet_ops, "update_reel_lines_fields", None)
+update_reel_drive_link = getattr(sheet_ops, "update_reel_drive_link", None)
 get_original_thumbnails = getattr(sheet_ops, "get_original_thumbnails", lambda _sheet_id: {})
 save_original_thumbnail = getattr(sheet_ops, "save_original_thumbnail", lambda _sheet_id, _row_number, _link: None)
 clear_original_thumbnail = getattr(sheet_ops, "clear_original_thumbnail", lambda _sheet_id, _row_number: None)
@@ -5881,7 +5882,12 @@ def _generate_reel_to_drive(
     work_dir = os.path.dirname(src_path)
     output_path = os.path.join(work_dir, output_name)
     _compose_reel_video(src_path, output_path, work_dir, offset_percent, headline, font_adjust)
-    return upload_to_drive(output_path, output_name, preview_folder_id), output_name, output_path
+    reel_link = upload_to_drive(output_path, output_name, preview_folder_id)
+    # On the row, not just in this session: the local copy dies with the
+    # container, so without this the reel is unreachable from another machine.
+    if update_reel_drive_link is not None and reel_link:
+        update_reel_drive_link(GOOGLE_SHEET_ID, row_num, reel_link)
+    return reel_link, output_name, output_path
 
 
 def _apply_reel_headline_pick(select_key: str, text_key: str) -> None:
@@ -5951,6 +5957,7 @@ def _render_reel_video_tab(
     caption_value: str,
     source_text: str,
     speaker_name: str,
+    saved_reel_link: str = "",
 ) -> None:
     """Crop the row's video to 5:4 on a 1080x1920 canvas with headlines burnt in.
 
@@ -6086,13 +6093,22 @@ def _render_reel_video_tab(
                 st.session_state[output_key] = {"link": link, "name": name, "path": local_path}
 
     generated = st.session_state.get(output_key) or {}
-    if generated.get("link"):
-        st.success(f"Saved {generated.get('name', 'the reel')} to Drive.")
+    reel_link = generated.get("link") or _cell_text(saved_reel_link).strip()
+    if reel_link:
+        if generated.get("link"):
+            st.success(f"Saved {generated.get('name', 'the reel')} to Drive.")
         if os.path.exists(generated.get("path", "")):
             st.video(generated["path"])
+        else:
+            # Picked up somewhere else, so there is no local encode to play.
+            # Drive's own poster frame for the file stands in for it.
+            poster = _drive_image_url(reel_link)
+            if poster:
+                st.image(poster, width=340)
+            st.caption("Made in an earlier session — open it in Drive to watch it.")
         # Named apart from the row's own "Open reel in Drive", which stays
         # pointed at the untouched source in Media Drive Link.
-        st.link_button("Open new reel in Drive", generated["link"], width="stretch")
+        st.link_button("Open new reel in Drive", reel_link, width="stretch")
 
     error_message = st.session_state.get(error_key, "")
     if error_message:
@@ -6635,6 +6651,7 @@ def _copy_tabs(
             # Prefer what was actually said; fall back to the post's own words.
             (transcript or "").strip() or (original_caption or "").strip(),
             _cell_text(st.session_state.get(f"workspace_speaker_row_{row_num}", speaker_name)).strip(),
+            _cell_text((prompt_row or {}).get("Reel Drive Link")).strip(),
         )
     elif selected_content_tab == "Headlines":
         _render_reel_lines_headlines_tab(

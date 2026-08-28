@@ -88,6 +88,7 @@ _EXPECTED_HEADERS = [
     "quote",
     "text7",
     "text8",
+    "Reel Drive Link",
 ]
 
 _headers_checked: set[tuple[str, str]] = set()
@@ -305,9 +306,9 @@ def _optional_worksheet(sheet_id: str, title: str) -> gspread.Worksheet | None:
 
 
 # Columns added after the original A-Y layout. Reads pad missing columns, so an
-# older sheet still loads, but a write to Z/AA fails on a grid that never grew
-# past the default 26 columns - hence the widen below.
-_LATE_ADDED_HEADERS = ("text7", "text8")
+# older sheet still loads, but a write to Z/AA/AB fails on a grid that never
+# grew past the default 26 columns - hence the widen below.
+_LATE_ADDED_HEADERS = ("text7", "text8", "Reel Drive Link")
 
 
 def _ensure_headers(sheet_id: str, ws: gspread.Worksheet) -> None:
@@ -657,6 +658,18 @@ def update_thumbnail_link(sheet_id: str, row_number: int, thumbnail_link: str) -
     """Write thumbnail drive link to col H for a single row."""
     ws = _worksheet(sheet_id)
     _with_backoff(ws.update, f"H{row_number}", [[thumbnail_link]])
+    _invalidate_rows_cache(sheet_id)
+
+
+def update_reel_drive_link(sheet_id: str, row_number: int, reel_link: str) -> None:
+    """Write the composed reel's Drive link to col AB for a single row.
+
+    Kept apart from Media Drive Link, which stays pointed at the source video.
+    This is the cropped, headlined cut, and holding it on the row is what lets
+    another machine pick the post up with the reel already attached.
+    """
+    ws = _worksheet(sheet_id)
+    _with_backoff(ws.update, f"AB{row_number}", [[reel_link]])
     _invalidate_rows_cache(sheet_id)
 
 

@@ -6,7 +6,7 @@ This documents every tab in the Google Sheet well enough to recreate it from scr
 
 ## Tab: posts
 
-Main Instagram pipeline. 27 columns A–AA. **The app restores this header row automatically if it is missing.**
+Main Instagram pipeline. 28 columns A–AB. **The app restores this header row automatically if it is missing.**
 
 | Col | Header |
 |-----|--------|
@@ -37,6 +37,7 @@ Main Instagram pipeline. 27 columns A–AA. **The app restores this header row a
 | Y | quote |
 | Z | text7 |
 | AA | text8 |
+| AB | Reel Drive Link |
 
 ### Slide columns
 
@@ -45,9 +46,21 @@ by pasted slide results or by hand. The editor draws a slide for every one of th
 copy, so a row with `text7` and `text8` filled in shows eight slides, each with its own preview,
 font controls, and edit button, and the link CTA moves to whichever slide is last.
 
-`text7` and `text8` (Z and AA) came after the original A–Y layout. Rows are read positionally with
-missing columns treated as empty, so a sheet that never grew those columns still loads; the first
-time the app writes them it widens the grid and fills in the two header cells if they are blank.
+`text7` and `text8` (Z and AA) came after the original A–Y layout, and `Reel Drive Link` (AB) after
+those. Rows are read positionally with missing columns treated as empty, so a sheet that never grew
+those columns still loads; the first time the app writes them it widens the grid and fills in the
+header cells if they are blank.
+
+### Reel Drive Link
+
+`Reel Drive Link` (col AB) holds the reel the **Reels** tab composes — the video centre-cropped to
+5:4 on a 1080×1920 canvas with a headline burnt into the bar above it — uploaded beside the row's
+other previews. It is written when the reel is generated and is separate from `Media Drive Link`,
+which keeps pointing at the untouched source video.
+
+Holding it on the row rather than in the session is what lets the post be picked up on another
+machine with the reel still attached: the tab shows Drive's poster frame for the file and a button
+to open it, without the local encode that only exists on the machine that made it.
 
 **Status values:** empty (pending), `reel` (pending, forced to process as a reel), `ingested`, `done`, `slides`, `needs source: [reason]`, `error: [reason]`
 
