@@ -198,10 +198,19 @@ REEL_HEADLINE_MAX_FONT_PX = 104
 REEL_HEADLINE_MIN_FONT_PX = 34
 REEL_HEADLINE_LINE_SPACING = 1.2
 
-# Pillow needs a real font file: its built-in bitmap font is far too small to
-# headline anything. Streamlit Cloud (Debian) ships DejaVu and Liberation; the
-# macOS paths are for running the app locally.
+# Poppins is the slide typeface, so the reel is set in it too. It is committed
+# under assets/fonts rather than pulled from Google Fonts the way the slide
+# preview CSS does: Pillow needs a font file on disk, not a web font. The system
+# faces after it are a last resort so a missing asset degrades to plain text
+# instead of failing the render.
+REEL_FONT_FILENAME = "Poppins-SemiBold.ttf"
 _REEL_FONT_CANDIDATES = (
+    os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "assets",
+        "fonts",
+        REEL_FONT_FILENAME,
+    ),
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
     "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
@@ -216,8 +225,7 @@ def _reel_font_file() -> str:
         if os.path.exists(candidate):
             return candidate
     raise RuntimeError(
-        "No bold font is installed, so the headline cannot be drawn. "
-        "Add fonts-dejavu-core to packages.txt."
+        f"No font is available to draw the headline. Restore assets/fonts/{REEL_FONT_FILENAME}."
     )
 
 
