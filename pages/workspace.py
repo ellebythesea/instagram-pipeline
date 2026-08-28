@@ -468,6 +468,26 @@ def _render_reel_preview_image(
     return canvas
 
 
+def _audio_codec(src_path: str) -> str:
+    """The source's audio codec, or "" when it has no audio or cannot be read."""
+    try:
+        result = subprocess.run(
+            [
+                _crop_ffprobe_path(), "-v", "error",
+                "-select_streams", "a:0",
+                "-show_entries", "stream=codec_name",
+                "-of", "csv=p=0",
+                src_path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=MEDIA_PROBE_TIMEOUT_SECONDS,
+        )
+    except Exception:
+        return ""
+    return (result.stdout or "").strip().lower() if result.returncode == 0 else ""
+
+
 def _compose_reel_video(
     src_path: str,
     output_path: str,
@@ -506,7 +526,9 @@ def _compose_reel_video(
         "-filter_complex", filter_complex,
         "-map", "[out]", "-map", "1:a?",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
-        "-c:a", "aac", "-b:a", "192k",
+        # Nothing here touches the audio, so re-encoding it only costs time.
+        # Anything that is not already AAC still has to be converted for MP4.
+        *(["-c:a", "copy"] if _audio_codec(src_path) == "aac" else ["-c:a", "aac", "-b:a", "192k"]),
         "-movflags", "+faststart",
         "-shortest",
         output_path,
@@ -5910,15 +5932,21 @@ def _apply_reel_headline_pick(select_key: str, text_key: str) -> None:
         st.session_state[text_key] = picked
 
 
-def _render_reel_bar_controls(
+def _bump_reel_font(font_key: str, delta: int) -> None:
+    """Move a bar's font size. Runs as an on_click callback, which lands the new
+    value before the script re-executes, so one rerun redraws the preview."""
+    current = int(st.session_state.get(font_key, 0) or 0)
+    st.session_state[font_key] = max(-80, min(120, current + delta))
+
+
+def _render_reel_headline_input(
     row_num: int,
     label: str,
     suffix: str,
     text_key: str,
-    font_key: str,
     headlines: list[str],
 ) -> None:
-    """Headline dropdown, an editable copy of it, and the A- / A+ pair."""
+    """A bar's headline dropdown and the editable copy of what it picked."""
     if headlines:
         select_key = f"workspace_reel_pick_{suffix}_{row_num}"
         st.selectbox(
@@ -5930,18 +5958,26 @@ def _render_reel_bar_controls(
         )
     st.text_area(label, key=text_key, height=80)
 
-    current_adjust = int(st.session_state.get(font_key, 0) or 0)
-    smaller_column, larger_column, readout_column = st.columns([1, 1, 3], gap="small")
+
+def _render_reel_font_buttons(row_num: int, suffix: str, font_key: str) -> None:
+    """A- / A+ for one bar, sat against the edge of the preview it changes."""
+    smaller_column, larger_column, _rest = st.columns([1, 1, 5], gap="small")
     with smaller_column:
-        if st.button("A-", key=f"workspace_reel_font_down_{suffix}_{row_num}", width="stretch"):
-            st.session_state[font_key] = max(-80, current_adjust - REEL_HEADLINE_FONT_STEP_PX)
-            _rerun_workspace("Edit")
+        st.button(
+            "A-",
+            key=f"workspace_reel_font_down_{suffix}_{row_num}",
+            width="stretch",
+            on_click=_bump_reel_font,
+            args=(font_key, -REEL_HEADLINE_FONT_STEP_PX),
+        )
     with larger_column:
-        if st.button("A+", key=f"workspace_reel_font_up_{suffix}_{row_num}", width="stretch"):
-            st.session_state[font_key] = min(120, current_adjust + REEL_HEADLINE_FONT_STEP_PX)
-            _rerun_workspace("Edit")
-    with readout_column:
-        st.caption(f"Font {current_adjust:+d}px" if current_adjust else "Font: auto-fit")
+        st.button(
+            "A+",
+            key=f"workspace_reel_font_up_{suffix}_{row_num}",
+            width="stretch",
+            on_click=_bump_reel_font,
+            args=(font_key, REEL_HEADLINE_FONT_STEP_PX),
+        )
 
 
 def _render_reel_video_tab(
@@ -6004,8 +6040,8 @@ def _render_reel_video_tab(
         if not (source_text or "").strip():
             st.caption("No transcript or caption to write headlines from.")
 
-    _render_reel_bar_controls(row_num, "Top bar", "top", top_key, top_font_key, headlines)
-    _render_reel_bar_controls(row_num, "Bottom bar", "bottom", bottom_key, bottom_font_key, headlines)
+    _render_reel_headline_input(row_num, "Top bar", "top", top_key, headlines)
+    _render_reel_headline_input(row_num, "Bottom bar", "bottom", bottom_key, headlines)
 
     position_column, frame_column = st.columns(2, gap="small")
     with position_column:
@@ -6067,8 +6103,11 @@ def _render_reel_video_tab(
         except Exception as error:
             st.warning(f"Could not build the preview: {describe_error(error)}")
         else:
+            # The pair above the preview sets the top bar, the pair below sets
+            # the bottom one, which is label enough for what they do.
+            _render_reel_font_buttons(row_num, "top", top_font_key)
             st.image(preview_image, width=340)
-            st.caption("1080×1920 · video cropped to 5:4 and centred")
+            _render_reel_font_buttons(row_num, "bottom", bottom_font_key)
 
         if st.button(
             "Generate reel",
