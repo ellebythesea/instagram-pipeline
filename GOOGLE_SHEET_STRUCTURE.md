@@ -53,6 +53,8 @@ time the app writes them it widens the grid and fills in the two header cells if
 
 Typing `reel` into Status on a pending row makes it process through the reel scraper and get transcribed, even when its link is a `/p/` one rather than `/reel/`, and then finishes it as a Reel Lines post: ten headlines in `text1` (col R) and `reel lines` in `Slide CTA` (col U), rather than carousel slide copy. The Status marker is consumed on processing — the row comes out with the normal `ingested`/`done` status and a Media Type of `reel` — so the `Slide CTA` marker is written up front and is what identifies the row afterwards. The Ingest page's **reel** checkbox writes the same marker.
 
+The marker is typed by hand, so `reel`, `reels`, `reel line`, `reel lines` and `reels lines` all count, in any capitalisation and with hyphens, underscores or extra spaces (`Reels`, `Reel-Lines`). Anything else in Status is treated as a real status, so a misspelling leaves the row pending and untouched. The headlines are written when the caption is — after transcription — so they appear in the Whisper step of **Run all**, not in its ingest step.
+
 Typing `reel` into Media Type instead forces the reel treatment on its own, without the Reel Lines finish.
 
 `needs source: [reason]` marks an article row whose page could not be read. The row is still created so the article text can be pasted in by hand on the Edit tab, which builds the caption and slide copy and moves the row to `ingested`.

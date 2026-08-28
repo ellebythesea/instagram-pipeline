@@ -1463,10 +1463,13 @@ def _build_election_post_prompt(candidate_result: dict) -> str:
 
 get_all_rows = sheet_ops.get_all_rows
 get_pending_rows = sheet_ops.get_pending_rows
-is_reel_status = getattr(
-    sheet_ops,
-    "is_reel_status",
-    lambda value: (value or "").strip().lower() == "reel",
+# pipeline_caption carries the same check, so a stale sheets.py falls through to it
+# rather than to a third copy of the marker list. The last-resort lambda only exists so
+# a build stale in both places still imports.
+is_reel_status = (
+    getattr(sheet_ops, "is_reel_status", None)
+    or getattr(pipeline_caption_ops, "is_reel_status", None)
+    or (lambda value: (value or "").strip().lower() in {"reel", "reels"})
 )
 update_caption = sheet_ops.update_caption
 update_caption_and_metadata = getattr(sheet_ops, "update_caption_and_metadata", None)
@@ -6790,6 +6793,14 @@ def _run_all_steps() -> None:
                         caption = generate_row_caption(updated_row)
                         next_status = "skipped" if (row.get("Status", "") or "").strip().lower() == "skipped" else "done"
                         update_caption(GOOGLE_SHEET_ID, row_num, caption, next_status)
+                        # This is where a reel-flagged row actually gets its caption:
+                        # step 1 ingests it without a transcript, so it is not ready
+                        # for a caption — or for headlines — until here. Without this
+                        # the row finishes as an ordinary post and the Reel Lines
+                        # marker in Slide CTA never gets its ten headlines.
+                        if _wants_reel_lines(updated_row):
+                            st.write(f"Row {row_num}: writing reel lines…")
+                            _finish_reel_lines_row(row_num, updated_row, caption, next_status)
                         st.write(f"Row {row_num}: done.")
                         succeeded += 1
                     else:

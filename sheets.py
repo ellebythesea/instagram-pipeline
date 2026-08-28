@@ -393,6 +393,13 @@ NEEDS_SOURCE_PREFIX = "needs source"
 # reel, for a video that lives at a /p/ link rather than a /reel/ one. It is consumed
 # on processing: the row comes out with the normal ingested/done status.
 REEL_STATUS_MARKER = "reel"
+# The cell is typed by hand, so the obvious ways of writing it all count. "reels" is
+# at least as natural to type as the singular, and "reel lines" names what the marker
+# actually produces. Case, surrounding space, hyphens and underscores are ignored, so
+# "Reels", "Reel-Lines" and " reel " are all the marker too.
+# pipeline_caption.is_reel_status mirrors this for modules that cannot import sheets —
+# keep the two in step.
+REEL_STATUS_MARKERS = frozenset({"reel", "reels", "reel line", "reel lines", "reels lines"})
 # A row flagged as a reel is finished as a Reel Lines post — ten headlines in text1
 # instead of carousel slide copy. Column U carries that for the life of the row, since
 # the Status marker itself is consumed as soon as the row is processed.
@@ -400,8 +407,9 @@ REEL_LINES_SLIDE_CTA = "reel lines"
 
 
 def is_reel_status(value: str) -> bool:
-    """Whether a Status cell is the hand-typed 'reel' marker rather than a real status."""
-    return (value or "").strip().lower() == REEL_STATUS_MARKER
+    """Whether a Status cell is the hand-typed reel marker rather than a real status."""
+    normalized = " ".join((value or "").replace("-", " ").replace("_", " ").lower().split())
+    return normalized in REEL_STATUS_MARKERS
 
 
 def get_pending_rows(sheet_id: str) -> list[dict]:

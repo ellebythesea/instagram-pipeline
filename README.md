@@ -155,11 +155,20 @@ Status values: empty (pending), `reel` (pending, forced to process as a reel), `
 
 Type `reel` into Status on a pending row to have it transcribed as a reel even when its link is a
 `/p/` one, and finished as a **Create Reel Lines** post — ten headlines in `text1` and `reel lines`
-in `Slide CTA`, instead of carousel slide copy. The Ingest page's **reel** checkbox writes the same
-marker. The Status marker is replaced by the normal status once the row is processed; the `Slide CTA`
-marker is written at the start of processing and is what makes the row a Reel Lines row from then on.
+in `Slide CTA`, instead of carousel slide copy. `reels`, `reel lines` and `reels lines` all count as
+the same marker, in any capitalisation and with hyphens or extra spaces, since the cell is typed by
+hand. The Ingest page's **reel** checkbox writes the same marker. The Status marker is replaced by
+the normal status once the row is processed; the `Slide CTA` marker is written at the start of
+processing and is what makes the row a Reel Lines row from then on.
+
+The headlines are written at the point the row's caption is written, which for a reel is after it has
+been transcribed — the transcript is what they are drawn from. **Run all** ingests the row first
+(no transcript yet) and transcribes and captions it in its Whisper step, so that is where the
+headlines land; **Process post** on the row does both in one go.
 
 To force the reel treatment *without* Reel Lines, type `reel` into Media Type rather than Status.
+`scripts/run_pipeline.py` honours the marker as a plain reel; neither it nor
+`scripts/local_transcribe_reels.py` writes the headlines, so process the row from the app for those.
 
 The app restores headers if they are missing.
 

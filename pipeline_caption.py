@@ -183,12 +183,24 @@ def _row_url(row: dict) -> str:
     return (row.get("Instagram URL") or "").strip().lower()
 
 
+# Mirror of sheets.is_reel_status / sheets.REEL_STATUS_MARKERS, spelled out here rather
+# than imported so this module stays free of the sheets/gspread stack — keep in step.
+REEL_STATUS_MARKERS = frozenset({"reel", "reels", "reel line", "reel lines", "reels lines"})
+
+
+def is_reel_status(value: str) -> bool:
+    """Whether a Status cell is the hand-typed reel marker rather than a real status."""
+    normalized = " ".join((value or "").replace("-", " ").replace("_", " ").lower().split())
+    return normalized in REEL_STATUS_MARKERS
+
+
 def row_requires_transcript(row: dict) -> bool:
     media_type = _row_media_type(row)
     if media_type == "reel":
         return True
-    # "reel" typed into Status is a hand-written request to treat the row as a reel.
-    if (row.get("Status") or "").strip().lower() == "reel":
+    # The reel marker typed into Status is a hand-written request to treat the row as
+    # a reel, whichever way it was spelled.
+    if is_reel_status(row.get("Status")):
         return True
     url = _row_url(row)
     return "/reel/" in url or "/reels/" in url
