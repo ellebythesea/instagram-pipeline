@@ -193,10 +193,21 @@ REEL_VIDEO_WIDTH_PX = REEL_CANVAS_WIDTH_PX
 REEL_VIDEO_HEIGHT_PX = round(REEL_VIDEO_WIDTH_PX * REEL_VIDEO_RATIO_H / REEL_VIDEO_RATIO_W)
 REEL_VIDEO_TOP_PX = (REEL_CANVAS_HEIGHT_PX - REEL_VIDEO_HEIGHT_PX) // 2
 REEL_HEADLINE_SIDE_MARGIN_PX = 84
-REEL_HEADLINE_BAR_MARGIN_PX = 48
-REEL_HEADLINE_MAX_FONT_PX = 104
-REEL_HEADLINE_MIN_FONT_PX = 34
+# The headline hangs off the video rather than floating in the middle of its
+# bar: the top one is bottom-aligned this far above the video, the bottom one
+# top-aligned the same distance below it, and each block grows away from the
+# video as it takes more lines. 68px is the 24px of a phone screen at this
+# canvas width, which is the gap on the reels these are modelled on.
+REEL_HEADLINE_VIDEO_GAP_PX = 68
+REEL_HEADLINE_EDGE_MARGIN_PX = 48
+# 54px and a 1.2 line pitch are measured off the reels these copy: at this
+# canvas width a typical headline sets on two lines at that size.
+REEL_HEADLINE_MAX_FONT_PX = 54
+REEL_HEADLINE_MIN_FONT_PX = 28
 REEL_HEADLINE_LINE_SPACING = 1.2
+# Two lines is the shape these headlines want. The fit gives up a size step at
+# a time to reach it, and settles for more only when even the floor cannot.
+REEL_HEADLINE_PREFERRED_LINES = 2
 # A- and A+ move the size the auto-fit is allowed to reach, within these bounds.
 # The fit still has the last word, so the text can never grow into the video.
 REEL_HEADLINE_FONT_CEILING_PX = 220
@@ -303,19 +314,13 @@ def _wrap_headline_lines(text: str, font, max_width: int, draw) -> list[str] | N
     return lines
 
 
-def _draw_headline_bar(
-    draw,
-    text: str,
-    bar_top: int,
-    bar_height: int,
-    font_path: str,
-    font_adjust_px: int = 0,
-) -> None:
-    """Draw text centred in a bar, at the largest size that fits it.
+def _fit_headline(text: str, font_path: str, font_adjust_px: int, max_height: int, draw):
+    """Pick the size, and the wrap, the headline should be set at.
 
-    font_adjust_px raises or lowers the size the search starts from, so A+ keeps
-    growing the text until the bar itself is the limit and A- shrinks it below
-    what would otherwise be chosen.
+    Sizes are tried largest first, so the first that wraps to the preferred line
+    count is the biggest that does. Line count only falls as the size does — a
+    smaller face fits more words per line — so there is nothing better further
+    down. Failing that, the largest size that fits the space at all is used.
     """
     from PIL import ImageFont
 
@@ -325,30 +330,55 @@ def _draw_headline_bar(
     )
     floor = min(REEL_HEADLINE_MIN_FONT_PX, ceiling)
     max_width = REEL_CANVAS_WIDTH_PX - (2 * REEL_HEADLINE_SIDE_MARGIN_PX)
-    max_height = bar_height - (2 * REEL_HEADLINE_BAR_MARGIN_PX)
-    chosen: tuple = ()
+
+    widest_that_fits: tuple = ()
     for size in range(ceiling, floor - 1, -2):
         font = ImageFont.truetype(font_path, size)
         lines = _wrap_headline_lines(text, font, max_width, draw)
         if lines is None:
             continue
         line_height = round(size * REEL_HEADLINE_LINE_SPACING)
-        if line_height * len(lines) <= max_height:
-            chosen = (font, lines, line_height)
-            break
-    if not chosen:
-        # Too much text for the bar: set it at the floor size and let it run on,
-        # so the preview shows the overflow rather than dropping the headline.
-        font = ImageFont.truetype(font_path, floor)
-        lines = _wrap_headline_lines(text, font, max_width, draw) or [text]
-        chosen = (font, lines, round(floor * REEL_HEADLINE_LINE_SPACING))
+        if line_height * len(lines) > max_height:
+            continue
+        if not widest_that_fits:
+            widest_that_fits = (font, lines, line_height)
+        if len(lines) <= REEL_HEADLINE_PREFERRED_LINES:
+            return font, lines, line_height
+    if widest_that_fits:
+        return widest_that_fits
 
-    font, lines, line_height = chosen
-    y = bar_top + ((bar_height - (line_height * len(lines))) / 2)
+    # Too much text for the space: set it at the floor and let it run on, so the
+    # preview shows the overflow rather than dropping the headline.
+    font = ImageFont.truetype(font_path, floor)
+    lines = _wrap_headline_lines(text, font, max_width, draw) or [text]
+    return font, lines, round(floor * REEL_HEADLINE_LINE_SPACING)
+
+
+def _headline_block_image(text: str, font_path: str, font_adjust_px: int, max_height: int):
+    """The headline as a transparent image trimmed to its ink.
+
+    Trimmed rather than drawn straight onto the canvas so the caller can set the
+    gap against the text itself: a line box carries ascender and descender slack
+    that would otherwise make the gap to the video vary with the words.
+    """
+    from PIL import Image, ImageDraw
+
+    measure = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    font, lines, line_height = _fit_headline(text, font_path, font_adjust_px, max_height, measure)
+
+    scratch = Image.new(
+        "RGBA",
+        (REEL_CANVAS_WIDTH_PX, (line_height * len(lines)) + (2 * line_height)),
+        (0, 0, 0, 0),
+    )
+    draw = ImageDraw.Draw(scratch)
+    y = line_height // 2
     for line in lines:
         x = (REEL_CANVAS_WIDTH_PX - draw.textlength(line, font=font)) / 2
         draw.text((x, y), line, font=font, fill="white")
         y += line_height
+    bbox = scratch.getbbox()
+    return scratch.crop(bbox) if bbox else None
 
 
 def _render_reel_backdrop(
@@ -364,24 +394,28 @@ def _render_reel_backdrop(
     encode, where the black comes from padding the video and this is laid over
     the top as a text-only layer.
     """
-    from PIL import Image, ImageDraw
+    from PIL import Image
 
     font_path = _reel_font_file()
     mode, background = ("RGBA", (0, 0, 0, 0)) if transparent else ("RGB", (0, 0, 0))
     image = Image.new(mode, (REEL_CANVAS_WIDTH_PX, REEL_CANVAS_HEIGHT_PX), background)
-    draw = ImageDraw.Draw(image)
+    video_bottom = REEL_VIDEO_TOP_PX + REEL_VIDEO_HEIGHT_PX
+    bar_height = min(REEL_VIDEO_TOP_PX, REEL_CANVAS_HEIGHT_PX - video_bottom)
+    max_block_height = max(
+        REEL_HEADLINE_MIN_FONT_PX,
+        bar_height - REEL_HEADLINE_VIDEO_GAP_PX - REEL_HEADLINE_EDGE_MARGIN_PX,
+    )
+
     if (headline_top or "").strip():
-        _draw_headline_bar(draw, headline_top, 0, REEL_VIDEO_TOP_PX, font_path, font_adjust_top)
-    bottom_bar_top = REEL_VIDEO_TOP_PX + REEL_VIDEO_HEIGHT_PX
+        block = _headline_block_image(headline_top, font_path, font_adjust_top, max_block_height)
+        if block:
+            y = REEL_VIDEO_TOP_PX - REEL_HEADLINE_VIDEO_GAP_PX - block.height
+            image.paste(block, ((REEL_CANVAS_WIDTH_PX - block.width) // 2, max(0, y)), block)
     if (headline_bottom or "").strip():
-        _draw_headline_bar(
-            draw,
-            headline_bottom,
-            bottom_bar_top,
-            REEL_CANVAS_HEIGHT_PX - bottom_bar_top,
-            font_path,
-            font_adjust_bottom,
-        )
+        block = _headline_block_image(headline_bottom, font_path, font_adjust_bottom, max_block_height)
+        if block:
+            y = min(video_bottom + REEL_HEADLINE_VIDEO_GAP_PX, REEL_CANVAS_HEIGHT_PX - block.height)
+            image.paste(block, ((REEL_CANVAS_WIDTH_PX - block.width) // 2, y), block)
     return image
 
 
