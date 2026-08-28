@@ -197,6 +197,11 @@ REEL_HEADLINE_BAR_MARGIN_PX = 48
 REEL_HEADLINE_MAX_FONT_PX = 104
 REEL_HEADLINE_MIN_FONT_PX = 34
 REEL_HEADLINE_LINE_SPACING = 1.2
+# A- and A+ move the size the auto-fit is allowed to reach, within these bounds.
+# The fit still has the last word, so the text can never grow into the video.
+REEL_HEADLINE_FONT_CEILING_PX = 220
+REEL_HEADLINE_FONT_FLOOR_PX = 16
+REEL_HEADLINE_FONT_STEP_PX = 4
 
 # Poppins is the slide typeface, so the reel is set in it too. It is committed
 # under assets/fonts rather than pulled from Google Fonts the way the slide
@@ -298,14 +303,31 @@ def _wrap_headline_lines(text: str, font, max_width: int, draw) -> list[str] | N
     return lines
 
 
-def _draw_headline_bar(draw, text: str, bar_top: int, bar_height: int, font_path: str) -> None:
-    """Draw text centred in a bar, at the largest size that fits it."""
+def _draw_headline_bar(
+    draw,
+    text: str,
+    bar_top: int,
+    bar_height: int,
+    font_path: str,
+    font_adjust_px: int = 0,
+) -> None:
+    """Draw text centred in a bar, at the largest size that fits it.
+
+    font_adjust_px raises or lowers the size the search starts from, so A+ keeps
+    growing the text until the bar itself is the limit and A- shrinks it below
+    what would otherwise be chosen.
+    """
     from PIL import ImageFont
 
+    ceiling = max(
+        REEL_HEADLINE_FONT_FLOOR_PX,
+        min(REEL_HEADLINE_FONT_CEILING_PX, REEL_HEADLINE_MAX_FONT_PX + int(font_adjust_px)),
+    )
+    floor = min(REEL_HEADLINE_MIN_FONT_PX, ceiling)
     max_width = REEL_CANVAS_WIDTH_PX - (2 * REEL_HEADLINE_SIDE_MARGIN_PX)
     max_height = bar_height - (2 * REEL_HEADLINE_BAR_MARGIN_PX)
     chosen: tuple = ()
-    for size in range(REEL_HEADLINE_MAX_FONT_PX, REEL_HEADLINE_MIN_FONT_PX - 1, -2):
+    for size in range(ceiling, floor - 1, -2):
         font = ImageFont.truetype(font_path, size)
         lines = _wrap_headline_lines(text, font, max_width, draw)
         if lines is None:
@@ -317,9 +339,9 @@ def _draw_headline_bar(draw, text: str, bar_top: int, bar_height: int, font_path
     if not chosen:
         # Too much text for the bar: set it at the floor size and let it run on,
         # so the preview shows the overflow rather than dropping the headline.
-        font = ImageFont.truetype(font_path, REEL_HEADLINE_MIN_FONT_PX)
+        font = ImageFont.truetype(font_path, floor)
         lines = _wrap_headline_lines(text, font, max_width, draw) or [text]
-        chosen = (font, lines, round(REEL_HEADLINE_MIN_FONT_PX * REEL_HEADLINE_LINE_SPACING))
+        chosen = (font, lines, round(floor * REEL_HEADLINE_LINE_SPACING))
 
     font, lines, line_height = chosen
     y = bar_top + ((bar_height - (line_height * len(lines))) / 2)
@@ -329,7 +351,13 @@ def _draw_headline_bar(draw, text: str, bar_top: int, bar_height: int, font_path
         y += line_height
 
 
-def _render_reel_backdrop(headline_top: str, headline_bottom: str, transparent: bool = False):
+def _render_reel_backdrop(
+    headline_top: str,
+    headline_bottom: str,
+    transparent: bool = False,
+    font_adjust_top: int = 0,
+    font_adjust_bottom: int = 0,
+):
     """The canvas with both headlines drawn and the video area left clear.
 
     Opaque black for the preview, which pastes the frame in; transparent for the
@@ -343,7 +371,7 @@ def _render_reel_backdrop(headline_top: str, headline_bottom: str, transparent: 
     image = Image.new(mode, (REEL_CANVAS_WIDTH_PX, REEL_CANVAS_HEIGHT_PX), background)
     draw = ImageDraw.Draw(image)
     if (headline_top or "").strip():
-        _draw_headline_bar(draw, headline_top, 0, REEL_VIDEO_TOP_PX, font_path)
+        _draw_headline_bar(draw, headline_top, 0, REEL_VIDEO_TOP_PX, font_path, font_adjust_top)
     bottom_bar_top = REEL_VIDEO_TOP_PX + REEL_VIDEO_HEIGHT_PX
     if (headline_bottom or "").strip():
         _draw_headline_bar(
@@ -352,6 +380,7 @@ def _render_reel_backdrop(headline_top: str, headline_bottom: str, transparent: 
             bottom_bar_top,
             REEL_CANVAS_HEIGHT_PX - bottom_bar_top,
             font_path,
+            font_adjust_bottom,
         )
     return image
 
@@ -383,12 +412,19 @@ def _render_reel_preview_image(
     offset_percent: int,
     headline_top: str,
     headline_bottom: str,
+    font_adjust_top: int = 0,
+    font_adjust_bottom: int = 0,
 ):
     """One composed still, built entirely in Pillow so nudging a control is cheap."""
     from PIL import Image
 
     frame_path = _extract_reel_frame(src_path, seconds, os.path.join(tmp_dir, "reel_frame.jpg"))
-    canvas = _render_reel_backdrop(headline_top, headline_bottom)
+    canvas = _render_reel_backdrop(
+        headline_top,
+        headline_bottom,
+        font_adjust_top=font_adjust_top,
+        font_adjust_bottom=font_adjust_bottom,
+    )
     with Image.open(frame_path) as frame:
         frame = frame.convert("RGB")
         crop_w, crop_h, crop_x, crop_y = _reel_crop_box(frame.width, frame.height, offset_percent)
@@ -405,10 +441,18 @@ def _compose_reel_video(
     offset_percent: int,
     headline_top: str,
     headline_bottom: str,
+    font_adjust_top: int = 0,
+    font_adjust_bottom: int = 0,
 ) -> str:
     """Burn the headlines in and lay the 5:4 crop into the 1080x1920 canvas."""
     backdrop_path = os.path.join(tmp_dir, "reel_backdrop.png")
-    _render_reel_backdrop(headline_top, headline_bottom, transparent=True).save(backdrop_path)
+    _render_reel_backdrop(
+        headline_top,
+        headline_bottom,
+        transparent=True,
+        font_adjust_top=font_adjust_top,
+        font_adjust_bottom=font_adjust_bottom,
+    ).save(backdrop_path)
 
     src_w, src_h = _video_dimensions(src_path)
     crop_w, crop_h, crop_x, crop_y = _reel_crop_box(src_w, src_h, offset_percent)
@@ -5789,6 +5833,8 @@ def _generate_reel_to_drive(
     offset_percent: int,
     headline_top: str,
     headline_bottom: str,
+    font_adjust_top: int,
+    font_adjust_bottom: int,
 ) -> tuple[str, str]:
     """Compose the reel and put it beside the row's other previews in Drive."""
     src_path = _reel_source_path(row_num, media_link)
@@ -5805,7 +5851,14 @@ def _generate_reel_to_drive(
     try:
         output_path = os.path.join(tmp_dir, output_name)
         _compose_reel_video(
-            src_path, output_path, tmp_dir, offset_percent, headline_top, headline_bottom
+            src_path,
+            output_path,
+            tmp_dir,
+            offset_percent,
+            headline_top,
+            headline_bottom,
+            font_adjust_top,
+            font_adjust_bottom,
         )
         return upload_to_drive(output_path, output_name, preview_folder_id), output_name
     finally:
@@ -5823,25 +5876,69 @@ def _apply_reel_headline_pick(select_key: str, text_key: str) -> None:
         st.session_state[text_key] = picked
 
 
+def _render_reel_bar_controls(
+    row_num: int,
+    label: str,
+    suffix: str,
+    text_key: str,
+    font_key: str,
+    headlines: list[str],
+) -> None:
+    """Headline dropdown, an editable copy of it, and the A- / A+ pair."""
+    if headlines:
+        select_key = f"workspace_reel_pick_{suffix}_{row_num}"
+        st.selectbox(
+            f"{label} headline",
+            [REEL_HEADLINE_KEEP_OPTION, *headlines],
+            key=select_key,
+            on_change=_apply_reel_headline_pick,
+            args=(select_key, text_key),
+        )
+    st.text_area(label, key=text_key, height=80)
+
+    current_adjust = int(st.session_state.get(font_key, 0) or 0)
+    smaller_column, larger_column, readout_column = st.columns([1, 1, 3], gap="small")
+    with smaller_column:
+        if st.button("A-", key=f"workspace_reel_font_down_{suffix}_{row_num}", width="stretch"):
+            st.session_state[font_key] = max(-80, current_adjust - REEL_HEADLINE_FONT_STEP_PX)
+            _rerun_workspace("Edit")
+    with larger_column:
+        if st.button("A+", key=f"workspace_reel_font_up_{suffix}_{row_num}", width="stretch"):
+            st.session_state[font_key] = min(120, current_adjust + REEL_HEADLINE_FONT_STEP_PX)
+            _rerun_workspace("Edit")
+    with readout_column:
+        st.caption(f"Font {current_adjust:+d}px" if current_adjust else "Font: auto-fit")
+
+
 def _render_reel_video_tab(
     row_num: int,
     username: str,
     media_link: str,
     headlines: list[str],
+    caption_value: str,
+    source_text: str,
+    speaker_name: str,
 ) -> None:
     """Crop the row's video to 5:4 on a 1080x1920 canvas with headlines burnt in.
 
     A still frame stands in for the finished reel while the headline, the crop
-    position and the frame are being settled, because composing one frame in
-    Pillow is instant where re-encoding the video is not.
+    position, the font size and the frame are being settled, because composing
+    one frame in Pillow is instant where re-encoding the video is not.
     """
     top_key = f"workspace_reel_top_{row_num}"
     bottom_key = f"workspace_reel_bottom_{row_num}"
+    top_font_key = f"workspace_reel_font_top_{row_num}"
+    bottom_font_key = f"workspace_reel_font_bottom_{row_num}"
     offset_key = f"workspace_reel_offset_{row_num}"
     frame_key = f"workspace_reel_frame_{row_num}"
     output_key = f"workspace_reel_output_{row_num}"
     error_key = f"workspace_reel_error_{row_num}"
     loaded_key = f"workspace_reel_source_{row_num}"
+    # Shared with the Caption tab's Headlines button, so headlines written in
+    # either place are on offer in both.
+    session_headlines_key = f"workspace_caption_headlines_{row_num}"
+
+    headlines = list(headlines) or list(st.session_state.get(session_headlines_key, []) or [])
 
     st.session_state.setdefault(top_key, headlines[0] if headlines else "")
     st.session_state.setdefault(bottom_key, "")
@@ -5850,24 +5947,31 @@ def _render_reel_video_tab(
     st.session_state.setdefault(offset_key, 0)
     st.session_state.setdefault(frame_key, 1.0)
 
-    if headlines:
-        for label, select_suffix, text_key in (
-            ("Top bar", "top", top_key),
-            ("Bottom bar", "bottom", bottom_key),
+    if not headlines:
+        st.caption("No headlines on this row yet.")
+        if st.button(
+            f"Write {REEL_LINES_HEADLINE_COUNT} headlines",
+            key=f"workspace_reel_headlines_{row_num}",
+            width="stretch",
+            disabled=not (source_text or "").strip(),
         ):
-            select_key = f"workspace_reel_pick_{select_suffix}_{row_num}"
-            st.selectbox(
-                f"{label} headline",
-                [REEL_HEADLINE_KEEP_OPTION, *headlines],
-                key=select_key,
-                on_change=_apply_reel_headline_pick,
-                args=(select_key, text_key),
-            )
-            st.text_area(label, key=text_key, height=80)
-    else:
-        st.text_area("Top bar", key=top_key, height=80)
-        st.text_area("Bottom bar", key=bottom_key, height=80)
-        st.caption("No saved headlines on this row — type the lines you want.")
+            st.session_state.pop(error_key, None)
+            try:
+                with st.spinner("Writing headlines…"):
+                    st.session_state[session_headlines_key] = _generate_reel_lines_headlines(
+                        source_text,
+                        caption=caption_value,
+                        speaker_name=speaker_name,
+                        username=username,
+                    )
+            except Exception as error:
+                st.session_state[error_key] = describe_error(error)
+            _rerun_workspace("Edit")
+        if not (source_text or "").strip():
+            st.caption("No transcript or caption to write headlines from.")
+
+    _render_reel_bar_controls(row_num, "Top bar", "top", top_key, top_font_key, headlines)
+    _render_reel_bar_controls(row_num, "Bottom bar", "bottom", bottom_key, bottom_font_key, headlines)
 
     position_column, frame_column = st.columns(2, gap="small")
     with position_column:
@@ -5889,11 +5993,17 @@ def _render_reel_video_tab(
 
     headline_top = _cell_text(st.session_state.get(top_key, "")).strip()
     headline_bottom = _cell_text(st.session_state.get(bottom_key, "")).strip()
+    font_adjust_top = int(st.session_state.get(top_font_key, 0) or 0)
+    font_adjust_bottom = int(st.session_state.get(bottom_font_key, 0) or 0)
     offset_percent = int(st.session_state.get(offset_key, 0) or 0)
     frame_seconds = float(st.session_state.get(frame_key, 1.0) or 0.0)
 
-    source_ready = os.path.exists((st.session_state.get(loaded_key) or {}).get("path", ""))
-    if not source_ready:
+    has_video = bool(
+        next((part.strip() for part in _cell_text(media_link).split(",") if part.strip()), "")
+    )
+    if not has_video:
+        st.info("No video in Drive on this row, so there is nothing to crop.")
+    elif not os.path.exists((st.session_state.get(loaded_key) or {}).get("path", "")):
         if st.button(
             "Load video",
             key=f"workspace_reel_load_{row_num}",
@@ -5917,6 +6027,8 @@ def _render_reel_video_tab(
                 offset_percent,
                 headline_top,
                 headline_bottom,
+                font_adjust_top,
+                font_adjust_bottom,
             )
         except Exception as error:
             st.warning(f"Could not build the preview: {describe_error(error)}")
@@ -5942,6 +6054,8 @@ def _render_reel_video_tab(
                         offset_percent,
                         headline_top,
                         headline_bottom,
+                        font_adjust_top,
+                        font_adjust_bottom,
                     )
             except Exception as error:
                 st.session_state[error_key] = describe_error(error)
@@ -5956,6 +6070,10 @@ def _render_reel_video_tab(
     error_message = st.session_state.get(error_key, "")
     if error_message:
         st.error(error_message)
+
+    st.divider()
+    st.caption("Caption")
+    _tab_copy_preview(caption_value)
 
 
 def _render_reel_lines_headlines_tab(
@@ -6404,12 +6522,9 @@ def _copy_tabs(
     # its first tab is Headlines rather than Slides.
     is_reel_lines = _is_reel_lines_row(prompt_row or {})
     first_tab = "Headlines" if is_reel_lines else "Slides"
-    # A row with a video in Drive also gets the Reel tab, which composes the
-    # 5:4-crop-with-headline-bars cut of it.
-    has_reel_video = bool(
-        next((part.strip() for part in _cell_text(media_link).split(",") if part.strip()), "")
-    ) and _cell_text(media_type).strip().lower() not in {"photo", "article"}
-    tab_labels = [first_tab, *(["Reel"] if has_reel_video else []), "Caption", "Original"]
+    # Every row gets a Reels tab straight after the first one: the headline
+    # picker and the caption are useful even where there is no video to crop.
+    tab_labels = [first_tab, "Reels", "Caption", "Original"]
     content_tab_key = f"workspace_row_content_tab_{row_num}"
     if content_tab_key not in st.session_state or st.session_state[content_tab_key] not in tab_labels:
         st.session_state[content_tab_key] = first_tab
@@ -6476,13 +6591,23 @@ def _copy_tabs(
             _tab_copy_preview(
                 "\n\n".join(part for part in (original_preview, transcript) if (part or "").strip())
             )
-    elif selected_content_tab == "Reel":
+    elif selected_content_tab == "Reels":
         _render_reel_video_tab(
             row_num,
             username,
             media_link,
-            _reel_lines_row_headlines(prompt_row or {})
-            or st.session_state.get(f"workspace_caption_headlines_{row_num}", []),
+            _reel_lines_row_headlines(prompt_row or {}),
+            _caption_tab_value(
+                generated,
+                original_caption,
+                username,
+                top_comment,
+                required_hashtags,
+                is_instagram,
+            ),
+            # Prefer what was actually said; fall back to the post's own words.
+            (transcript or "").strip() or (original_caption or "").strip(),
+            _cell_text(st.session_state.get(f"workspace_speaker_row_{row_num}", speaker_name)).strip(),
         )
     elif selected_content_tab == "Headlines":
         _render_reel_lines_headlines_tab(
