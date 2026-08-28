@@ -1483,6 +1483,7 @@ archive_sheet_row = sheet_ops.archive_row
 get_fundraising_links = getattr(sheet_ops, "get_fundraising_links", lambda _sheet_id: [])
 get_slide_cta_options = getattr(sheet_ops, "get_slide_cta_options", lambda _sheet_id: {})
 update_slide_cta_option = getattr(sheet_ops, "update_slide_cta_option", lambda _sheet_id, _row_number, _option: None)
+update_reel_lines_fields = getattr(sheet_ops, "update_reel_lines_fields", None)
 get_original_thumbnails = getattr(sheet_ops, "get_original_thumbnails", lambda _sheet_id: {})
 save_original_thumbnail = getattr(sheet_ops, "save_original_thumbnail", lambda _sheet_id, _row_number, _link: None)
 clear_original_thumbnail = getattr(sheet_ops, "clear_original_thumbnail", lambda _sheet_id, _row_number: None)
@@ -3977,7 +3978,7 @@ def _render_create_from_link_dialog() -> None:
 # only place that offers one) is replaced by Headlines for these rows.
 # ---------------------------------------------------------------------------
 
-REEL_LINES_ROW_MARKER = "reel lines"
+REEL_LINES_ROW_MARKER = getattr(sheet_ops, "REEL_LINES_SLIDE_CTA", "reel lines")
 REEL_LINES_HEADLINE_COUNT = 10
 
 REEL_LINES_HEADLINE_PROMPT = (
@@ -4277,6 +4278,54 @@ def _create_reel_lines_post(link: str, uploaded_video, speaker_name: str = "") -
     return int(new_row["row_number"]) if new_row else 0
 
 
+def _wants_reel_lines(row: dict) -> bool:
+    """True when this row should be finished as a Reel Lines post rather than slides.
+
+    Either it is already marked one in Slide CTA, or it still carries the hand-typed
+    'reel' Status marker — which the Ingest page's reel box writes too. Processing
+    consumes that marker, so it is copied into Slide CTA the first time it is seen
+    and read from there for the rest of the row's life.
+    """
+    if _is_reel_lines_row(row):
+        return True
+    return bool(is_reel_status(_cell_text(row.get("Status"))))
+
+
+def _claim_reel_lines_row(row_num: int, row: dict) -> None:
+    """Persist the Reel Lines intent before the Status marker that carried it is spent."""
+    if _is_reel_lines_row(row):
+        return
+    update_slide_cta_option(GOOGLE_SHEET_ID, row_num, REEL_LINES_ROW_MARKER)
+
+
+def _finish_reel_lines_row(row_num: int, row: dict, caption: str, status: str) -> None:
+    """Write a processed row's headlines into text1 and mark it a Reel Lines post.
+
+    The same finish the Create Reel Lines dialog gives a row it builds from scratch,
+    applied instead of carousel slide copy to a row the pipeline just transcribed.
+    """
+    if update_reel_lines_fields is None:
+        raise RuntimeError("This build of sheets.py cannot write Reel Lines rows.")
+    source_text = (
+        _cell_text(row.get("Transcript")).strip()
+        or _cell_text(row.get("Caption Context")).strip()
+        or _cell_text(row.get("Original Caption")).strip()
+    )
+    if not source_text:
+        raise RuntimeError("No transcript or source text to write headlines from.")
+    speaker_name = _cell_text(row.get("Speaker Name")).strip()
+    username = _cell_text(row.get("Source Username")).strip()
+    media_type = _cell_text(row.get("Media Type")).strip().lower()
+    headlines = _generate_reel_lines_headlines(source_text, caption, speaker_name, username)
+    update_reel_lines_fields(
+        GOOGLE_SHEET_ID,
+        row_num,
+        pipeline_caption_ops.normalize_slide_name(username, media_type, speaker_name),
+        "\n".join(headlines),
+        status,
+    )
+
+
 @st.dialog("Create Reel Lines", width="large", on_dismiss=_dismiss_reel_lines_dialog)
 def _render_reel_lines_dialog() -> None:
     st.caption(
@@ -4344,9 +4393,10 @@ def _render_video_post_dialog() -> None:
         accept_multiple_files=False,
     )
     speaker_name = st.text_input(
-        "Speaker name",
+        "Speaker name (optional)",
         key="workspace_video_post_speaker",
         placeholder="e.g. Bernie Sanders",
+        help="Leave blank if you do not know it yet — you can fill it in on the row afterwards.",
     ).strip()
 
     if st.button(
@@ -4354,7 +4404,9 @@ def _render_video_post_dialog() -> None:
         key="workspace_video_post_submit",
         type="primary",
         width="stretch",
-        disabled=not (uploaded and speaker_name),
+        # The video is the only thing this needs: the caption is generated from the
+        # transcript, and the speaker name can be filled in on the row later.
+        disabled=not uploaded,
     ):
         if not GOOGLE_DRIVE_FOLDER_ID:
             st.error("GOOGLE_DRIVE_FOLDER_ID is not configured.")
@@ -4430,7 +4482,9 @@ def _render_video_post_dialog() -> None:
 
             if row_num and media_link:
                 with st.spinner("Cropping and splitting video…"):
-                    username_clean = re.sub(r"[^\w\-]", "_", speaker_name.lower())
+                    # Without a speaker name the folder name falls back to the uploaded
+                    # file's stem, and failing that to "row_<n>".
+                    username_clean = re.sub(r"[^\w\-]", "_", speaker_name.lower()) if speaker_name else ""
                     preview_folder_id, _, _ = _ensure_preview_folder(
                         row_num, username_clean, speaker_name, media_link
                     )
@@ -6821,7 +6875,11 @@ def _process_pending_rows_from_sheet() -> int:
     for i, row in enumerate(pending):
         row_num = row["row_number"]
         label = row["Instagram URL"][:60]
+        # Read before _ingest_row's result overwrites Status and spends the marker.
+        wants_reel_lines = _wants_reel_lines(row)
         with st.status(f"Row {row_num}: {label}", expanded=False) as status_box:
+            if wants_reel_lines:
+                _claim_reel_lines_row(row_num, row)
             result = _ingest_row(row)
             try:
                 update_ingest_result(
@@ -6897,6 +6955,12 @@ def _process_pending_rows_from_sheet() -> int:
                             )
                         else:
                             update_caption(GOOGLE_SHEET_ID, row_num, generated_caption, result["status"])
+                        if wants_reel_lines:
+                            # Ten headlines in text1 rather than slide copy, the same
+                            # finish the Create Reel Lines action gives a row.
+                            _finish_reel_lines_row(
+                                row_num, ingested_row, generated_caption, result["status"]
+                            )
             except Exception as e:
                 status_box.update(label=f"Row {row_num}: error writing to sheet - {describe_error(e)}", state="error")
             else:
@@ -6911,7 +6975,12 @@ def _process_pending_rows_from_sheet() -> int:
                         state="error",
                     )
                 else:
-                    action_word = "ingested + captioned" if row_ready_for_caption(ingested_row) else "ingested"
+                    if not row_ready_for_caption(ingested_row):
+                        action_word = "ingested"
+                    elif wants_reel_lines:
+                        action_word = "ingested + captioned + reel lines"
+                    else:
+                        action_word = "ingested + captioned"
                     display_name = f"@{result['username']}" if result["username"] and result["media_type"] != "article" else result["username"]
                     status_box.update(
                         label=(
@@ -7498,6 +7567,11 @@ def _reload_row_from_sheet(row_number: int) -> dict:
 
 def _process_post_online(row: dict) -> None:
     row_num = row["row_number"]
+    # Read before anything writes to the row: processing spends the 'reel' Status
+    # marker, so the intent has to be captured and persisted up front.
+    wants_reel_lines = _wants_reel_lines(row)
+    if wants_reel_lines:
+        _claim_reel_lines_row(row_num, row)
     has_media = bool(_cell_text(row.get("Media Drive Link")).strip())
     existing_transcript = _cell_text(row.get("Transcript")).strip()
     updated_row = _fetch_row_with_transcript(
@@ -7524,6 +7598,14 @@ def _process_post_online(row: dict) -> None:
         update_caption(GOOGLE_SHEET_ID, row_num, caption, next_status)
     updated_row["Generated Caption"] = caption
     updated_row["Status"] = next_status
+
+    if wants_reel_lines:
+        # Headlines in text1 instead of carousel slide copy — the Create Reel Lines
+        # finish, applied to a row the pipeline transcribed rather than one built
+        # from a pasted link.
+        _finish_reel_lines_row(row_num, updated_row, caption, next_status)
+        st.session_state.pop(f"workspace_preview_upload_links_{row_num}", None)
+        return
 
     existing_carousel = {
         "name": _cell_text(updated_row.get("name")).strip(),

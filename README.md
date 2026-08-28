@@ -153,7 +153,13 @@ them, and older rows with nothing in those columns are unaffected.
 
 Status values: empty (pending), `reel` (pending, forced to process as a reel), `ingested`, `done`, `slides`, `error: [reason]`
 
-Type `reel` into Status on a pending row to have it transcribed as a reel even when its link is a `/p/` one; the Ingest page's **reel** checkbox writes the same marker. It is replaced by the normal status once the row is processed.
+Type `reel` into Status on a pending row to have it transcribed as a reel even when its link is a
+`/p/` one, and finished as a **Create Reel Lines** post — ten headlines in `text1` and `reel lines`
+in `Slide CTA`, instead of carousel slide copy. The Ingest page's **reel** checkbox writes the same
+marker. The Status marker is replaced by the normal status once the row is processed; the `Slide CTA`
+marker is written at the start of processing and is what makes the row a Reel Lines row from then on.
+
+To force the reel treatment *without* Reel Lines, type `reel` into Media Type rather than Status.
 
 The app restores headers if they are missing.
 

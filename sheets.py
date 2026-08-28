@@ -393,6 +393,10 @@ NEEDS_SOURCE_PREFIX = "needs source"
 # reel, for a video that lives at a /p/ link rather than a /reel/ one. It is consumed
 # on processing: the row comes out with the normal ingested/done status.
 REEL_STATUS_MARKER = "reel"
+# A row flagged as a reel is finished as a Reel Lines post — ten headlines in text1
+# instead of carousel slide copy. Column U carries that for the life of the row, since
+# the Status marker itself is consumed as soon as the row is processed.
+REEL_LINES_SLIDE_CTA = "reel lines"
 
 
 def is_reel_status(value: str) -> bool:
@@ -447,6 +451,7 @@ def append_link_rows(
         row[10] = top_comment.strip()
         if url in reels:
             row[13] = REEL_STATUS_MARKER
+            row[20] = REEL_LINES_SLIDE_CTA
         rows.append(row)
     _with_backoff(ws.append_rows, rows, value_input_option="USER_ENTERED")
     _invalidate_rows_cache(sheet_id)
@@ -770,6 +775,31 @@ def update_slide_cta_option(sheet_id: str, row_number: int, option: str) -> None
     """Persist a row's selected slide CTA in column U of the main sheet."""
     ws = _worksheet(sheet_id)
     _with_backoff(ws.update, f"U{row_number}", [[(option or "").strip()]])
+
+
+def update_reel_lines_fields(
+    sheet_id: str,
+    row_number: int,
+    name: str,
+    headlines: str,
+    status: str = "done",
+) -> None:
+    """Write a Reel Lines row: its name to Q, its headlines to R, the marker to U.
+
+    Deliberately not update_carousel_fields, which blanks column U and forces the
+    status to 'slides'. A Reel Lines row has to keep its marker, keep its ten
+    headlines on separate lines, and land on the status the caller settled on.
+    """
+    ws = _worksheet(sheet_id)
+    _with_backoff(
+        ws.batch_update,
+        [
+            {"range": f"N{row_number}", "values": [[(status or "").strip()]]},
+            {"range": f"Q{row_number}:R{row_number}", "values": [[(name or "").strip(), headlines or ""]]},
+            {"range": f"U{row_number}", "values": [[REEL_LINES_SLIDE_CTA]]},
+        ],
+    )
+    _invalidate_rows_cache(sheet_id)
 
 
 def update_quote(sheet_id: str, row_number: int, quote: str) -> None:
