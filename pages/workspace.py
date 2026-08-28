@@ -5862,8 +5862,9 @@ def _generate_reel_to_drive(
     offset_percent: int,
     headline: str,
     font_adjust: int,
-) -> tuple[str, str]:
-    """Compose the reel and put it beside the row's other previews in Drive."""
+) -> tuple[str, str, str]:
+    """Compose the reel, put it beside the row's other previews in Drive, and
+    say where the local copy is so the finished thing can be played back."""
     src_path = _reel_source_path(row_num, media_link)
     drive_link = next(
         (part.strip() for part in _cell_text(media_link).split(",") if part.strip()), ""
@@ -5874,20 +5875,13 @@ def _generate_reel_to_drive(
     stem = os.path.splitext(source_filename or os.path.basename(src_path))[0] or f"row_{row_num}"
     output_name = f"{stem}_headline_reel.mp4"
 
-    tmp_dir = tempfile.mkdtemp(prefix="workspace_reel_out_")
-    try:
-        output_path = os.path.join(tmp_dir, output_name)
-        _compose_reel_video(
-            src_path,
-            output_path,
-            tmp_dir,
-            offset_percent,
-            headline,
-            font_adjust,
-        )
-        return upload_to_drive(output_path, output_name, preview_folder_id), output_name
-    finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+    # Written beside the cached source rather than into a directory of its own,
+    # so it outlives this run and can be played back in the tab. Regenerating
+    # overwrites it, and it goes when the cached source does.
+    work_dir = os.path.dirname(src_path)
+    output_path = os.path.join(work_dir, output_name)
+    _compose_reel_video(src_path, output_path, work_dir, offset_percent, headline, font_adjust)
+    return upload_to_drive(output_path, output_name, preview_folder_id), output_name, output_path
 
 
 def _apply_reel_headline_pick(select_key: str, text_key: str) -> None:
@@ -6078,7 +6072,7 @@ def _render_reel_video_tab(
             st.session_state.pop(output_key, None)
             try:
                 with st.spinner("Composing the reel and uploading to Drive…"):
-                    link, name = _generate_reel_to_drive(
+                    link, name, local_path = _generate_reel_to_drive(
                         row_num,
                         username,
                         media_link,
@@ -6089,11 +6083,13 @@ def _render_reel_video_tab(
             except Exception as error:
                 st.session_state[error_key] = describe_error(error)
             else:
-                st.session_state[output_key] = {"link": link, "name": name}
+                st.session_state[output_key] = {"link": link, "name": name, "path": local_path}
 
     generated = st.session_state.get(output_key) or {}
     if generated.get("link"):
         st.success(f"Saved {generated.get('name', 'the reel')} to Drive.")
+        if os.path.exists(generated.get("path", "")):
+            st.video(generated["path"])
         st.link_button("Open in Drive", generated["link"], width="stretch")
 
     error_message = st.session_state.get(error_key, "")
