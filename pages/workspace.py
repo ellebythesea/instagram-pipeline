@@ -6090,7 +6090,9 @@ def _render_reel_video_tab(
         st.success(f"Saved {generated.get('name', 'the reel')} to Drive.")
         if os.path.exists(generated.get("path", "")):
             st.video(generated["path"])
-        st.link_button("Open in Drive", generated["link"], width="stretch")
+        # Named apart from the row's own "Open reel in Drive", which stays
+        # pointed at the untouched source in Media Drive Link.
+        st.link_button("Open new reel in Drive", generated["link"], width="stretch")
 
     error_message = st.session_state.get(error_key, "")
     if error_message:
