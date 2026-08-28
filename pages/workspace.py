@@ -109,34 +109,9 @@ def _crop_ffprobe_path() -> str:
 
 
 def _crop_video_to_bytes(src_path: str, ratio_w: int, ratio_h: int) -> bytes:
-    result = subprocess.run(
-        [
-            _crop_ffprobe_path(), "-v", "error",
-            "-select_streams", "v:0",
-            "-show_entries", "stream=width,height",
-            "-of", "csv=p=0",
-            src_path,
-        ],
-        capture_output=True,
-        text=True,
-        timeout=MEDIA_PROBE_TIMEOUT_SECONDS,
-    )
-    if result.returncode != 0 or not result.stdout.strip():
-        raise RuntimeError(f"Could not read video dimensions: {result.stderr}")
-    parts = result.stdout.strip().split(",")
-    w, h = int(parts[0]), int(parts[1])
+    w, h = _video_dimensions(src_path)
 
-    target = ratio_w / ratio_h
-    if w / h > target:
-        new_w = int(h * ratio_w / ratio_h)
-        new_h = h
-    else:
-        new_w = w
-        new_h = int(w * ratio_h / ratio_w)
-    new_w -= new_w % 2
-    new_h -= new_h % 2
-    x = (w - new_w) // 2
-    y = (h - new_h) // 2
+    new_w, new_h, x, y = _centre_crop_box(w, h, ratio_w, ratio_h)
 
     with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as out_f:
         out_path = out_f.name
@@ -161,22 +136,7 @@ def _crop_video_to_bytes(src_path: str, ratio_w: int, ratio_h: int) -> bytes:
 
 def _fit_video_to_bytes(src_path: str) -> bytes:
     """Scale video to fit within 4:5, padding sides/top with black bars."""
-    result = subprocess.run(
-        [
-            _crop_ffprobe_path(), "-v", "error",
-            "-select_streams", "v:0",
-            "-show_entries", "stream=width,height",
-            "-of", "csv=p=0",
-            src_path,
-        ],
-        capture_output=True,
-        text=True,
-        timeout=MEDIA_PROBE_TIMEOUT_SECONDS,
-    )
-    if result.returncode != 0 or not result.stdout.strip():
-        raise RuntimeError(f"Could not read video dimensions: {result.stderr}")
-    parts = result.stdout.strip().split(",")
-    w, h = int(parts[0]), int(parts[1])
+    w, h = _video_dimensions(src_path)
 
     if w / h > 4 / 5:
         out_w = w - (w % 2)
@@ -214,6 +174,261 @@ def _fit_video_to_bytes(src_path: str) -> bytes:
             os.unlink(out_path)
         except Exception:
             pass
+
+
+# ---------------------------------------------------------------------------
+# Reel with headline bars
+#
+# The look: the source video centre-cropped to 5:4 and dropped into the middle
+# of a 1080x1920 black canvas, with a headline burnt into the black bar above it
+# and, optionally, a second line into the bar below. The crop can be nudged up
+# or down so faces stay in frame.
+# ---------------------------------------------------------------------------
+
+REEL_CANVAS_WIDTH_PX = 1080
+REEL_CANVAS_HEIGHT_PX = 1920
+REEL_VIDEO_RATIO_W = 5
+REEL_VIDEO_RATIO_H = 4
+REEL_VIDEO_WIDTH_PX = REEL_CANVAS_WIDTH_PX
+REEL_VIDEO_HEIGHT_PX = round(REEL_VIDEO_WIDTH_PX * REEL_VIDEO_RATIO_H / REEL_VIDEO_RATIO_W)
+REEL_VIDEO_TOP_PX = (REEL_CANVAS_HEIGHT_PX - REEL_VIDEO_HEIGHT_PX) // 2
+REEL_HEADLINE_SIDE_MARGIN_PX = 84
+REEL_HEADLINE_BAR_MARGIN_PX = 48
+REEL_HEADLINE_MAX_FONT_PX = 104
+REEL_HEADLINE_MIN_FONT_PX = 34
+REEL_HEADLINE_LINE_SPACING = 1.2
+
+# Pillow needs a real font file: its built-in bitmap font is far too small to
+# headline anything. Streamlit Cloud (Debian) ships DejaVu and Liberation; the
+# macOS paths are for running the app locally.
+_REEL_FONT_CANDIDATES = (
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
+    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+    "/System/Library/Fonts/Supplemental/Helvetica Bold.ttf",
+    "/Library/Fonts/Arial Bold.ttf",
+)
+
+
+def _reel_font_file() -> str:
+    for candidate in _REEL_FONT_CANDIDATES:
+        if os.path.exists(candidate):
+            return candidate
+    raise RuntimeError(
+        "No bold font is installed, so the headline cannot be drawn. "
+        "Add fonts-dejavu-core to packages.txt."
+    )
+
+
+def _video_dimensions(src_path: str) -> tuple[int, int]:
+    result = subprocess.run(
+        [
+            _crop_ffprobe_path(), "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=width,height",
+            "-of", "csv=p=0",
+            src_path,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=MEDIA_PROBE_TIMEOUT_SECONDS,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        raise RuntimeError(f"Could not read video dimensions: {result.stderr}")
+    parts = result.stdout.strip().split(",")
+    return int(parts[0]), int(parts[1])
+
+
+def _centre_crop_box(width: int, height: int, ratio_w: int, ratio_h: int) -> tuple[int, int, int, int]:
+    """Largest centred crop of the given aspect ratio, as (w, h, x, y)."""
+    if width / height > ratio_w / ratio_h:
+        crop_w = int(height * ratio_w / ratio_h)
+        crop_h = height
+    else:
+        crop_w = width
+        crop_h = int(width * ratio_h / ratio_w)
+    crop_w -= crop_w % 2
+    crop_h -= crop_h % 2
+    return crop_w, crop_h, (width - crop_w) // 2, (height - crop_h) // 2
+
+
+def _reel_crop_box(width: int, height: int, offset_percent: int = 0) -> tuple[int, int, int, int]:
+    """The 5:4 crop, slid up or down through whatever vertical slack there is.
+
+    offset_percent runs -100 (hard against the top of the frame) through 0
+    (centred) to 100 (hard against the bottom), so the same setting means the
+    same thing whatever the source resolution is.
+    """
+    crop_w, crop_h, x, _y = _centre_crop_box(width, height, REEL_VIDEO_RATIO_W, REEL_VIDEO_RATIO_H)
+    slack = height - crop_h
+    offset = max(-100, min(100, int(offset_percent)))
+    y = round((slack / 2) * (1 + (offset / 100)))
+    y = max(0, min(slack, y))
+    return crop_w, crop_h, x, y - (y % 2)
+
+
+def _wrap_headline_lines(text: str, font, max_width: int, draw) -> list[str] | None:
+    """Word-wrap to max_width, or None when a single word cannot fit."""
+    lines: list[str] = []
+    for paragraph in (text or "").splitlines():
+        words = paragraph.split()
+        if not words:
+            lines.append("")
+            continue
+        current = words[0]
+        for word in words[1:]:
+            candidate = f"{current} {word}"
+            if draw.textlength(candidate, font=font) <= max_width:
+                current = candidate
+            else:
+                lines.append(current)
+                current = word
+        lines.append(current)
+    if any(draw.textlength(line, font=font) > max_width for line in lines):
+        return None
+    return lines
+
+
+def _draw_headline_bar(draw, text: str, bar_top: int, bar_height: int, font_path: str) -> None:
+    """Draw text centred in a bar, at the largest size that fits it."""
+    from PIL import ImageFont
+
+    max_width = REEL_CANVAS_WIDTH_PX - (2 * REEL_HEADLINE_SIDE_MARGIN_PX)
+    max_height = bar_height - (2 * REEL_HEADLINE_BAR_MARGIN_PX)
+    chosen: tuple = ()
+    for size in range(REEL_HEADLINE_MAX_FONT_PX, REEL_HEADLINE_MIN_FONT_PX - 1, -2):
+        font = ImageFont.truetype(font_path, size)
+        lines = _wrap_headline_lines(text, font, max_width, draw)
+        if lines is None:
+            continue
+        line_height = round(size * REEL_HEADLINE_LINE_SPACING)
+        if line_height * len(lines) <= max_height:
+            chosen = (font, lines, line_height)
+            break
+    if not chosen:
+        # Too much text for the bar: set it at the floor size and let it run on,
+        # so the preview shows the overflow rather than dropping the headline.
+        font = ImageFont.truetype(font_path, REEL_HEADLINE_MIN_FONT_PX)
+        lines = _wrap_headline_lines(text, font, max_width, draw) or [text]
+        chosen = (font, lines, round(REEL_HEADLINE_MIN_FONT_PX * REEL_HEADLINE_LINE_SPACING))
+
+    font, lines, line_height = chosen
+    y = bar_top + ((bar_height - (line_height * len(lines))) / 2)
+    for line in lines:
+        x = (REEL_CANVAS_WIDTH_PX - draw.textlength(line, font=font)) / 2
+        draw.text((x, y), line, font=font, fill="white")
+        y += line_height
+
+
+def _render_reel_backdrop(headline_top: str, headline_bottom: str, transparent: bool = False):
+    """The canvas with both headlines drawn and the video area left clear.
+
+    Opaque black for the preview, which pastes the frame in; transparent for the
+    encode, where the black comes from padding the video and this is laid over
+    the top as a text-only layer.
+    """
+    from PIL import Image, ImageDraw
+
+    font_path = _reel_font_file()
+    mode, background = ("RGBA", (0, 0, 0, 0)) if transparent else ("RGB", (0, 0, 0))
+    image = Image.new(mode, (REEL_CANVAS_WIDTH_PX, REEL_CANVAS_HEIGHT_PX), background)
+    draw = ImageDraw.Draw(image)
+    if (headline_top or "").strip():
+        _draw_headline_bar(draw, headline_top, 0, REEL_VIDEO_TOP_PX, font_path)
+    bottom_bar_top = REEL_VIDEO_TOP_PX + REEL_VIDEO_HEIGHT_PX
+    if (headline_bottom or "").strip():
+        _draw_headline_bar(
+            draw,
+            headline_bottom,
+            bottom_bar_top,
+            REEL_CANVAS_HEIGHT_PX - bottom_bar_top,
+            font_path,
+        )
+    return image
+
+
+def _extract_reel_frame(src_path: str, seconds: float, output_path: str) -> str:
+    # Seeking past the end exits 0 having written nothing, so clear any frame
+    # left by an earlier preview or it would be served again as this one.
+    if os.path.exists(output_path):
+        os.unlink(output_path)
+    command = [
+        _crop_ffmpeg_path(), "-hide_banner", "-loglevel", "error", "-y",
+        "-ss", f"{max(0.0, float(seconds)):.3f}",
+        "-i", src_path,
+        "-frames:v", "1",
+        output_path,
+    ]
+    proc = subprocess.run(command, capture_output=True, timeout=MEDIA_FRAME_TIMEOUT_SECONDS)
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.decode(errors="replace"))
+    if not os.path.exists(output_path):
+        raise RuntimeError(f"No frame at {seconds:.1f}s - the video may be shorter than that.")
+    return output_path
+
+
+def _render_reel_preview_image(
+    src_path: str,
+    tmp_dir: str,
+    seconds: float,
+    offset_percent: int,
+    headline_top: str,
+    headline_bottom: str,
+):
+    """One composed still, built entirely in Pillow so nudging a control is cheap."""
+    from PIL import Image
+
+    frame_path = _extract_reel_frame(src_path, seconds, os.path.join(tmp_dir, "reel_frame.jpg"))
+    canvas = _render_reel_backdrop(headline_top, headline_bottom)
+    with Image.open(frame_path) as frame:
+        frame = frame.convert("RGB")
+        crop_w, crop_h, crop_x, crop_y = _reel_crop_box(frame.width, frame.height, offset_percent)
+        cropped = frame.crop((crop_x, crop_y, crop_x + crop_w, crop_y + crop_h))
+    cropped = cropped.resize((REEL_VIDEO_WIDTH_PX, REEL_VIDEO_HEIGHT_PX), Image.LANCZOS)
+    canvas.paste(cropped, (0, REEL_VIDEO_TOP_PX))
+    return canvas
+
+
+def _compose_reel_video(
+    src_path: str,
+    output_path: str,
+    tmp_dir: str,
+    offset_percent: int,
+    headline_top: str,
+    headline_bottom: str,
+) -> str:
+    """Burn the headlines in and lay the 5:4 crop into the 1080x1920 canvas."""
+    backdrop_path = os.path.join(tmp_dir, "reel_backdrop.png")
+    _render_reel_backdrop(headline_top, headline_bottom, transparent=True).save(backdrop_path)
+
+    src_w, src_h = _video_dimensions(src_path)
+    crop_w, crop_h, crop_x, crop_y = _reel_crop_box(src_w, src_h, offset_percent)
+    # The video is the base layer and the text is laid over it, rather than the
+    # other way round: overlay takes its frame rate from the base, and a looped
+    # still would otherwise resample the reel to the image input's 25fps.
+    filter_complex = (
+        f"[1:v]crop={crop_w}:{crop_h}:{crop_x}:{crop_y},"
+        f"scale={REEL_VIDEO_WIDTH_PX}:{REEL_VIDEO_HEIGHT_PX},setsar=1,"
+        f"pad={REEL_CANVAS_WIDTH_PX}:{REEL_CANVAS_HEIGHT_PX}:0:{REEL_VIDEO_TOP_PX}:black[base];"
+        f"[base][0:v]overlay=0:0:shortest=1,format=yuv420p[out]"
+    )
+    command = [
+        _crop_ffmpeg_path(), "-hide_banner", "-loglevel", "error", "-y",
+        "-loop", "1", "-i", backdrop_path,
+        "-i", src_path,
+        "-filter_complex", filter_complex,
+        "-map", "[out]", "-map", "1:a?",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+        "-c:a", "aac", "-b:a", "192k",
+        "-movflags", "+faststart",
+        "-shortest",
+        output_path,
+    ]
+    proc = subprocess.run(command, capture_output=True, timeout=MEDIA_ENCODE_TIMEOUT_SECONDS)
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.decode(errors="replace"))
+    return output_path
 
 
 ORG_HASHTAG_OPTIONS = [
@@ -5520,6 +5735,221 @@ def _tab_copy_preview(value: str, show_plain_text: bool = True, key: str = "") -
         _multiline_copy_preview("copy text", value or "(none)", preview_key)
 
 
+REEL_HEADLINE_KEEP_OPTION = "(keep what is typed)"
+
+
+def _reel_source_path(row_num: int, media_link: str) -> str:
+    """The row's video on local disk, downloaded once and kept for the session.
+
+    Every nudge of a control reruns the page, and re-fetching the video from
+    Drive each time would make the preview unusable, so the download is cached
+    against the link it came from.
+    """
+    drive_link = next(
+        (part.strip() for part in _cell_text(media_link).split(",") if part.strip()), ""
+    )
+    if not drive_link:
+        raise RuntimeError("This row has no video in Drive.")
+
+    cache_key = f"workspace_reel_source_{row_num}"
+    cached = st.session_state.get(cache_key) or {}
+    if cached.get("link") == drive_link and os.path.exists(cached.get("path", "")):
+        return cached["path"]
+
+    # The link changed, so the file cached under it is dead weight.
+    if cached.get("dir"):
+        shutil.rmtree(cached["dir"], ignore_errors=True)
+
+    metadata = get_drive_file_metadata(drive_link)
+    filename = (metadata.get("name") or "").strip() or f"row_{row_num}.mp4"
+    tmp_dir = tempfile.mkdtemp(prefix="workspace_reel_")
+    local_path = os.path.join(tmp_dir, filename)
+    download_drive_file(drive_link, local_path)
+    st.session_state[cache_key] = {
+        "link": drive_link,
+        "path": local_path,
+        "dir": tmp_dir,
+        "filename": filename,
+    }
+    return local_path
+
+
+def _generate_reel_to_drive(
+    row_num: int,
+    username: str,
+    media_link: str,
+    offset_percent: int,
+    headline_top: str,
+    headline_bottom: str,
+) -> tuple[str, str]:
+    """Compose the reel and put it beside the row's other previews in Drive."""
+    src_path = _reel_source_path(row_num, media_link)
+    drive_link = next(
+        (part.strip() for part in _cell_text(media_link).split(",") if part.strip()), ""
+    )
+    preview_folder_id, _folder_name, source_filename = _ensure_preview_folder(
+        row_num, username, username, drive_link
+    )
+    stem = os.path.splitext(source_filename or os.path.basename(src_path))[0] or f"row_{row_num}"
+    output_name = f"{stem}_headline_reel.mp4"
+
+    tmp_dir = tempfile.mkdtemp(prefix="workspace_reel_out_")
+    try:
+        output_path = os.path.join(tmp_dir, output_name)
+        _compose_reel_video(
+            src_path, output_path, tmp_dir, offset_percent, headline_top, headline_bottom
+        )
+        return upload_to_drive(output_path, output_name, preview_folder_id), output_name
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def _apply_reel_headline_pick(select_key: str, text_key: str) -> None:
+    """Copy the picked headline into the bar's text box.
+
+    Runs as an on_change callback so the value lands before the text box is
+    drawn again; Streamlit will not let a widget's value be set after the fact.
+    """
+    picked = _cell_text(st.session_state.get(select_key, "")).strip()
+    if picked and picked != REEL_HEADLINE_KEEP_OPTION:
+        st.session_state[text_key] = picked
+
+
+def _render_reel_video_tab(
+    row_num: int,
+    username: str,
+    media_link: str,
+    headlines: list[str],
+) -> None:
+    """Crop the row's video to 5:4 on a 1080x1920 canvas with headlines burnt in.
+
+    A still frame stands in for the finished reel while the headline, the crop
+    position and the frame are being settled, because composing one frame in
+    Pillow is instant where re-encoding the video is not.
+    """
+    top_key = f"workspace_reel_top_{row_num}"
+    bottom_key = f"workspace_reel_bottom_{row_num}"
+    offset_key = f"workspace_reel_offset_{row_num}"
+    frame_key = f"workspace_reel_frame_{row_num}"
+    output_key = f"workspace_reel_output_{row_num}"
+    error_key = f"workspace_reel_error_{row_num}"
+    loaded_key = f"workspace_reel_source_{row_num}"
+
+    st.session_state.setdefault(top_key, headlines[0] if headlines else "")
+    st.session_state.setdefault(bottom_key, "")
+    # Seeded here rather than passed as widget defaults: Streamlit warns when a
+    # widget is given both a key that is already in session state and a value.
+    st.session_state.setdefault(offset_key, 0)
+    st.session_state.setdefault(frame_key, 1.0)
+
+    if headlines:
+        for label, select_suffix, text_key in (
+            ("Top bar", "top", top_key),
+            ("Bottom bar", "bottom", bottom_key),
+        ):
+            select_key = f"workspace_reel_pick_{select_suffix}_{row_num}"
+            st.selectbox(
+                f"{label} headline",
+                [REEL_HEADLINE_KEEP_OPTION, *headlines],
+                key=select_key,
+                on_change=_apply_reel_headline_pick,
+                args=(select_key, text_key),
+            )
+            st.text_area(label, key=text_key, height=80)
+    else:
+        st.text_area("Top bar", key=top_key, height=80)
+        st.text_area("Bottom bar", key=bottom_key, height=80)
+        st.caption("No saved headlines on this row — type the lines you want.")
+
+    position_column, frame_column = st.columns(2, gap="small")
+    with position_column:
+        st.slider(
+            "Crop position",
+            min_value=-100,
+            max_value=100,
+            step=5,
+            key=offset_key,
+            help="Negative moves the crop up the frame, positive moves it down.",
+        )
+    with frame_column:
+        st.number_input(
+            "Preview frame (seconds)",
+            min_value=0.0,
+            step=0.5,
+            key=frame_key,
+        )
+
+    headline_top = _cell_text(st.session_state.get(top_key, "")).strip()
+    headline_bottom = _cell_text(st.session_state.get(bottom_key, "")).strip()
+    offset_percent = int(st.session_state.get(offset_key, 0) or 0)
+    frame_seconds = float(st.session_state.get(frame_key, 1.0) or 0.0)
+
+    source_ready = os.path.exists((st.session_state.get(loaded_key) or {}).get("path", ""))
+    if not source_ready:
+        if st.button(
+            "Load video",
+            key=f"workspace_reel_load_{row_num}",
+            width="stretch",
+            help="Fetch the video from Drive so the preview can be built",
+        ):
+            st.session_state.pop(error_key, None)
+            try:
+                with st.spinner("Fetching the video from Drive…"):
+                    _reel_source_path(row_num, media_link)
+            except Exception as error:
+                st.session_state[error_key] = describe_error(error)
+            _rerun_workspace("Edit")
+    else:
+        try:
+            source_path = _reel_source_path(row_num, media_link)
+            preview_image = _render_reel_preview_image(
+                source_path,
+                os.path.dirname(source_path),
+                frame_seconds,
+                offset_percent,
+                headline_top,
+                headline_bottom,
+            )
+        except Exception as error:
+            st.warning(f"Could not build the preview: {describe_error(error)}")
+        else:
+            st.image(preview_image, width=340)
+            st.caption("1080×1920 · video cropped to 5:4 and centred")
+
+        if st.button(
+            "Generate reel",
+            key=f"workspace_reel_generate_{row_num}",
+            type="primary",
+            width="stretch",
+            disabled=not (headline_top or headline_bottom),
+        ):
+            st.session_state.pop(error_key, None)
+            st.session_state.pop(output_key, None)
+            try:
+                with st.spinner("Composing the reel and uploading to Drive…"):
+                    link, name = _generate_reel_to_drive(
+                        row_num,
+                        username,
+                        media_link,
+                        offset_percent,
+                        headline_top,
+                        headline_bottom,
+                    )
+            except Exception as error:
+                st.session_state[error_key] = describe_error(error)
+            else:
+                st.session_state[output_key] = {"link": link, "name": name}
+
+    generated = st.session_state.get(output_key) or {}
+    if generated.get("link"):
+        st.success(f"Saved {generated.get('name', 'the reel')} to Drive.")
+        st.link_button("Open in Drive", generated["link"], width="stretch")
+
+    error_message = st.session_state.get(error_key, "")
+    if error_message:
+        st.error(error_message)
+
+
 def _render_reel_lines_headlines_tab(
     headlines: list[str],
     caption_value: str,
@@ -5966,7 +6396,12 @@ def _copy_tabs(
     # its first tab is Headlines rather than Slides.
     is_reel_lines = _is_reel_lines_row(prompt_row or {})
     first_tab = "Headlines" if is_reel_lines else "Slides"
-    tab_labels = [first_tab, "Caption", "Original"]
+    # A row with a video in Drive also gets the Reel tab, which composes the
+    # 5:4-crop-with-headline-bars cut of it.
+    has_reel_video = bool(
+        next((part.strip() for part in _cell_text(media_link).split(",") if part.strip()), "")
+    ) and _cell_text(media_type).strip().lower() not in {"photo", "article"}
+    tab_labels = [first_tab, *(["Reel"] if has_reel_video else []), "Caption", "Original"]
     content_tab_key = f"workspace_row_content_tab_{row_num}"
     if content_tab_key not in st.session_state or st.session_state[content_tab_key] not in tab_labels:
         st.session_state[content_tab_key] = first_tab
@@ -6033,6 +6468,14 @@ def _copy_tabs(
             _tab_copy_preview(
                 "\n\n".join(part for part in (original_preview, transcript) if (part or "").strip())
             )
+    elif selected_content_tab == "Reel":
+        _render_reel_video_tab(
+            row_num,
+            username,
+            media_link,
+            _reel_lines_row_headlines(prompt_row or {})
+            or st.session_state.get(f"workspace_caption_headlines_{row_num}", []),
+        )
     elif selected_content_tab == "Headlines":
         _render_reel_lines_headlines_tab(
             _reel_lines_row_headlines(prompt_row or {}),
