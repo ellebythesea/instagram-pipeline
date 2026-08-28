@@ -4344,9 +4344,10 @@ def _render_video_post_dialog() -> None:
         accept_multiple_files=False,
     )
     speaker_name = st.text_input(
-        "Speaker name",
+        "Speaker name (optional)",
         key="workspace_video_post_speaker",
         placeholder="e.g. Bernie Sanders",
+        help="Leave blank if you do not know it yet — you can fill it in on the row afterwards.",
     ).strip()
 
     if st.button(
@@ -4354,7 +4355,9 @@ def _render_video_post_dialog() -> None:
         key="workspace_video_post_submit",
         type="primary",
         width="stretch",
-        disabled=not (uploaded and speaker_name),
+        # The video is the only thing this needs: the caption is generated from the
+        # transcript, and the speaker name can be filled in on the row later.
+        disabled=not uploaded,
     ):
         if not GOOGLE_DRIVE_FOLDER_ID:
             st.error("GOOGLE_DRIVE_FOLDER_ID is not configured.")
@@ -4430,7 +4433,9 @@ def _render_video_post_dialog() -> None:
 
             if row_num and media_link:
                 with st.spinner("Cropping and splitting video…"):
-                    username_clean = re.sub(r"[^\w\-]", "_", speaker_name.lower())
+                    # Without a speaker name the folder name falls back to the uploaded
+                    # file's stem, and failing that to "row_<n>".
+                    username_clean = re.sub(r"[^\w\-]", "_", speaker_name.lower()) if speaker_name else ""
                     preview_folder_id, _, _ = _ensure_preview_folder(
                         row_num, username_clean, speaker_name, media_link
                     )
