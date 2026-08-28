@@ -554,7 +554,10 @@ def _reel_key(index: int) -> str:
 
 
 def _is_reel_selectable(block: dict) -> bool:
-    """The 'reel' tick is offered on Instagram links only."""
+    """The 'reel' tick is offered on Instagram links only.
+
+    Ticking it marks the row a Reel Lines post as well as forcing the reel treatment.
+    """
     return _is_selectable(block) and _is_instagram_url(block["url"])
 
 
@@ -854,7 +857,8 @@ if blocks is not None:
         st.caption(
             "The document is shown back in full, with a checkbox beside every link that can "
             f"be added. {BLOCKED_LABEL} links are listed without one. Tick **reel** on an "
-            "Instagram link to have it transcribed as a reel even if it is not a /reel/ link."
+            "Instagram link to have it transcribed as a reel — even if it is not a /reel/ "
+            "link — and finished as a Reel Lines post."
         )
 
         select_col, clear_col = st.columns(2)
@@ -893,8 +897,10 @@ if blocks is not None:
                             "reel",
                             key=_reel_key(block["index"]),
                             help=(
-                                "Process this link as a reel — transcribe the video — even "
-                                "if it is not a /reel/ link. Ticking this adds the link too."
+                                "Process this link as a reel — download and transcribe the "
+                                "video even if it is not a /reel/ link — then finish it as a "
+                                "Reel Lines post, with ten headlines instead of slide copy. "
+                                "Ticking this adds the link too."
                             ),
                         )
                 with text_col:

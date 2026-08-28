@@ -51,7 +51,9 @@ time the app writes them it widens the grid and fills in the two header cells if
 
 **Status values:** empty (pending), `reel` (pending, forced to process as a reel), `ingested`, `done`, `slides`, `needs source: [reason]`, `error: [reason]`
 
-Typing `reel` into Status on a pending row makes it process through the reel scraper and get transcribed, even when its link is a `/p/` one rather than `/reel/`. The marker is consumed on processing: the row comes out with the normal `ingested`/`done` status and a Media Type of `reel`. The Ingest page's **reel** checkbox writes the same marker.
+Typing `reel` into Status on a pending row makes it process through the reel scraper and get transcribed, even when its link is a `/p/` one rather than `/reel/`, and then finishes it as a Reel Lines post: ten headlines in `text1` (col R) and `reel lines` in `Slide CTA` (col U), rather than carousel slide copy. The Status marker is consumed on processing — the row comes out with the normal `ingested`/`done` status and a Media Type of `reel` — so the `Slide CTA` marker is written up front and is what identifies the row afterwards. The Ingest page's **reel** checkbox writes the same marker.
+
+Typing `reel` into Media Type instead forces the reel treatment on its own, without the Reel Lines finish.
 
 `needs source: [reason]` marks an article row whose page could not be read. The row is still created so the article text can be pasted in by hand on the Edit tab, which builds the caption and slide copy and moves the row to `ingested`.
 
