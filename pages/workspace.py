@@ -180,9 +180,9 @@ def _fit_video_to_bytes(src_path: str) -> bytes:
 # Reel with headline bars
 #
 # The look: the source video centre-cropped to 5:4 and dropped into the middle
-# of a 1080x1920 black canvas, with a headline burnt into the black bar above it
-# and, optionally, a second line into the bar below. The crop can be nudged up
-# or down so faces stay in frame.
+# of a 1080x1920 black canvas, with a headline burnt into the black bar above
+# it. The bar below is left empty to be captioned in Instagram. The crop can be
+# nudged up or down so faces stay in frame.
 # ---------------------------------------------------------------------------
 
 REEL_CANVAS_WIDTH_PX = 1080
@@ -193,11 +193,11 @@ REEL_VIDEO_WIDTH_PX = REEL_CANVAS_WIDTH_PX
 REEL_VIDEO_HEIGHT_PX = round(REEL_VIDEO_WIDTH_PX * REEL_VIDEO_RATIO_H / REEL_VIDEO_RATIO_W)
 REEL_VIDEO_TOP_PX = (REEL_CANVAS_HEIGHT_PX - REEL_VIDEO_HEIGHT_PX) // 2
 REEL_HEADLINE_SIDE_MARGIN_PX = 84
-# The headline hangs off the video rather than floating in the middle of its
-# bar: the top one is bottom-aligned this far above the video, the bottom one
-# top-aligned the same distance below it, and each block grows away from the
-# video as it takes more lines. 68px is the 24px of a phone screen at this
-# canvas width, which is the gap on the reels these are modelled on.
+# The headline hangs off the video rather than floating in the middle of the
+# bar: it is bottom-aligned this far above the frame and grows upwards as it
+# takes more lines, so the slack collects at the top of the canvas. 68px is the
+# 24px of a phone screen at this width, the gap on the reels these are
+# modelled on.
 REEL_HEADLINE_VIDEO_GAP_PX = 68
 REEL_HEADLINE_EDGE_MARGIN_PX = 48
 # 54px and a 1.2 line pitch are measured off the reels these copy: at this
@@ -381,41 +381,29 @@ def _headline_block_image(text: str, font_path: str, font_adjust_px: int, max_he
     return scratch.crop(bbox) if bbox else None
 
 
-def _render_reel_backdrop(
-    headline_top: str,
-    headline_bottom: str,
-    transparent: bool = False,
-    font_adjust_top: int = 0,
-    font_adjust_bottom: int = 0,
-):
-    """The canvas with both headlines drawn and the video area left clear.
+def _render_reel_backdrop(headline: str, transparent: bool = False, font_adjust: int = 0):
+    """The canvas with the headline drawn and the video area left clear.
 
     Opaque black for the preview, which pastes the frame in; transparent for the
     encode, where the black comes from padding the video and this is laid over
-    the top as a text-only layer.
+    the top as a text-only layer. The bar below the video is left empty: that
+    space is there to be captioned in Instagram.
     """
     from PIL import Image
 
-    font_path = _reel_font_file()
     mode, background = ("RGBA", (0, 0, 0, 0)) if transparent else ("RGB", (0, 0, 0))
     image = Image.new(mode, (REEL_CANVAS_WIDTH_PX, REEL_CANVAS_HEIGHT_PX), background)
-    video_bottom = REEL_VIDEO_TOP_PX + REEL_VIDEO_HEIGHT_PX
-    bar_height = min(REEL_VIDEO_TOP_PX, REEL_CANVAS_HEIGHT_PX - video_bottom)
+    if not (headline or "").strip():
+        return image
+
     max_block_height = max(
         REEL_HEADLINE_MIN_FONT_PX,
-        bar_height - REEL_HEADLINE_VIDEO_GAP_PX - REEL_HEADLINE_EDGE_MARGIN_PX,
+        REEL_VIDEO_TOP_PX - REEL_HEADLINE_VIDEO_GAP_PX - REEL_HEADLINE_EDGE_MARGIN_PX,
     )
-
-    if (headline_top or "").strip():
-        block = _headline_block_image(headline_top, font_path, font_adjust_top, max_block_height)
-        if block:
-            y = REEL_VIDEO_TOP_PX - REEL_HEADLINE_VIDEO_GAP_PX - block.height
-            image.paste(block, ((REEL_CANVAS_WIDTH_PX - block.width) // 2, max(0, y)), block)
-    if (headline_bottom or "").strip():
-        block = _headline_block_image(headline_bottom, font_path, font_adjust_bottom, max_block_height)
-        if block:
-            y = min(video_bottom + REEL_HEADLINE_VIDEO_GAP_PX, REEL_CANVAS_HEIGHT_PX - block.height)
-            image.paste(block, ((REEL_CANVAS_WIDTH_PX - block.width) // 2, y), block)
+    block = _headline_block_image(headline, _reel_font_file(), font_adjust, max_block_height)
+    if block:
+        y = REEL_VIDEO_TOP_PX - REEL_HEADLINE_VIDEO_GAP_PX - block.height
+        image.paste(block, ((REEL_CANVAS_WIDTH_PX - block.width) // 2, max(0, y)), block)
     return image
 
 
@@ -444,21 +432,14 @@ def _render_reel_preview_image(
     tmp_dir: str,
     seconds: float,
     offset_percent: int,
-    headline_top: str,
-    headline_bottom: str,
-    font_adjust_top: int = 0,
-    font_adjust_bottom: int = 0,
+    headline: str,
+    font_adjust: int = 0,
 ):
     """One composed still, built entirely in Pillow so nudging a control is cheap."""
     from PIL import Image
 
     frame_path = _extract_reel_frame(src_path, seconds, os.path.join(tmp_dir, "reel_frame.jpg"))
-    canvas = _render_reel_backdrop(
-        headline_top,
-        headline_bottom,
-        font_adjust_top=font_adjust_top,
-        font_adjust_bottom=font_adjust_bottom,
-    )
+    canvas = _render_reel_backdrop(headline, font_adjust=font_adjust)
     with Image.open(frame_path) as frame:
         frame = frame.convert("RGB")
         crop_w, crop_h, crop_x, crop_y = _reel_crop_box(frame.width, frame.height, offset_percent)
@@ -493,20 +474,12 @@ def _compose_reel_video(
     output_path: str,
     tmp_dir: str,
     offset_percent: int,
-    headline_top: str,
-    headline_bottom: str,
-    font_adjust_top: int = 0,
-    font_adjust_bottom: int = 0,
+    headline: str,
+    font_adjust: int = 0,
 ) -> str:
-    """Burn the headlines in and lay the 5:4 crop into the 1080x1920 canvas."""
+    """Burn the headline in and lay the 5:4 crop into the 1080x1920 canvas."""
     backdrop_path = os.path.join(tmp_dir, "reel_backdrop.png")
-    _render_reel_backdrop(
-        headline_top,
-        headline_bottom,
-        transparent=True,
-        font_adjust_top=font_adjust_top,
-        font_adjust_bottom=font_adjust_bottom,
-    ).save(backdrop_path)
+    _render_reel_backdrop(headline, transparent=True, font_adjust=font_adjust).save(backdrop_path)
 
     src_w, src_h = _video_dimensions(src_path)
     crop_w, crop_h, crop_x, crop_y = _reel_crop_box(src_w, src_h, offset_percent)
@@ -5887,10 +5860,8 @@ def _generate_reel_to_drive(
     username: str,
     media_link: str,
     offset_percent: int,
-    headline_top: str,
-    headline_bottom: str,
-    font_adjust_top: int,
-    font_adjust_bottom: int,
+    headline: str,
+    font_adjust: int,
 ) -> tuple[str, str]:
     """Compose the reel and put it beside the row's other previews in Drive."""
     src_path = _reel_source_path(row_num, media_link)
@@ -5911,10 +5882,8 @@ def _generate_reel_to_drive(
             output_path,
             tmp_dir,
             offset_percent,
-            headline_top,
-            headline_bottom,
-            font_adjust_top,
-            font_adjust_bottom,
+            headline,
+            font_adjust,
         )
         return upload_to_drive(output_path, output_name, preview_folder_id), output_name
     finally:
@@ -5960,7 +5929,7 @@ def _render_reel_headline_input(
 
 
 def _render_reel_font_buttons(row_num: int, suffix: str, font_key: str) -> None:
-    """A- / A+ for one bar, sat against the edge of the preview it changes."""
+    """A- / A+ for the headline, sat just above the preview they change."""
     smaller_column, larger_column, _rest = st.columns([1, 1, 5], gap="small")
     with smaller_column:
         st.button(
@@ -5995,10 +5964,8 @@ def _render_reel_video_tab(
     position, the font size and the frame are being settled, because composing
     one frame in Pillow is instant where re-encoding the video is not.
     """
-    top_key = f"workspace_reel_top_{row_num}"
-    bottom_key = f"workspace_reel_bottom_{row_num}"
-    top_font_key = f"workspace_reel_font_top_{row_num}"
-    bottom_font_key = f"workspace_reel_font_bottom_{row_num}"
+    headline_key = f"workspace_reel_top_{row_num}"
+    font_key = f"workspace_reel_font_top_{row_num}"
     offset_key = f"workspace_reel_offset_{row_num}"
     frame_key = f"workspace_reel_frame_{row_num}"
     output_key = f"workspace_reel_output_{row_num}"
@@ -6010,8 +5977,7 @@ def _render_reel_video_tab(
 
     headlines = list(headlines) or list(st.session_state.get(session_headlines_key, []) or [])
 
-    st.session_state.setdefault(top_key, headlines[0] if headlines else "")
-    st.session_state.setdefault(bottom_key, "")
+    st.session_state.setdefault(headline_key, headlines[0] if headlines else "")
     # Seeded here rather than passed as widget defaults: Streamlit warns when a
     # widget is given both a key that is already in session state and a value.
     st.session_state.setdefault(offset_key, 0)
@@ -6040,8 +6006,7 @@ def _render_reel_video_tab(
         if not (source_text or "").strip():
             st.caption("No transcript or caption to write headlines from.")
 
-    _render_reel_headline_input(row_num, "Top bar", "top", top_key, headlines)
-    _render_reel_headline_input(row_num, "Bottom bar", "bottom", bottom_key, headlines)
+    _render_reel_headline_input(row_num, "Headline", "top", headline_key, headlines)
 
     position_column, frame_column = st.columns(2, gap="small")
     with position_column:
@@ -6061,10 +6026,8 @@ def _render_reel_video_tab(
             key=frame_key,
         )
 
-    headline_top = _cell_text(st.session_state.get(top_key, "")).strip()
-    headline_bottom = _cell_text(st.session_state.get(bottom_key, "")).strip()
-    font_adjust_top = int(st.session_state.get(top_font_key, 0) or 0)
-    font_adjust_bottom = int(st.session_state.get(bottom_font_key, 0) or 0)
+    headline = _cell_text(st.session_state.get(headline_key, "")).strip()
+    font_adjust = int(st.session_state.get(font_key, 0) or 0)
     offset_percent = int(st.session_state.get(offset_key, 0) or 0)
     frame_seconds = float(st.session_state.get(frame_key, 1.0) or 0.0)
 
@@ -6095,26 +6058,21 @@ def _render_reel_video_tab(
                 os.path.dirname(source_path),
                 frame_seconds,
                 offset_percent,
-                headline_top,
-                headline_bottom,
-                font_adjust_top,
-                font_adjust_bottom,
+                headline,
+                font_adjust,
             )
         except Exception as error:
             st.warning(f"Could not build the preview: {describe_error(error)}")
         else:
-            # The pair above the preview sets the top bar, the pair below sets
-            # the bottom one, which is label enough for what they do.
-            _render_reel_font_buttons(row_num, "top", top_font_key)
+            _render_reel_font_buttons(row_num, "top", font_key)
             st.image(preview_image, width=340)
-            _render_reel_font_buttons(row_num, "bottom", bottom_font_key)
 
         if st.button(
             "Generate reel",
             key=f"workspace_reel_generate_{row_num}",
             type="primary",
             width="stretch",
-            disabled=not (headline_top or headline_bottom),
+            disabled=not headline,
         ):
             st.session_state.pop(error_key, None)
             st.session_state.pop(output_key, None)
@@ -6125,10 +6083,8 @@ def _render_reel_video_tab(
                         username,
                         media_link,
                         offset_percent,
-                        headline_top,
-                        headline_bottom,
-                        font_adjust_top,
-                        font_adjust_bottom,
+                        headline,
+                        font_adjust,
                     )
             except Exception as error:
                 st.session_state[error_key] = describe_error(error)
