@@ -569,8 +569,26 @@ def _is_reel_selectable(block: dict) -> bool:
     return _is_selectable(block) and _is_instagram_url(block["url"])
 
 
+def _tick_link_with_reel(index: int) -> None:
+    """Ticking 'reel' ticks the link's own box too.
+
+    The reel tick already counted as picking the link, but the box beside it
+    stayed empty, so the row looked unselected and the pair read as two clicks
+    rather than one. Runs as an on_change callback, which lands the value before
+    the boxes are drawn again. Clearing 'reel' leaves the link ticked: it is
+    selected either way, and silently dropping it would be the same surprise in
+    reverse.
+    """
+    if st.session_state.get(_reel_key(index)):
+        st.session_state[_pick_key(index)] = True
+
+
 def _is_picked(block: dict) -> bool:
-    """Ticking 'reel' adds the link too, so a reel can be marked in one click."""
+    """Ticking 'reel' adds the link too, so a reel can be marked in one click.
+
+    The callback normally ticks the link's box as well; this still reads both so
+    a reel tick counts even if that has not run yet.
+    """
     return bool(
         st.session_state.get(_pick_key(block["index"]))
         or st.session_state.get(_reel_key(block["index"]))
@@ -904,6 +922,8 @@ if blocks is not None:
                         st.checkbox(
                             "reel",
                             key=_reel_key(block["index"]),
+                            on_change=_tick_link_with_reel,
+                            args=(block["index"],),
                             help=(
                                 "Process this link as a reel — download and transcribe the "
                                 "video even if it is not a /reel/ link — then finish it as a "
