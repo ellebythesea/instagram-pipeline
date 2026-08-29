@@ -407,14 +407,38 @@ def _render_reel_backdrop(headline: str, transparent: bool = False, font_adjust:
     return image
 
 
+# Below this a file is a still rather than a clip — an image reports a single
+# frame's worth of duration rather than none at all, so zero is not the test.
+REEL_MIN_CLIP_SECONDS = 0.5
+
+
+def _reel_clip_duration(src_path: str) -> float:
+    """The clip's length, or 0.0 when it cannot be read."""
+    try:
+        return _video_duration_seconds(src_path)
+    except Exception:
+        return 0.0
+
+
+def _format_clip_duration(seconds: float) -> str:
+    total = int(round(max(0.0, seconds)))
+    return f"{total // 60}:{total % 60:02d}"
+
+
 def _extract_reel_frame(src_path: str, seconds: float, output_path: str) -> str:
     # Seeking past the end exits 0 having written nothing, so clear any frame
     # left by an earlier preview or it would be served again as this one.
     if os.path.exists(output_path):
         os.unlink(output_path)
+    # Asking for a second the clip does not reach is the same silent no-op, so
+    # keep the seek inside it rather than finding out afterwards.
+    duration = _reel_clip_duration(src_path)
+    wanted = max(0.0, float(seconds))
+    if duration > 0:
+        wanted = min(wanted, max(0.0, duration - 0.05))
     command = [
         _crop_ffmpeg_path(), "-hide_banner", "-loglevel", "error", "-y",
-        "-ss", f"{max(0.0, float(seconds)):.3f}",
+        "-ss", f"{wanted:.3f}",
         "-i", src_path,
         "-frames:v", "1",
         output_path,
@@ -423,7 +447,15 @@ def _extract_reel_frame(src_path: str, seconds: float, output_path: str) -> str:
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.decode(errors="replace"))
     if not os.path.exists(output_path):
-        raise RuntimeError(f"No frame at {seconds:.1f}s - the video may be shorter than that.")
+        if duration < REEL_MIN_CLIP_SECONDS:
+            raise RuntimeError(
+                "No frame could be read from this file. It looks like an image "
+                "rather than a video, or the upload is damaged."
+            )
+        raise RuntimeError(
+            f"No frame at {seconds:.1f}s — this clip is only "
+            f"{_format_clip_duration(duration)} long."
+        )
     return output_path
 
 
@@ -5820,6 +5852,27 @@ def _tab_copy_preview(value: str, show_plain_text: bool = True, key: str = "") -
 REEL_HEADLINE_KEEP_OPTION = "(keep what is typed)"
 
 
+def _drive_poster_bytes(drive_link: str) -> bytes:
+    """Drive's own poster frame for a file, or empty when there is not one.
+
+    Fetched here rather than handed to st.image as a URL: Drive does not always
+    hold a thumbnail for a video, and a URL that answers with anything else
+    renders as a broken image with nothing on the server side to catch it.
+    """
+    url = _drive_image_url(drive_link)
+    if not url:
+        return b""
+    try:
+        response = requests.get(url, timeout=20)
+    except Exception:
+        return b""
+    if response.status_code != 200:
+        return b""
+    if not response.headers.get("content-type", "").lower().startswith("image/"):
+        return b""
+    return response.content
+
+
 def _reel_source_path(row_num: int, media_link: str) -> str:
     """The row's video on local disk, downloaded once and kept for the session.
 
@@ -5919,7 +5972,7 @@ def _render_reel_headline_input(
     if headlines:
         select_key = f"workspace_reel_pick_{suffix}_{row_num}"
         st.selectbox(
-            f"{label} headline",
+            "Pick a headline",
             [REEL_HEADLINE_KEEP_OPTION, *headlines],
             key=select_key,
             on_change=_apply_reel_headline_pick,
@@ -6009,6 +6062,16 @@ def _render_reel_video_tab(
 
     _render_reel_headline_input(row_num, "Headline", "top", headline_key, headlines)
 
+    # Known only once the video is local, so the frame control is bounded by it
+    # rather than letting a default of 1s ask for a second a short clip lacks.
+    source_cached = (st.session_state.get(loaded_key) or {}).get("path", "")
+    clip_duration = _reel_clip_duration(source_cached) if os.path.exists(source_cached) else 0.0
+    frame_ceiling = max(0.0, clip_duration - 0.05) if clip_duration > 0 else None
+    if frame_ceiling is not None:
+        st.session_state[frame_key] = min(
+            float(st.session_state.get(frame_key, 1.0) or 0.0), frame_ceiling
+        )
+
     position_column, frame_column = st.columns(2, gap="small")
     with position_column:
         st.slider(
@@ -6023,8 +6086,17 @@ def _render_reel_video_tab(
         st.number_input(
             "Preview frame (seconds)",
             min_value=0.0,
+            max_value=frame_ceiling,
             step=0.5,
             key=frame_key,
+        )
+    if clip_duration >= REEL_MIN_CLIP_SECONDS:
+        st.caption(f"Video is {_format_clip_duration(clip_duration)} long.")
+    elif os.path.exists(source_cached):
+        st.warning(
+            "This row has no usable video — what Media Drive Link points at is a "
+            "still image, or a clip too short to read. A reel made from it would be "
+            "a single frame."
         )
 
     headline = _cell_text(st.session_state.get(headline_key, "")).strip()
@@ -6037,21 +6109,30 @@ def _render_reel_video_tab(
     )
     if not has_video:
         st.info("No video in Drive on this row, so there is nothing to crop.")
-    elif not os.path.exists((st.session_state.get(loaded_key) or {}).get("path", "")):
+    else:
+        # The button stays after the first fetch rather than disappearing into
+        # the preview: a download that came back wrong, or a video replaced in
+        # Drive since, has to be retryable without reloading the whole page.
+        loaded = os.path.exists(source_cached)
         if st.button(
-            "Load video",
+            "Reload video" if loaded else "Load video",
             key=f"workspace_reel_load_{row_num}",
             width="stretch",
-            help="Fetch the video from Drive so the preview can be built",
+            help="Fetch the video from Drive again and rebuild the preview",
         ):
             st.session_state.pop(error_key, None)
+            cached = st.session_state.pop(loaded_key, None) or {}
+            if cached.get("dir"):
+                shutil.rmtree(cached["dir"], ignore_errors=True)
+            st.session_state.pop(output_key, None)
             try:
                 with st.spinner("Fetching the video from Drive…"):
                     _reel_source_path(row_num, media_link)
             except Exception as error:
                 st.session_state[error_key] = describe_error(error)
             _rerun_workspace("Edit")
-    else:
+
+    if has_video and os.path.exists(source_cached):
         try:
             source_path = _reel_source_path(row_num, media_link)
             preview_image = _render_reel_preview_image(
@@ -6101,8 +6182,8 @@ def _render_reel_video_tab(
             st.video(generated["path"])
         else:
             # Picked up somewhere else, so there is no local encode to play.
-            # Drive's own poster frame for the file stands in for it.
-            poster = _drive_image_url(reel_link)
+            # Drive's own poster frame stands in for it when Drive has one.
+            poster = _drive_poster_bytes(reel_link)
             if poster:
                 st.image(poster, width=340)
             st.caption("Made in an earlier session — open it in Drive to watch it.")
