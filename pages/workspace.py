@@ -413,11 +413,12 @@ REEL_MIN_CLIP_SECONDS = 0.5
 
 
 def _reel_clip_duration(src_path: str) -> float:
-    """The clip's length, or 0.0 when it cannot be read."""
+    """The clip's length, or 0.0 when nothing can read it."""
     try:
-        return _video_duration_seconds(src_path)
+        duration = _video_duration_seconds(src_path)
     except Exception:
-        return 0.0
+        duration = 0.0
+    return duration if duration > 0 else _duration_from_ffmpeg(src_path)
 
 
 def _format_clip_duration(seconds: float) -> str:
@@ -436,27 +437,33 @@ def _extract_reel_frame(src_path: str, seconds: float, output_path: str) -> str:
     wanted = max(0.0, float(seconds))
     if duration > 0:
         wanted = min(wanted, max(0.0, duration - 0.05))
-    command = [
-        _crop_ffmpeg_path(), "-hide_banner", "-loglevel", "error", "-y",
-        "-ss", f"{wanted:.3f}",
-        "-i", src_path,
-        "-frames:v", "1",
-        output_path,
-    ]
-    proc = subprocess.run(command, capture_output=True, timeout=MEDIA_FRAME_TIMEOUT_SECONDS)
-    if proc.returncode != 0:
-        raise RuntimeError(proc.stderr.decode(errors="replace"))
-    if not os.path.exists(output_path):
-        if duration < REEL_MIN_CLIP_SECONDS:
-            raise RuntimeError(
-                "No frame could be read from this file. It looks like an image "
-                "rather than a video, or the upload is damaged."
-            )
-        raise RuntimeError(
-            f"No frame at {seconds:.1f}s — this clip is only "
-            f"{_format_clip_duration(duration)} long."
+
+    # Falling back to the first frame rather than trusting the seek: a duration
+    # can be unreadable even where the video is fine, and seeking past the end
+    # of one is a silent no-op. Anything that decodes at all has a frame at 0.
+    for attempt in ([wanted, 0.0] if wanted > 0 else [0.0]):
+        if os.path.exists(output_path):
+            os.unlink(output_path)
+        proc = subprocess.run(
+            [
+                _crop_ffmpeg_path(), "-hide_banner", "-loglevel", "error", "-y",
+                "-ss", f"{attempt:.3f}",
+                "-i", src_path,
+                "-frames:v", "1",
+                output_path,
+            ],
+            capture_output=True,
+            timeout=MEDIA_FRAME_TIMEOUT_SECONDS,
         )
-    return output_path
+        if proc.returncode != 0:
+            raise RuntimeError(proc.stderr.decode(errors="replace"))
+        if os.path.exists(output_path):
+            return output_path
+
+    raise RuntimeError(
+        "No frame could be read from this file, at the second asked for or at its "
+        "start. It looks like an image rather than a video, or the upload is damaged."
+    )
 
 
 def _render_reel_preview_image(
@@ -3083,6 +3090,29 @@ def _video_duration_seconds(path: str) -> float:
     )
     duration_text = (result.stdout or "").strip()
     return float(duration_text) if duration_text else 0.0
+
+
+def _duration_from_ffmpeg(src_path: str) -> float:
+    """The clip length as ffmpeg itself reports it, or 0.0.
+
+    imageio-ffmpeg bundles no ffprobe and the path derived from its ffmpeg does
+    not exist, so a machine with no system ffprobe has none at all. ffmpeg
+    prints the duration whenever it opens a file, and ffmpeg is always here.
+    """
+    try:
+        proc = subprocess.run(
+            [_crop_ffmpeg_path(), "-hide_banner", "-i", src_path],
+            capture_output=True,
+            text=True,
+            timeout=MEDIA_PROBE_TIMEOUT_SECONDS,
+        )
+    except Exception:
+        return 0.0
+    match = re.search(r"Duration:\s*(\d+):(\d{2}):(\d{2}(?:\.\d+)?)", proc.stderr or "")
+    if not match:
+        return 0.0
+    hours, minutes, seconds = match.groups()
+    return (int(hours) * 3600) + (int(minutes) * 60) + float(seconds)
 
 
 def _refresh_row_thumbnail_from_video(row: dict, offset_seconds: float = 5.0) -> str:

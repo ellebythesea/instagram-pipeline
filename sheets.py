@@ -357,6 +357,10 @@ def _ensure_headers(sheet_id: str, ws: gspread.Worksheet) -> None:
 # ---------------------------------------------------------------------------
 
 _posts_columns_cache: dict[str, tuple[float, dict[str, int]]] = {}
+# Deliberately shorter than the rows cache. This is the window in which a column
+# dragged somewhere else is still written to where it used to be, so it is kept
+# small; reads reseed the map for free, so it rarely costs a call of its own.
+_POSTS_COLUMNS_TTL_SECONDS = 30.0
 
 
 def _normalized_header(name: str) -> str:
@@ -366,19 +370,37 @@ def _normalized_header(name: str) -> str:
 def _posts_column_map(header_row: list[str]) -> dict[str, int]:
     """1-based column index for every expected header, read off the sheet.
 
-    A header the sheet does not carry keeps its canonical position, which is
-    what lets a sheet that never grew the late-added columns still be read and
-    written. The first of any duplicate header wins.
+    Only the late-added columns may fall back to a canonical position: those are
+    the ones an older sheet genuinely lacks. Any other header missing from the
+    row is refused rather than guessed. Guessing is what makes this dangerous —
+    on a sheet whose columns have been reordered, a canonical position is some
+    other field's cell, so a "fallback" writes one column's value over another's.
+    The first of any duplicate header wins.
     """
     found: dict[str, int] = {}
     for index, name in enumerate(header_row or []):
         key = _normalized_header(name)
         if key and key not in found:
             found[key] = index + 1
-    return {
-        header: found.get(_normalized_header(header), position + 1)
-        for position, header in enumerate(_EXPECTED_HEADERS)
-    }
+
+    columns: dict[str, int] = {}
+    missing: list[str] = []
+    for position, header in enumerate(_EXPECTED_HEADERS):
+        index = found.get(_normalized_header(header))
+        if index:
+            columns[header] = index
+        elif header in _LATE_ADDED_HEADERS:
+            columns[header] = position + 1
+        else:
+            missing.append(header)
+    if missing:
+        raise RuntimeError(
+            "The posts tab header row does not name: "
+            + ", ".join(missing)
+            + ". Column positions are read from that row, so nothing is read or "
+            "written until it is intact."
+        )
+    return columns
 
 
 def _cache_posts_columns(sheet_id: str, columns: dict[str, int]) -> None:
@@ -393,7 +415,7 @@ def _posts_columns(sheet_id: str, ws: gspread.Worksheet) -> dict[str, int]:
     its own. Moving a column therefore takes effect on the next real read.
     """
     cached = _posts_columns_cache.get(sheet_id)
-    if cached and time.monotonic() - cached[0] <= _ROWS_CACHE_TTL_SECONDS:
+    if cached and time.monotonic() - cached[0] <= _POSTS_COLUMNS_TTL_SECONDS:
         return cached[1]
     columns = _posts_column_map(_with_backoff(ws.row_values, 1))
     _cache_posts_columns(sheet_id, columns)
@@ -460,7 +482,10 @@ def get_all_rows(sheet_id: str) -> list[dict]:
     all_values = _with_backoff(ws.get_all_values)
     # The header row is already in hand here, so this is where the column map is
     # settled for everything that follows, reads and writes alike.
-    columns = _posts_column_map(all_values[0] if all_values else [])
+    if not all_values:
+        _set_cached_rows(sheet_id, "posts", [])
+        return []
+    columns = _posts_column_map(all_values[0])
     _cache_posts_columns(sheet_id, columns)
     records = []
     for i, row in enumerate(all_values[1:]):  # skip header row

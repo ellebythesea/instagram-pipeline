@@ -11,8 +11,12 @@ Main Instagram pipeline. 28 columns. **The app restores this header row automati
 **Columns can be reordered.** The app reads every column's position from this header row rather than from a
 fixed letter, so dragging a column somewhere else needs no code change — the header travels with it and the
 app follows. The letters below are where a fresh sheet is built, and where a header the sheet does not carry
-is assumed to be. After moving a column, reload the app: positions are cached for up to two minutes, and a
-write in that window would still use the old one.
+is assumed to be — and only for `text7`, `text8` and `Reel Drive Link`, the columns an older sheet may not
+have at all. Any other header missing from the row is refused rather than guessed, because on a reordered
+sheet a guessed position is some other field's cell.
+
+**After moving a column, reload the app before using it.** Positions are cached for 30 seconds, and a write
+inside that window still goes where the column used to be.
 
 | Col | Header |
 |-----|--------|
