@@ -64,6 +64,23 @@ those. Rows are read positionally with missing columns treated as empty, so a sh
 those columns still loads; the first time the app writes them it widens the grid and fills in the
 header cells if they are blank.
 
+### Generated media in Drive
+
+The source video stays where it was uploaded. Everything generated from it goes in a subfolder named after
+the video's own filename, and each file inside says what it is:
+
+```
+voteinorout_250828_reel.mp4          <- the source, left where it is
+voteinorout_250828_reel/             <- everything made from it
+    60_voteinorout_250828_reel_01.mp4    60-second cuts, cropped to 4:5
+    60_voteinorout_250828_reel_02.mp4
+    fit_voteinorout_250828_reel.mp4      letterboxed into 4:5, numbered too when it runs past a minute
+    reel_voteinorout_250828_reel.mp4     the 5:4-with-headline reel
+```
+
+Folders made under the older `username_yymmdd` convention are still recognised as belonging to their row,
+so the Drive cleanup leaves them where they are rather than sweeping them into `safe_for_deletion`.
+
 ### Reel Drive Link
 
 `Reel Drive Link` (col AB) holds the reel the **Reels** tab composes — the video centre-cropped to

@@ -3039,21 +3039,43 @@ def _download_preview_background(url: str, tmp_dir: str) -> str:
     return output_path
 
 
+def _media_name_stem(filename: str) -> str:
+    """The part of a filename everything generated from it is named after."""
+    stem = os.path.splitext(os.path.basename((filename or "").strip()))[0]
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", stem).strip("._-")
+
+
+def _legacy_preview_folder_base_name(username: str, media_link: str) -> str:
+    """The username_yymmdd folder name used before folders took the file's name.
+
+    Only the cleanup needs this: a folder made under the old convention still
+    belongs to its row, and would otherwise look orphaned and be swept away.
+    """
+    cleaned_username = re.sub(r"[^A-Za-z0-9._-]+", "_", (username or "").strip().lstrip("@")).strip("._-")
+    if not media_link:
+        return ""
+    try:
+        stem = os.path.splitext((get_drive_file_metadata(media_link).get("name") or "").strip())[0]
+    except Exception:
+        return ""
+    match = re.match(r"(?P<username>[A-Za-z0-9._-]+)_(?P<date>\d{6})_", stem)
+    if match:
+        return f"{(match.group('username') or '').strip('._-')}_{(match.group('date') or '').strip()}"
+    date_match = re.search(r"(\d{6})", stem)
+    if cleaned_username and date_match:
+        return f"{cleaned_username}_{date_match.group(1)}"
+    return ""
+
+
 def _preview_folder_base_name(username: str, media_link: str, row_num: int) -> tuple[str, str]:
     cleaned_username = re.sub(r"[^A-Za-z0-9._-]+", "_", (username or "").strip().lstrip("@")).strip("._-")
     if media_link:
         try:
             metadata = get_drive_file_metadata(media_link)
             filename = (metadata.get("name") or "").strip()
-            stem = os.path.splitext(filename)[0]
-            match = re.match(r"(?P<username>[A-Za-z0-9._-]+)_(?P<date>\d{6})_", stem)
-            if match:
-                matched_username = (match.group("username") or "").strip("._-")
-                matched_date = (match.group("date") or "").strip()
-                return f"{matched_username}_{matched_date}", filename
-            date_match = re.search(r"(\d{6})", stem)
-            if cleaned_username and date_match:
-                return f"{cleaned_username}_{date_match.group(1)}", filename
+            # Named after the source file itself, so everything generated from a
+            # video sits in a folder called the same thing the video is.
+            stem = _media_name_stem(filename)
             if stem:
                 return stem, filename
             return filename or f"{cleaned_username or 'row'}_{row_num}", filename
@@ -3547,22 +3569,18 @@ def _upload_preview_pngs(
     return uploaded
 
 
-def _segment_name(index: int) -> str:
-    words = [
-        "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
-        "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen",
-        "eighteen", "nineteen", "twenty", "twenty_one", "twenty_two", "twenty_three",
-        "twenty_four", "twenty_five", "twenty_six", "twenty_seven", "twenty_eight",
-        "twenty_nine", "thirty", "thirty_one", "thirty_two", "thirty_three",
-        "thirty_four", "thirty_five", "thirty_six", "thirty_seven", "thirty_eight",
-        "thirty_nine", "forty", "forty_one", "forty_two", "forty_three", "forty_four",
-        "forty_five", "forty_six", "forty_seven", "forty_eight", "forty_nine", "fifty",
-        "fifty_one", "fifty_two", "fifty_three", "fifty_four", "fifty_five", "fifty_six",
-        "fifty_seven", "fifty_eight", "fifty_nine", "sixty",
-    ]
-    if 0 <= index < len(words):
-        return words[index]
-    return f"{index + 1:02d}"
+def _split_segment_name(stem: str, mode: str, index: int, total: int) -> str:
+    """What a split segment is called inside the source file's folder.
+
+    Prefix says what it is and the stem ties it to the video it came from, so a
+    folder reads 60_clip_01, 60_clip_02, fit_clip, reel_clip. The 60-second cuts
+    are a series and always carry a number; a fit that came out whole does not
+    need one.
+    """
+    prefix = "fit" if mode == "fit" else "60"
+    if mode == "fit" and total <= 1:
+        return f"fit_{stem}.mp4"
+    return f"{prefix}_{stem}_{index + 1:02d}.mp4"
 
 
 def _ensure_preview_folder(row_num: int, username: str, handle_text: str, media_link: str) -> tuple[str, str, str]:
@@ -3579,7 +3597,12 @@ def _copy_source_video_into_preview_folder(media_link: str, preview_folder_id: s
     return copy_drive_file_to_folder(media_link, preview_folder_id, source_filename)
 
 
-def _split_video_to_folder(local_video_path: str, output_dir: str, mode: str = "fill") -> list[str]:
+def _split_video_to_folder(
+    local_video_path: str,
+    output_dir: str,
+    mode: str = "fill",
+    stem: str = "",
+) -> list[str]:
     if mode == "fit":
         pad_w = "if(gte(iw/ih\\,4/5)\\,iw\\,trunc(ih*(4/5)/2)*2)"
         pad_h = "if(gte(iw/ih\\,4/5)\\,trunc(iw*(5/4)/2)*2\\,ih)"
@@ -3588,18 +3611,19 @@ def _split_video_to_folder(local_video_path: str, output_dir: str, mode: str = "
         crop_width = "if(gte(iw/ih\\,4/5)\\,trunc(ih*(4/5)/2)*2\\,iw)"
         crop_height = "if(gte(iw/ih\\,4/5)\\,ih\\,trunc(iw/(4/5)/2)*2)"
         video_filter = f"crop={crop_width}:{crop_height}:(iw-ow)/2:(ih-oh)/2,scale=trunc(iw/2)*2:trunc(ih/2)*2"
-    duration = _video_duration_seconds(local_video_path)
+    duration = _reel_clip_duration(local_video_path)
     if duration <= 0:
         raise RuntimeError("Could not determine video duration for splitting.")
 
+    name_stem = _media_name_stem(stem or local_video_path) or "video"
+    segment_total = int(max(0.0, duration - 0.001) // 60.0) + 1
     ffmpeg_path = _crop_ffmpeg_path()
     outputs: list[str] = []
     start_seconds = 0.0
     segment_index = 0
     while start_seconds < duration - 0.01:
         clip_duration = min(60.0, duration - start_seconds)
-        suffix = "_fit" if mode == "fit" else ""
-        output_path = os.path.join(output_dir, f"{_segment_name(segment_index)}{suffix}.mp4")
+        output_path = os.path.join(output_dir, _split_segment_name(name_stem, mode, segment_index, segment_total))
         command = [
             ffmpeg_path,
             "-hide_banner",
@@ -3649,7 +3673,7 @@ def _upload_split_videos(media_link: str, preview_folder_id: str, mode: str = "f
         download_drive_file(media_link, local_video_path)
         split_dir = os.path.join(tmp_dir, "segments")
         os.makedirs(split_dir, exist_ok=True)
-        segment_paths = _split_video_to_folder(local_video_path, split_dir, mode=mode)
+        segment_paths = _split_video_to_folder(local_video_path, split_dir, mode=mode, stem=filename)
         uploaded: list[dict[str, str]] = []
         for segment_path in segment_paths:
             segment_filename = os.path.basename(segment_path)
@@ -4852,7 +4876,9 @@ def _render_video_post_dialog() -> None:
                     )
                     seg_dir = os.path.join(tmp_dir, "segments")
                     os.makedirs(seg_dir, exist_ok=True)
-                    segment_paths = _split_video_to_folder(src_path, seg_dir, mode="fill")
+                    segment_paths = _split_video_to_folder(
+                        src_path, seg_dir, mode="fill", stem=file_name
+                    )
                     for seg_path in segment_paths:
                         upload_to_drive(seg_path, os.path.basename(seg_path), preview_folder_id)
 
@@ -5150,7 +5176,9 @@ def _render_workspace_home_action_dialog() -> None:
                 os.makedirs(seg_dir, exist_ok=True)
                 label = "Cropping" if split_mode == "fill" else "Fitting"
                 with st.spinner(f"{label} and splitting into 60-second segments…"):
-                    segment_paths = _split_video_to_folder(src_path, seg_dir, mode=split_mode)
+                    segment_paths = _split_video_to_folder(
+                        src_path, seg_dir, mode=split_mode, stem=uploaded.name
+                    )
                 ts = datetime.now().strftime("%Y%m%d_%H%M%S")
                 folder_name = f"{'crop' if split_mode == 'fill' else 'fit'}_{ts}"
                 folder_id = get_or_create_subfolder(
@@ -5956,8 +5984,8 @@ def _generate_reel_to_drive(
     preview_folder_id, _folder_name, source_filename = _ensure_preview_folder(
         row_num, username, username, drive_link
     )
-    stem = os.path.splitext(source_filename or os.path.basename(src_path))[0] or f"row_{row_num}"
-    output_name = f"{stem}_headline_reel.mp4"
+    stem = _media_name_stem(source_filename or src_path) or f"row_{row_num}"
+    output_name = f"reel_{stem}.mp4"
 
     # Written beside the cached source rather than into a directory of its own,
     # so it outlives this run and can be played back in the tab. Regenerating
@@ -7403,6 +7431,10 @@ def _cleanup_orphaned_preview_folders(all_rows: list[dict]) -> int:
             )
             if folder_name:
                 active_names.add(folder_name.strip().lower())
+            # Folders predating the file-named convention still belong to their row.
+            legacy_name = _legacy_preview_folder_base_name(username or handle_text, media_link)
+            if legacy_name:
+                active_names.add(legacy_name.strip().lower())
             stem = os.path.splitext((source_filename or "").strip())[0].strip()
             if stem:
                 active_names.add(stem.lower())
