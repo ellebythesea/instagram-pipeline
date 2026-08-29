@@ -363,6 +363,30 @@ _posts_columns_cache: dict[str, tuple[float, dict[str, int]]] = {}
 _POSTS_COLUMNS_TTL_SECONDS = 30.0
 
 
+# The header row is hand-maintained and was decorative until column positions
+# started being read from it, so a cell may well be shortened or reworded. These
+# are the forms accepted for a header besides its own name. Each belongs to
+# exactly one header — an ambiguous short form ("caption", "link") is left out
+# rather than resolved by guesswork.
+_POSTS_HEADER_ALIASES: dict[str, tuple[str, ...]] = {
+    "Instagram URL": ("url", "instagram link", "post url", "link url"),
+    "Required Hashtags": ("hashtags", "required tags"),
+    "Source Username": ("username", "source user", "handle"),
+    "Generated Caption": ("generated", "final caption"),
+    "Media Type": ("media kind",),
+    "Photo Count": ("photos", "photo no", "photo number"),
+    "Media Drive Link": ("media", "media link", "media drive", "video", "video link"),
+    "Thumbnail Drive Link": ("thumbnail", "thumbnail link", "thumbnail drive", "thumb", "screenshot"),
+    "Original Caption": ("original",),
+    "Top Comment": ("top comment cta", "comment cta"),
+    "Speaker Name": ("speaker",),
+    "Caption Context": ("context",),
+    "Scheduled Time": ("scheduled", "schedule", "post time"),
+    "Slide CTA": ("cta", "slide call to action"),
+    "Reel Drive Link": ("reel", "reel link", "reel drive", "reel video"),
+}
+
+
 def _normalized_header(name: str) -> str:
     return " ".join((name or "").split()).lower()
 
@@ -383,12 +407,31 @@ def _posts_column_map(header_row: list[str]) -> dict[str, int]:
         if key and key not in found:
             found[key] = index + 1
 
+    # Exact names first, across the whole row, so a header's own name always wins
+    # over another header's alias for the same cell.
+    taken: set[int] = set()
     columns: dict[str, int] = {}
-    missing: list[str] = []
-    for position, header in enumerate(_EXPECTED_HEADERS):
+    for header in _EXPECTED_HEADERS:
         index = found.get(_normalized_header(header))
         if index:
             columns[header] = index
+            taken.add(index)
+
+    missing: list[str] = []
+    for position, header in enumerate(_EXPECTED_HEADERS):
+        if header in columns:
+            continue
+        index = next(
+            (
+                found[alias]
+                for alias in _POSTS_HEADER_ALIASES.get(header, ())
+                if found.get(alias) and found[alias] not in taken
+            ),
+            0,
+        )
+        if index:
+            columns[header] = index
+            taken.add(index)
         elif header in _LATE_ADDED_HEADERS:
             columns[header] = position + 1
         else:
@@ -398,7 +441,8 @@ def _posts_column_map(header_row: list[str]) -> dict[str, int]:
             "The posts tab header row does not name: "
             + ", ".join(missing)
             + ". Column positions are read from that row, so nothing is read or "
-            "written until it is intact."
+            "written until it is intact. The row currently reads: "
+            + ", ".join(name.strip() or "(blank)" for name in (header_row or []))
         )
     return columns
 

@@ -13,7 +13,10 @@ fixed letter, so dragging a column somewhere else needs no code change — the h
 app follows. The letters below are where a fresh sheet is built, and where a header the sheet does not carry
 is assumed to be — and only for `text7`, `text8` and `Reel Drive Link`, the columns an older sheet may not
 have at all. Any other header missing from the row is refused rather than guessed, because on a reordered
-sheet a guessed position is some other field's cell.
+sheet a guessed position is some other field's cell. A shortened header is understood, though — `thumbnail`
+for `Thumbnail Drive Link`, `media` or `video` for `Media Drive Link`, `hashtags`, `speaker`, `context`, `cta`
+and so on — and a header's own name always wins over another header's short form. When a header genuinely
+cannot be matched the app says which one, and prints the row as it currently reads.
 
 **After moving a column, reload the app before using it.** Positions are cached for 30 seconds, and a write
 inside that window still goes where the column used to be.
