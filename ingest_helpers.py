@@ -208,3 +208,23 @@ def build_download_payload(media_paths: list[str], base_name: str) -> tuple[str,
         for path in media_paths:
             zf.write(path, arcname=os.path.basename(path))
     return (f"{base_name}.zip", zip_buffer.getvalue(), "application/zip")
+
+
+# The blur used wherever a thumbnail is softened — the Blur button on a row and
+# the default applied to an article's lead image — so both look the same.
+THUMBNAIL_BLUR_RADIUS = 10
+
+
+def blur_image_file(src_path: str, dest_path: str, radius: int = THUMBNAIL_BLUR_RADIUS) -> str:
+    """Write a blurred copy of an image, as JPEG.
+
+    Always JPEG rather than the source's own format: the lead images articles
+    carry come as webp, gif and png alike, and a blurred frame of an animation
+    is not worth carrying the format for.
+    """
+    from PIL import Image, ImageFilter
+
+    with Image.open(src_path) as image:
+        blurred = image.convert("RGB").filter(ImageFilter.GaussianBlur(radius))
+    blurred.save(dest_path, format="JPEG", quality=90)
+    return dest_path

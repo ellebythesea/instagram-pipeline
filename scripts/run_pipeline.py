@@ -37,7 +37,7 @@ from drive import (
     get_or_create_subfolder,
     upload_to_drive,
 )
-from ingest_helpers import build_filename_prefix, download_file, upload_media_bundle
+from ingest_helpers import blur_image_file, build_filename_prefix, download_file, upload_media_bundle
 from utils.error_labels import describe_error
 import pipeline_caption as pipeline_caption_ops
 from post_scraper import process_url as process_post_url
@@ -47,6 +47,7 @@ from sheets import (
     get_all_rows,
     get_pending_rows,
     is_reel_status,
+    save_original_thumbnail,
     update_caption,
     update_caption_and_metadata,
     update_ingest_result,
@@ -147,7 +148,24 @@ def _article_thumbnail_link(image_url: str, row_number: int | str | None, userna
             for chunk in response.iter_content(chunk_size=8192):
                 if chunk:
                     handle.write(chunk)
-        return upload_to_drive(local_path, filename, screenshots_folder_id)
+        original_link = upload_to_drive(local_path, filename, screenshots_folder_id)
+        # Articles go out blurred, the same as they do in the app. The sharp
+        # original is uploaded first and remembered against the row, which is
+        # what the app's Unblur button restores.
+        try:
+            stem = os.path.splitext(filename)[0]
+            blurred_name = f"{stem}_blur.jpg"
+            blur_image_file(local_path, os.path.join(tmp_dir, blurred_name))
+            blurred_link = upload_to_drive(
+                os.path.join(tmp_dir, blurred_name), blurred_name, screenshots_folder_id
+            )
+        except Exception:
+            return original_link
+        try:
+            save_original_thumbnail(GOOGLE_SHEET_ID, int(row_number), original_link)
+        except Exception:
+            pass
+        return blurred_link
     except Exception:
         return image_url
     finally:

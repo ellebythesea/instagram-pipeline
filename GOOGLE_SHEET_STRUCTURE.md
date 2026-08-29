@@ -109,6 +109,10 @@ carrying the Reel Lines marker get their ten headlines instead; any other reel g
 
 **Media Type values:** `post`, `reel`, `article`
 
+An `article` row's lead image is blurred on ingest and `Thumbnail Drive Link` points at the blurred copy.
+The sharp original is uploaded alongside it and remembered against the row, so the editor's **Unblur**
+button restores it — the blur is a default, not a one-way door.
+
 ### Reel Lines rows
 
 Rows created by the `Create Reel Lines` app action use this same schema with two columns repurposed:

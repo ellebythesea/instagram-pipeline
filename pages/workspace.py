@@ -46,6 +46,8 @@ from drive import (
 )
 from ingest_helpers import (
     _compact_post_date,
+    THUMBNAIL_BLUR_RADIUS,
+    blur_image_file,
     build_filename_prefix,
     download_file,
     make_filename,
@@ -2912,6 +2914,38 @@ def _drive_image_url(drive_link: str) -> str:
     return ""
 
 
+def _blurred_article_thumbnail(
+    local_path: str,
+    filename: str,
+    original_link: str,
+    screenshots_folder_id: str,
+    row_number: int | str | None,
+    tmp_dir: str,
+) -> str:
+    """Blur an article's lead image and hand back the blurred copy's link.
+
+    An article's image is somebody else's press photo, so it goes out softened
+    by default. The sharp original is uploaded first and remembered against the
+    row, which is what the Unblur button restores — so this is a default, not a
+    one-way door. A failure here keeps the sharp version rather than the row
+    ending up with no image at all.
+    """
+    try:
+        stem = os.path.splitext(filename)[0]
+        blurred_name = f"{stem}_blur.jpg"
+        blur_image_file(local_path, os.path.join(tmp_dir, blurred_name))
+        blurred_link = upload_to_drive(
+            os.path.join(tmp_dir, blurred_name), blurred_name, screenshots_folder_id
+        )
+    except Exception:
+        return original_link
+    try:
+        save_original_thumbnail(GOOGLE_SHEET_ID, int(row_number), original_link)
+    except Exception:
+        pass
+    return blurred_link
+
+
 def _upload_article_thumbnail(image_url: str, row_number: int | str | None, username: str) -> str:
     image_url = _cell_text(image_url).strip()
     if not image_url:
@@ -2949,7 +2983,10 @@ def _upload_article_thumbnail(image_url: str, row_number: int | str | None, user
             for chunk in response.iter_content(chunk_size=8192):
                 if chunk:
                     handle.write(chunk)
-        return upload_to_drive(local_path, filename, screenshots_folder_id)
+        original_link = upload_to_drive(local_path, filename, screenshots_folder_id)
+        return _blurred_article_thumbnail(
+            local_path, filename, original_link, screenshots_folder_id, row_number, tmp_dir
+        )
     except Exception:
         return image_url
     finally:
@@ -3236,7 +3273,7 @@ def _replace_row_thumbnail_from_upload(row: dict, uploaded_file) -> str:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
-def _blur_row_thumbnail(row: dict, sigma: int = 10) -> str:
+def _blur_row_thumbnail(row: dict, sigma: int = THUMBNAIL_BLUR_RADIUS) -> str:
     """Download the thumbnail, apply Gaussian blur, re-upload, update sheet."""
     if update_thumbnail_link is None:
         raise RuntimeError("Thumbnail link updates are not supported in this build.")
@@ -3260,17 +3297,9 @@ def _blur_row_thumbnail(row: dict, sigma: int = 10) -> str:
         src_path = os.path.join(tmp_dir, "thumb_src.jpg")
         download_drive_file(thumb_link, src_path)
 
-        out_path = os.path.join(tmp_dir, "thumb_blur.jpg")
-        ffmpeg = _crop_ffmpeg_path()
-        cmd = [
-            ffmpeg, "-y", "-i", src_path,
-            "-vf", f"gblur=sigma={sigma}",
-            "-q:v", "2",
-            out_path,
-        ]
-        proc = subprocess.run(cmd, capture_output=True, timeout=MEDIA_ENCODE_TIMEOUT_SECONDS)
-        if proc.returncode != 0:
-            raise RuntimeError(proc.stderr.decode(errors="replace"))
+        # The same blur an article's image gets by default, so the button and
+        # the default land on the same look and a reblur is stable.
+        out_path = blur_image_file(src_path, os.path.join(tmp_dir, "thumb_blur.jpg"), sigma)
 
         media_links = [lnk.strip() for lnk in (_cell_text(row.get("Media Drive Link")) or "").split(",") if lnk.strip()]
         screenshot_stem = f"row_{row_num}_thumb_blur"
