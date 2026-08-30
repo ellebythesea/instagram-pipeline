@@ -47,6 +47,7 @@ from drive import (
 from ingest_helpers import (
     _compact_post_date,
     THUMBNAIL_BLUR_RADIUS,
+    article_thumbnail_link,
     blur_image_file,
     build_filename_prefix,
     download_file,
@@ -2914,83 +2915,32 @@ def _drive_image_url(drive_link: str) -> str:
     return ""
 
 
-def _blurred_article_thumbnail(
-    local_path: str,
-    filename: str,
-    original_link: str,
-    screenshots_folder_id: str,
+def _upload_article_thumbnail(
+    image_url: str,
     row_number: int | str | None,
-    tmp_dir: str,
+    username: str,
+    page_url: str = "",
 ) -> str:
-    """Blur an article's lead image and hand back the blurred copy's link.
+    """Put an article's lead image on the row, blurred.
 
-    An article's image is somebody else's press photo, so it goes out softened
-    by default. The sharp original is uploaded first and remembered against the
-    row, which is what the Unblur button restores — so this is a default, not a
-    one-way door. A failure here keeps the sharp version rather than the row
-    ending up with no image at all.
+    The work itself lives in ingest_helpers so the app and the local pipeline
+    cannot drift. A cover that could not be blurred says so on the row instead
+    of quietly looking like a cover nobody tried to blur.
     """
-    try:
-        stem = os.path.splitext(filename)[0]
-        blurred_name = f"{stem}_blur.jpg"
-        blur_image_file(local_path, os.path.join(tmp_dir, blurred_name))
-        blurred_link = upload_to_drive(
-            os.path.join(tmp_dir, blurred_name), blurred_name, screenshots_folder_id
-        )
-    except Exception:
-        return original_link
-    try:
-        save_original_thumbnail(GOOGLE_SHEET_ID, int(row_number), original_link)
-    except Exception:
-        pass
-    return blurred_link
-
-
-def _upload_article_thumbnail(image_url: str, row_number: int | str | None, username: str) -> str:
-    image_url = _cell_text(image_url).strip()
-    if not image_url:
-        return ""
-
-    tmp_dir = tempfile.mkdtemp(prefix="article_thumb_")
-    try:
-        screenshots_folder_id = get_or_create_subfolder(
-            GOOGLE_DRIVE_FOLDER_ID,
-            GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER,
-        )
-        parsed = urlparse(image_url)
-        ext = os.path.splitext(parsed.path or "")[1].lower() or ".jpg"
-        if ext not in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
-            ext = ".jpg"
-        filename_prefix = build_filename_prefix(row_number, username)
-        filename = f"{filename_prefix}article_{row_number or 'thumb'}_thumb{ext}"
-        local_path = os.path.join(tmp_dir, filename)
-        response = requests.get(
-            image_url,
-            allow_redirects=True,
-            timeout=60,
-            stream=True,
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0 Safari/537.36"
-                ),
-                "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-                "Referer": "https://www.google.com/",
-            },
-        )
-        response.raise_for_status()
-        with open(local_path, "wb") as handle:
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk:
-                    handle.write(chunk)
-        original_link = upload_to_drive(local_path, filename, screenshots_folder_id)
-        return _blurred_article_thumbnail(
-            local_path, filename, original_link, screenshots_folder_id, row_number, tmp_dir
-        )
-    except Exception:
-        return image_url
-    finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+    link, note = article_thumbnail_link(
+        image_url,
+        row_number,
+        username,
+        page_url=page_url,
+        remember_original=(
+            (lambda original: save_original_thumbnail(GOOGLE_SHEET_ID, int(row_number), original))
+            if str(row_number or "").strip().isdigit()
+            else None
+        ),
+    )
+    if note:
+        st.session_state[f"workspace_row_error_{row_number}"] = f"Row {row_number}: {note}"
+    return link
 
 
 def _safe_image_url(raw_value: str) -> str:
@@ -7932,7 +7882,7 @@ def _ingest_row(row: dict) -> dict:
                 "media_type": "article",
                 "photo_count": "",
                 "media_link": "",
-                "thumbnail_link": _upload_article_thumbnail(article.get("image_url", ""), row.get("row_number"), article_username),
+                "thumbnail_link": _upload_article_thumbnail(article.get("image_url", ""), row.get("row_number"), article_username, url),
                 "original_caption": article_source_text,
                 "transcript": article_source_text,
                 "status": "ingested",
@@ -8558,7 +8508,7 @@ def _retry_article_source(row: dict) -> None:
         row,
         text,
         username=domain,
-        thumbnail_link=_upload_article_thumbnail(article.get("image_url", ""), row_num, domain),
+        thumbnail_link=_upload_article_thumbnail(article.get("image_url", ""), row_num, domain, url),
     )
 
 

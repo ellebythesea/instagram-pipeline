@@ -37,7 +37,7 @@ from drive import (
     get_or_create_subfolder,
     upload_to_drive,
 )
-from ingest_helpers import blur_image_file, build_filename_prefix, download_file, upload_media_bundle
+from ingest_helpers import article_thumbnail_link, build_filename_prefix, download_file, upload_media_bundle
 from utils.error_labels import describe_error
 import pipeline_caption as pipeline_caption_ops
 from post_scraper import process_url as process_post_url
@@ -109,67 +109,32 @@ def _is_article_url(url: str) -> bool:
     return parsed.scheme == "https" and bool(parsed.netloc) and not _is_instagram_url(url)
 
 
-def _article_thumbnail_link(image_url: str, row_number: int | str | None, username: str) -> str:
-    image_url = (image_url or "").strip()
-    if not image_url:
-        return ""
+def _article_thumbnail_link(
+    image_url: str,
+    row_number: int | str | None,
+    username: str,
+    page_url: str = "",
+) -> str:
+    """Put an article's lead image on the row, blurred.
 
-    tmp_dir = tempfile.mkdtemp(prefix="article_thumb_")
-    try:
-        screenshots_folder_id = get_or_create_subfolder(
-            GOOGLE_DRIVE_FOLDER_ID,
-            GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER,
-        )
-        parsed = urlparse(image_url)
-        ext = os.path.splitext(parsed.path or "")[1].lower() or ".jpg"
-        if ext not in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
-            ext = ".jpg"
-        filename_prefix = build_filename_prefix(row_number, username)
-        filename = f"{filename_prefix}article_{row_number or 'thumb'}_thumb{ext}"
-        local_path = os.path.join(tmp_dir, filename)
-        import requests
-
-        response = requests.get(
-            image_url,
-            allow_redirects=True,
-            timeout=60,
-            stream=True,
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0 Safari/537.36"
-                ),
-                "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-                "Referer": "https://www.google.com/",
-            },
-        )
-        response.raise_for_status()
-        with open(local_path, "wb") as handle:
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk:
-                    handle.write(chunk)
-        original_link = upload_to_drive(local_path, filename, screenshots_folder_id)
-        # Articles go out blurred, the same as they do in the app. The sharp
-        # original is uploaded first and remembered against the row, which is
-        # what the app's Unblur button restores.
-        try:
-            stem = os.path.splitext(filename)[0]
-            blurred_name = f"{stem}_blur.jpg"
-            blur_image_file(local_path, os.path.join(tmp_dir, blurred_name))
-            blurred_link = upload_to_drive(
-                os.path.join(tmp_dir, blurred_name), blurred_name, screenshots_folder_id
-            )
-        except Exception:
-            return original_link
-        try:
-            save_original_thumbnail(GOOGLE_SHEET_ID, int(row_number), original_link)
-        except Exception:
-            pass
-        return blurred_link
-    except Exception:
-        return image_url
-    finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+    Shares ingest_helpers with the app so the two article paths cannot drift.
+    A cover that could not be blurred prints why rather than passing silently
+    for a cover nobody tried to blur.
+    """
+    link, note = article_thumbnail_link(
+        image_url,
+        row_number,
+        username,
+        page_url=page_url,
+        remember_original=(
+            (lambda original: save_original_thumbnail(GOOGLE_SHEET_ID, int(row_number), original))
+            if str(row_number or "").strip().isdigit()
+            else None
+        ),
+    )
+    if note:
+        print(f"    row {row_number}: {note}", flush=True)
+    return link
 
 
 _INVISIBLE_CHARS_RE = re.compile(r"[\u200b\u200c\u200d\u200e\u200f\u2060\ufeff]")
@@ -361,7 +326,7 @@ def _ingest_row(row: dict) -> dict:
                 "media_type": "article",
                 "photo_count": "",
                 "media_link": "",
-                "thumbnail_link": _article_thumbnail_link(article.get("image_url", ""), row.get("row_number"), article_username),
+                "thumbnail_link": _article_thumbnail_link(article.get("image_url", ""), row.get("row_number"), article_username, url),
                 "original_caption": article_source_text,
                 "transcript": article_source_text,
                 "status": "ingested",

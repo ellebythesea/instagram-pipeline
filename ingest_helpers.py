@@ -3,6 +3,7 @@
 import io
 import os
 import re
+import shutil
 import tempfile
 import zipfile
 import mimetypes
@@ -228,3 +229,121 @@ def blur_image_file(src_path: str, dest_path: str, radius: int = THUMBNAIL_BLUR_
         blurred = image.convert("RGB").filter(ImageFilter.GaussianBlur(radius))
     blurred.save(dest_path, format="JPEG", quality=90)
     return dest_path
+
+
+_ARTICLE_IMAGE_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0 Safari/537.36"
+    ),
+    "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+_ARTICLE_IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".webp", ".gif"})
+
+
+def _origin(url: str) -> str:
+    parsed = urlparse(url or "")
+    return f"{parsed.scheme}://{parsed.netloc}/" if parsed.scheme and parsed.netloc else ""
+
+
+def article_image_filename(image_url: str, row_number: int | str | None, username: str) -> str:
+    """Name the local and Drive copies of an article's lead image."""
+    ext = os.path.splitext(urlparse(image_url or "").path or "")[1].lower()
+    if ext not in _ARTICLE_IMAGE_EXTENSIONS:
+        ext = ".jpg"
+    return f"{build_filename_prefix(row_number, username)}article_{row_number or 'thumb'}_thumb{ext}"
+
+
+def download_article_image(image_url: str, dest: str, page_url: str = "") -> None:
+    """Fetch an article's lead image the way the article's own page would.
+
+    The Referer is the article's origin, not a search engine: outlet image CDNs
+    routinely serve their own pages and 403 everyone else, and a 403 here is
+    what leaves a row with the outlet's hotlink instead of a Drive copy. A
+    refusal is retried once with no Referer at all, which the stricter CDNs
+    prefer, before the row is allowed to fail.
+    """
+    referers = [ref for ref in (_origin(page_url), _origin(image_url)) if ref]
+    attempts = [{**_ARTICLE_IMAGE_HEADERS, "Referer": ref} for ref in referers]
+    attempts.append(dict(_ARTICLE_IMAGE_HEADERS))
+
+    last_error: Exception | None = None
+    for headers in attempts:
+        try:
+            response = requests.get(
+                image_url, headers=headers, allow_redirects=True, timeout=60, stream=True
+            )
+            response.raise_for_status()
+            with open(dest, "wb") as handle:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        handle.write(chunk)
+            return
+        except Exception as exc:  # noqa: BLE001 - the next header variant may work
+            last_error = exc
+    raise last_error if last_error else RuntimeError("the image could not be fetched")
+
+
+def article_thumbnail_link(
+    image_url: str,
+    row_number: int | str | None,
+    username: str,
+    page_url: str = "",
+    remember_original=None,
+) -> tuple[str, str]:
+    """Upload an article's lead image to Drive, blurred, and say what happened.
+
+    An article's image is somebody else's press photo, so it goes out softened
+    by default. The sharp original is uploaded first and handed to
+    `remember_original`, which is what the editor's Unblur button restores — so
+    this is a default, not a one-way door.
+
+    Returns (thumbnail_link, note). The note is empty when the blurred copy is
+    what came back, and otherwise names the step that gave way and what the row
+    got instead. Every caller used to swallow that reason, which left a sharp
+    cover looking exactly like a cover nobody had tried to blur.
+    """
+    image_url = str(image_url or "").strip()
+    if not image_url:
+        return "", ""
+
+    tmp_dir = tempfile.mkdtemp(prefix="article_thumb_")
+    try:
+        try:
+            screenshots_folder_id = get_or_create_subfolder(
+                GOOGLE_DRIVE_FOLDER_ID, GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER
+            )
+        except Exception as exc:  # noqa: BLE001
+            return image_url, f"could not reach the Drive screenshots folder ({exc}); the row keeps the outlet's own image link"
+
+        filename = article_image_filename(image_url, row_number, username)
+        local_path = os.path.join(tmp_dir, filename)
+        try:
+            download_article_image(image_url, local_path, page_url)
+        except Exception as exc:  # noqa: BLE001
+            return image_url, f"could not download the lead image ({exc}); the row keeps the outlet's own image link, which is never blurred"
+
+        try:
+            original_link = upload_to_drive(local_path, filename, screenshots_folder_id)
+        except Exception as exc:  # noqa: BLE001
+            return image_url, f"could not upload the lead image to Drive ({exc}); the row keeps the outlet's own image link"
+
+        blurred_name = f"{os.path.splitext(filename)[0]}_blur.jpg"
+        try:
+            blur_image_file(local_path, os.path.join(tmp_dir, blurred_name))
+            blurred_link = upload_to_drive(
+                os.path.join(tmp_dir, blurred_name), blurred_name, screenshots_folder_id
+            )
+        except Exception as exc:  # noqa: BLE001
+            return original_link, f"could not blur the lead image ({exc}); the row keeps the sharp upload"
+
+        note = ""
+        if remember_original is not None:
+            try:
+                remember_original(original_link)
+            except Exception as exc:  # noqa: BLE001
+                note = f"blurred the lead image but could not remember the sharp original ({exc}); Unblur will have nothing to restore"
+        return blurred_link, note
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)

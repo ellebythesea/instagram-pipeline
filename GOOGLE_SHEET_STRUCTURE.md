@@ -113,6 +113,11 @@ An `article` row's lead image is blurred on ingest and `Thumbnail Drive Link` po
 The sharp original is uploaded alongside it and remembered against the row, so the editor's **Unblur**
 button restores it — the blur is a default, not a one-way door.
 
+When a cover cannot be blurred, the row says why rather than quietly keeping the sharp photo: the app
+shows the reason on the row and `run_pipeline.py` prints it. The commonest reason is an outlet image CDN
+refusing the download, which leaves `Thumbnail Drive Link` holding the outlet's own image URL instead of
+a Drive link. `scripts/blur_article_covers.py` repairs rows in either state.
+
 ### Reel Lines rows
 
 Rows created by the `Create Reel Lines` app action use this same schema with two columns repurposed:

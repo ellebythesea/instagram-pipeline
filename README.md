@@ -686,6 +686,15 @@ Archive orphaned local media only, without running transcription:
 .venv/bin/python scripts/archive_orphaned_media.py
 ```
 
+Blur the cover of any article row still carrying a sharp one — rows ingested before the
+blur default existed, and rows where the blur gave way to a download or upload failure.
+It reports before it writes, and remembers each sharp original so **Unblur** can restore it:
+
+```bash
+.venv/bin/python scripts/blur_article_covers.py            # show what it would do
+.venv/bin/python scripts/blur_article_covers.py --apply
+```
+
 Split all already-downloaded videos in the local `splits` folder into one-minute chunks:
 
 ```bash
