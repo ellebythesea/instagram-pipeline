@@ -101,13 +101,29 @@ in order:
 A link that is not a reel still works: another Instagram post contributes its caption, and anything
 else is read as an article. Those rows get headlines and a caption but no video.
 
-The result is an ordinary `posts` row, so it lands in the `Edit` tab like any other. There it shows a
-`Headlines` tab in place of `Slides`: each headline sits in its own copy block, wrapped rather than
+The result is an ordinary `posts` row, so it lands in the `Edit` tab like any other. Opening it goes
+straight to the `Reels` tab, with the ten headlines as the options in its **Pick a headline**
+dropdown and the first one already in the headline box — the headlines are written to be burnt into
+the video, so that is where they are wanted first. Picking a different one drops it into the box,
+where it can be edited before the reel is generated.
+
+It also shows a `Headlines` tab in place of `Slides`, for copying the headlines out rather than
+burning one in: each headline sits in its own copy block, wrapped rather than
 scrolled so the whole line reads inside the block, and the caption to copy is at the bottom. Buttons at the top open the Instagram link, if there was one,
 and the video in Drive. The `Original` tab holds the transcript, as it does for any other row.
 
 Because the headlines live in `text1`, the `Slides` and `Make generic` row actions are hidden for
 these rows — generating slide copy would overwrite them.
+
+### Generate Reel Lines
+
+The same finish, as a row action, for a post that already exists. **Post actions → Generate Reel
+Lines** writes ten headlines into `text1` from the row's transcript (or its context or original
+caption, whichever it has), marks the row `reel lines` in `Slide CTA`, and opens it on the `Reels`
+tab with the new headlines in the dropdown. Run it again to rewrite the headlines; the previous
+pick is dropped so the fresh set is what is on offer.
+
+It is greyed out on a row with nothing to write headlines from — process the post first.
 
 ## Google Sheet Structure
 

@@ -115,10 +115,12 @@ button restores it — the blur is a default, not a one-way door.
 
 ### Reel Lines rows
 
-Rows created by the `Create Reel Lines` app action use this same schema with two columns repurposed:
+Rows created by the `Create Reel Lines` app action — or by **Post actions → Generate Reel Lines** on
+a row that already exists — use this same schema with two columns repurposed:
 
 - `Slide CTA` (col U) is set to `reel lines`. This is what marks the row as a Reel Lines post, so the
-  editor shows a `Headlines` tab instead of `Slides`. Nothing else writes col U unless a slide CTA is
+  editor opens it on the `Reels` tab with the headlines in its picker, and shows a `Headlines` tab
+  instead of `Slides`. Nothing else writes col U unless a slide CTA is
   picked, and the Slides tab — the only place that offers one — is replaced for these rows.
 - `text1` (col R) holds the ten headlines, one per line, instead of slide copy. `text2`–`text8` and
   `quote` stay empty.

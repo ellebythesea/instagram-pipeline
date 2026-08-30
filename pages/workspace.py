@@ -2318,10 +2318,16 @@ def _workspace_row_state_keys(row: dict) -> list[str]:
     return _workspace_row_state_keys_for_token(_row_state_token(row))
 
 
+def _row_content_tab_key(row_num: int) -> str:
+    """Which of the editor's content tabs — Slides/Headlines, Reels, Caption, Original — a row is on."""
+    return f"workspace_row_content_tab_{row_num}"
+
+
 def _clear_row_num_keyed_state(row_num: int) -> None:
     """Clear all UI state that is keyed by row position rather than content identity."""
     for key in [
-        f"workspace_row_content_tab_{row_num}",
+        _row_content_tab_key(row_num),
+        f"workspace_reel_headline_seeded_{row_num}",
         f"workspace_row_slides_prompt_{row_num}",
         f"workspace_slide_preview_font_adjust_{row_num}",
         f"workspace_slide_preview_background_adjust_{row_num}",
@@ -4387,7 +4393,8 @@ def _render_create_from_link_dialog() -> None:
 #
 # A Reel Lines post is an ordinary posts-tab row with a different payload: in
 # place of carousel slides it carries ten one-line clickbait headlines, so the
-# editor shows a Headlines tab instead of a Slides tab. The kind is stamped in
+# editor opens it on the Reels tab — where the headlines are the picker's
+# options — and shows a Headlines tab instead of a Slides tab. The kind is stamped in
 # the Slide CTA column, which these rows never use for a slide CTA — nothing
 # else writes that column unless a slide CTA is picked, and the Slides tab (the
 # only place that offers one) is replaced by Headlines for these rows.
@@ -4395,6 +4402,10 @@ def _render_create_from_link_dialog() -> None:
 
 REEL_LINES_ROW_MARKER = getattr(sheet_ops, "REEL_LINES_SLIDE_CTA", "reel lines")
 REEL_LINES_HEADLINE_COUNT = 10
+# Headlines are written to be burnt into a video, so a Reel Lines row opens on
+# the Reels tab — the headlines are the options in its picker — rather than on
+# the Headlines tab that lists them for copying.
+REEL_LINES_DEFAULT_TAB = "Reels"
 
 REEL_LINES_HEADLINE_PROMPT = (
     "You write clickbait headlines for short-form political video posts.\n\n"
@@ -4721,11 +4732,7 @@ def _finish_reel_lines_row(row_num: int, row: dict, caption: str, status: str) -
     """
     if update_reel_lines_fields is None:
         raise RuntimeError("This build of sheets.py cannot write Reel Lines rows.")
-    source_text = (
-        _cell_text(row.get("Transcript")).strip()
-        or _cell_text(row.get("Caption Context")).strip()
-        or _cell_text(row.get("Original Caption")).strip()
-    )
+    source_text = _reel_lines_source_text(row)
     if not source_text:
         raise RuntimeError("No transcript or source text to write headlines from.")
     speaker_name = _cell_text(row.get("Speaker Name")).strip()
@@ -4739,6 +4746,50 @@ def _finish_reel_lines_row(row_num: int, row: dict, caption: str, status: str) -
         "\n".join(headlines),
         status,
     )
+
+
+def _focus_reel_lines_headlines(row_num: int) -> None:
+    """Open this row's editor on the Reels tab with its headline picker reset.
+
+    Called once a row has just been given headlines. The Reels tab seeds its
+    headline box from the first headline it is offered, but only once, so a
+    box and a pick left behind by an earlier set have to be dropped here for
+    the new ones to land.
+    """
+    st.session_state[_row_content_tab_key(row_num)] = REEL_LINES_DEFAULT_TAB
+    st.session_state.pop(f"workspace_reel_headline_seeded_{row_num}", None)
+    st.session_state.pop(f"workspace_reel_top_{row_num}", None)
+    st.session_state.pop(f"workspace_reel_pick_top_{row_num}", None)
+    # Written by the Caption tab's Headlines button and read by the Reels tab as
+    # a fallback; a stale set would otherwise outrank what is now on the row.
+    st.session_state.pop(f"workspace_caption_headlines_{row_num}", None)
+
+
+def _reel_lines_source_text(row: dict) -> str:
+    """What headlines can be written from — what was said, else the post's own words."""
+    return (
+        _cell_text(row.get("Transcript")).strip()
+        or _cell_text(row.get("Caption Context")).strip()
+        or _cell_text(row.get("Original Caption")).strip()
+    )
+
+
+def _generate_reel_lines_for_row(row: dict) -> None:
+    """Turn a row that already exists into a Reel Lines post.
+
+    The finish the Create Reel Lines action gives a row it builds from scratch,
+    run on demand from the post actions menu instead: ten headlines into text1,
+    the marker into Slide CTA, and the editor left on the Reels tab.
+    """
+    row_num = row["row_number"]
+    status = _cell_text(row.get("Status")).strip() or _default_editor_status(row)
+    _finish_reel_lines_row(
+        row_num,
+        row,
+        _cell_text(row.get("Generated Caption")).strip(),
+        status,
+    )
+    _focus_reel_lines_headlines(row_num)
 
 
 @st.dialog("Create Reel Lines", width="large", on_dismiss=_dismiss_reel_lines_dialog)
@@ -4791,6 +4842,7 @@ def _render_reel_lines_dialog() -> None:
             if row_num:
                 st.session_state["workspace_selected_row_num"] = row_num
                 st.query_params["workspace_row"] = str(row_num)
+                _focus_reel_lines_headlines(row_num)
             _close_reel_lines_dialog(clear_inputs=True)
             _rerun_workspace("Home")
 
@@ -6058,9 +6110,14 @@ def _render_reel_headline_input(
     """A bar's headline dropdown and the editable copy of what it picked."""
     if headlines:
         select_key = f"workspace_reel_pick_{suffix}_{row_num}"
+        options = [REEL_HEADLINE_KEEP_OPTION, *headlines]
+        # Rewriting a row's headlines leaves the last pick behind, and Streamlit
+        # raises on a stored value the options no longer hold.
+        if st.session_state.get(select_key) not in options:
+            st.session_state.pop(select_key, None)
         st.selectbox(
             "Pick a headline",
-            [REEL_HEADLINE_KEEP_OPTION, *headlines],
+            options,
             key=select_key,
             on_change=_apply_reel_headline_pick,
             args=(select_key, text_key),
@@ -6118,7 +6175,15 @@ def _render_reel_video_tab(
 
     headlines = list(headlines) or list(st.session_state.get(session_headlines_key, []) or [])
 
-    st.session_state.setdefault(headline_key, headlines[0] if headlines else "")
+    # Seeded the first time this row has headlines to offer rather than the
+    # first time the tab is drawn, so a row opened before its headlines were
+    # written still lands on one once they arrive. Seeding once leaves whatever
+    # is typed — or deliberately cleared — afterwards alone.
+    seeded_key = f"workspace_reel_headline_seeded_{row_num}"
+    if headlines and not st.session_state.get(seeded_key):
+        st.session_state[headline_key] = headlines[0]
+        st.session_state[seeded_key] = True
+    st.session_state.setdefault(headline_key, "")
     # Seeded here rather than passed as widget defaults: Streamlit warns when a
     # widget is given both a key that is already in session state and a value.
     st.session_state.setdefault(offset_key, 0)
@@ -6736,16 +6801,20 @@ def _copy_tabs(
     # Every row gets a Reels tab straight after the first one: the headline
     # picker and the caption are useful even where there is no video to crop.
     tab_labels = [first_tab, "Reels", "Caption", "Original"]
-    content_tab_key = f"workspace_row_content_tab_{row_num}"
+    # A Reel Lines row is opened to be made into a reel, so it lands on Reels —
+    # its ten headlines are the picker's options there. The Headlines tab stays
+    # for copying them out one at a time.
+    default_tab = REEL_LINES_DEFAULT_TAB if is_reel_lines else first_tab
+    content_tab_key = _row_content_tab_key(row_num)
     if content_tab_key not in st.session_state or st.session_state[content_tab_key] not in tab_labels:
-        st.session_state[content_tab_key] = first_tab
+        st.session_state[content_tab_key] = default_tab
     selected_content_tab = st.segmented_control(
         "Content",
         tab_labels,
         key=content_tab_key,
         label_visibility="collapsed",
         width="stretch",
-    ) or first_tab
+    ) or default_tab
     original_preview = _build_original_caption_preview(
         original_caption,
         username,
@@ -8410,6 +8479,7 @@ def _process_post_online(row: dict) -> None:
         # finish, applied to a row the pipeline transcribed rather than one built
         # from a pasted link.
         _finish_reel_lines_row(row_num, updated_row, caption, next_status)
+        _focus_reel_lines_headlines(row_num)
         st.session_state.pop(f"workspace_preview_upload_links_{row_num}", None)
         return
 
@@ -8950,6 +9020,15 @@ def _process_next_workspace_action(for_row_number: int | None = None) -> None:
                 preview_folder_id, _, _ = _ensure_preview_folder(row_number, username, handle_text, media_link)
                 _upload_split_videos(media_link, preview_folder_id, mode="fit")
                 success_message = f"Row {row_number}: video scaled to fit and uploaded to Drive."
+                _s.update(label=success_message, state="complete")
+        elif action == "generate_reel_lines":
+            with st.status(f"Writing headlines for row {row_number}…", expanded=True) as _s:
+                st.write(f"Writing {REEL_LINES_HEADLINE_COUNT} headlines from what this post says…")
+                _generate_reel_lines_for_row(row)
+                success_message = (
+                    f"Row {row_number}: {REEL_LINES_HEADLINE_COUNT} headlines written — "
+                    "pick one in the Reels tab."
+                )
                 _s.update(label=success_message, state="complete")
         elif action == "article_retry":
             with st.status(f"Reading the article again for row {row_number}…", expanded=True) as _s:
@@ -10068,6 +10147,19 @@ if active_section_tab == "Home":
                         ):
                             _close_workspace_menu(row)
                             _open_workspace_post_slides_dialog(row_num)
+                            _rerun_workspace("Edit")
+                        if st.button(
+                            "Generate Reel Lines",
+                            key=f"workspace_menu_reel_lines_{row_num}",
+                            width="stretch",
+                            disabled=not _reel_lines_source_text(row),
+                            help=(
+                                f"Write {REEL_LINES_HEADLINE_COUNT} headlines into this post and open "
+                                "the Reels tab with them in the picker."
+                            ),
+                        ):
+                            _close_workspace_menu(row)
+                            _queue_workspace_action(row_num, "generate_reel_lines")
                             _rerun_workspace("Edit")
                         if st.button("Add link", key=f"workspace_link_open_{row_num}", width="stretch"):
                             _close_workspace_menu(row)
