@@ -6218,14 +6218,13 @@ def _render_reel_headline_input(
 def _render_reel_preview_controls(
     row_num: int, suffix: str, font_key: str, fit_key: str
 ) -> None:
-    """A- / A+ and the whole-video fit, sat just above the preview they change.
+    """A- / A+ and, on the line after them, the whole-video fit.
 
-    Together rather than up with the sliders because between them they are the
-    look of the thing, and the preview underneath is how it is judged.
+    Both sat just above the preview they change, rather than up with the sliders,
+    because between them they are the look of the thing and the preview
+    underneath is how it is judged.
     """
-    smaller_column, larger_column, fit_column = st.columns(
-        [1, 1, 5], gap="small", vertical_alignment="center"
-    )
+    smaller_column, larger_column, _rest = st.columns([1, 1, 5], gap="small")
     with smaller_column:
         st.button(
             "A-",
@@ -6242,21 +6241,19 @@ def _render_reel_preview_controls(
             on_click=_bump_reel_font,
             args=(font_key, REEL_HEADLINE_FONT_STEP_PX),
         )
-    with fit_column:
-        # The 5:4 crop is the look these reels are modelled on, so it stays the
-        # default. This is the option for a video that has to be seen whole,
-        # where cropping to 5:4 would cut the point of it off.
-        st.toggle(
-            "Fit whole video",
-            key=fit_key,
-            help=(
-                f"Fit the whole frame into a box {REEL_FIT_EXTRA_HEIGHT_PX}px "
-                "taller than the crop instead of cropping it to 5:4. Nothing is "
-                "cut off, and a vertical video gets black down each side. The bar "
-                "above it for the headline and the bar below it to caption in "
-                "Instagram both stay."
-            ),
-        )
+    # The 5:4 crop is the look these reels are modelled on, so it stays the
+    # default. This is the option for a video that has to be seen whole, where
+    # cropping to 5:4 would cut the point of it off.
+    st.toggle(
+        "Fit whole video",
+        key=fit_key,
+        help=(
+            f"Fit the whole frame into a box {REEL_FIT_EXTRA_HEIGHT_PX}px taller "
+            "than the crop instead of cropping it to 5:4. Nothing is cut off, and "
+            "a vertical video gets black down each side. The bar above it for the "
+            "headline and the bar below it to caption in Instagram both stay."
+        ),
+    )
 
 
 def _render_reel_video_tab(
