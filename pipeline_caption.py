@@ -13,7 +13,8 @@ PINNED_TOP_COMMENT_PREFIX = "[[TOP]] "
 
 # Typing "FFM Partner" into Required Hashtags is shorthand: force the #newsclip
 # hashtag into the caption and tack a partner credit onto the very end (a plain
-# character space, not a line break).
+# character space, not a line break). It trails any hashtag actually typed in,
+# so a real required hashtag keeps the leading slot.
 FFM_PARTNER_TRIGGER = "ffm partner"
 FFM_PARTNER_HASHTAG = "#newsclip"
 FFM_PARTNER_SUFFIX = "Fighting for Michigan FFM Partner"
@@ -40,7 +41,8 @@ SYS_PROMPT = (
     "Always include exactly five relevant hashtags in the caption. "
     "Choose hashtags for major names, locations, policy areas, or core subjects covered in the content. "
     "Place them grouped together at the end of the caption body, after the second paragraph. "
-    "Do not force required hashtags into the prose — they will be appended separately if needed.\n\n"
+    "Do not force required hashtags into the prose — they are moved to the front of that "
+    "hashtag group automatically.\n\n"
     "The second paragraph should add context using verified facts, dates, and numbers when relevant. "
     "Include direct quotes when available. Verify names and quotes carefully. "
     "Do not refer to the source as a transcript, clip, speech, interview, or video unless that is explicitly certain. "
@@ -73,8 +75,14 @@ def _single_paragraph_slide_text(value: str, limit: int) -> str:
     return re.sub(r"\s+", " ", (value or "").strip())[:limit].strip()
 
 
+HASHTAG_RE = re.compile(r"#[A-Za-z0-9_]+")
+
+# The generated caption and the reproduced original caption are joined by this.
+ORIGINAL_CAPTION_SEPARATOR = "\n\n--\n\n"
+
+
 def _extract_hashtags(text: str) -> list[str]:
-    return re.findall(r"#[A-Za-z0-9_]+", text or "")
+    return HASHTAG_RE.findall(text or "")
 
 
 def _unique_hashtags_in_order(text: str) -> list[str]:
@@ -89,19 +97,75 @@ def _unique_hashtags_in_order(text: str) -> list[str]:
     return ordered
 
 
-def _remove_disallowed_hashtags(text: str, allowed_tags: set[str]) -> str:
-    def repl(match: re.Match) -> str:
-        tag = match.group(0)
-        return tag if tag.lower() in allowed_tags else ""
-
-    cleaned = re.sub(r"#[A-Za-z0-9_]+", repl, text or "")
-    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+def _tidy_hashtag_spacing(text: str) -> str:
+    cleaned = re.sub(r"[ \t]{2,}", " ", text or "")
     cleaned = re.sub(r"\n[ \t]+\n", "\n\n", cleaned)
     cleaned = re.sub(r" +([,.;:!?])", r"\1", cleaned)
     return cleaned.strip()
 
 
-def _finalize_required_hashtags(caption: str, required_hashtags: str) -> tuple[str, list[str]]:
+def _remove_disallowed_hashtags(text: str, allowed_tags: set[str]) -> str:
+    def repl(match: re.Match) -> str:
+        tag = match.group(0)
+        return tag if tag.lower() in allowed_tags else ""
+
+    return _tidy_hashtag_spacing(HASHTAG_RE.sub(repl, text or ""))
+
+
+def _movable_hashtag_spans(text: str) -> list[tuple[int, int]]:
+    """Spans of the hashtags that sit in a hashtag group rather than inside a sentence.
+
+    A hashtag qualifies when nothing but other hashtags and separators follows it
+    on its line, so lifting it out cannot leave a sentence with a hole in it.
+    """
+    text = text or ""
+    spans = []
+    for match in HASHTAG_RE.finditer(text):
+        line_end = text.find("\n", match.end())
+        rest = text[match.end():line_end if line_end != -1 else len(text)]
+        if HASHTAG_RE.sub("", rest).strip(" \t,"):
+            continue
+        spans.append(match.span())
+    return spans
+
+
+def _lead_with_required_hashtags(caption: str, required: list[str]) -> str:
+    """Move the required hashtags to the front of the caption's hashtag group.
+
+    Instagram only picks up the first handful of hashtags on a post, so a required
+    tag sitting behind the generated ones can quietly go unindexed.
+    """
+    if not required:
+        return caption
+
+    body, separator, tail = caption.partition(ORIGINAL_CAPTION_SEPARATOR)
+    spans = _movable_hashtag_spans(body)
+    if not spans:
+        # Nothing to lead: start the group ourselves at the end of the body, which
+        # still puts the required tags ahead of any in the original caption below.
+        missing = [tag for tag in required if tag.lower() not in {t.lower() for t in _extract_hashtags(body)}]
+        if missing:
+            body = f"{body.rstrip()}\n\n{' '.join(missing)}"
+        return body + separator + tail
+
+    # Everything shifts around this point, but only text after it moves, so the
+    # anchor stays valid while the required tags are pulled out of the group.
+    anchor = spans[0][0]
+    # A required tag already written into the prose ahead of the group leads
+    # anyway, so leave it where it reads naturally.
+    ahead = {tag.lower() for tag in _extract_hashtags(body[:anchor])}
+    required_lower = {tag.lower() for tag in required}
+    for start, end in reversed(spans):
+        if body[start:end].lower() in required_lower:
+            body = body[:start] + body[end:]
+
+    to_place = [tag for tag in required if tag.lower() not in ahead]
+    if to_place:
+        body = f"{body[:anchor]}{' '.join(to_place)} {body[anchor:]}"
+    return _tidy_hashtag_spacing(body) + separator + tail
+
+
+def _finalize_required_hashtags(caption: str, required_hashtags: str) -> str:
     required = _unique_hashtags_in_order(required_hashtags)[:5]
     existing = _unique_hashtags_in_order(caption)
 
@@ -116,10 +180,10 @@ def _finalize_required_hashtags(caption: str, required_hashtags: str) -> tuple[s
         allowed.append(tag)
         allowed_lower.add(lowered)
 
-    caption = _remove_disallowed_hashtags(caption, allowed_lower)
-    missing_required = [tag for tag in required if tag.lower() not in {t.lower() for t in _extract_hashtags(caption)}]
-    remaining_slots = max(0, 5 - len({tag.lower() for tag in _extract_hashtags(caption)}))
-    return caption, missing_required[:remaining_slots]
+    # Lead with the required tags first: the group is the anchor, and stripping
+    # the disallowed tags out from under it would leave nothing to lead.
+    caption = _lead_with_required_hashtags(caption, required)
+    return _remove_disallowed_hashtags(caption, allowed_lower)
 
 
 def _strip_top_comment_paragraphs(text: str, top_comment: str) -> str:
@@ -389,17 +453,16 @@ def generate_row_caption(row: dict) -> str:
     is_instagram = "instagram.com" in source_url.lower()
 
     if original_caption and media_type != "article" and is_instagram:
-        caption = f"{caption}\n\n--\n\n{original_caption}"
+        caption = f"{caption}{ORIGINAL_CAPTION_SEPARATOR}{original_caption}"
 
     required_hashtags = row.get("Required Hashtags", "").strip()
     ffm_partner = _is_ffm_partner(required_hashtags)
     if ffm_partner:
         # "FFM Partner" isn't a real hashtag, so fold in #newsclip instead and
         # let the credit line be appended at the very end below.
-        required_hashtags = f"{FFM_PARTNER_HASHTAG} {required_hashtags}".strip()
-    appended_required = []
+        required_hashtags = f"{required_hashtags} {FFM_PARTNER_HASHTAG}".strip()
     if required_hashtags:
-        caption, appended_required = _finalize_required_hashtags(caption, required_hashtags)
+        caption = _finalize_required_hashtags(caption, required_hashtags)
 
     username = row.get("Source Username", "").strip().lstrip("@")
     footer_parts = []
@@ -409,9 +472,6 @@ def generate_row_caption(row: dict) -> str:
     footer = DEFAULT_POST_FOOTER.strip()
     if footer:
         footer_parts.append(footer)
-
-    if appended_required:
-        footer_parts.append(" ".join(appended_required))
 
     if footer_parts:
         caption = f"{caption}\n\n{' '.join(footer_parts)}"
