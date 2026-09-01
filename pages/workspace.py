@@ -6215,9 +6215,17 @@ def _render_reel_headline_input(
     st.text_area(label, key=text_key, height=80)
 
 
-def _render_reel_font_buttons(row_num: int, suffix: str, font_key: str) -> None:
-    """A- / A+ for the headline, sat just above the preview they change."""
-    smaller_column, larger_column, _rest = st.columns([1, 1, 5], gap="small")
+def _render_reel_preview_controls(
+    row_num: int, suffix: str, font_key: str, fit_key: str
+) -> None:
+    """A- / A+ and the whole-video fit, sat just above the preview they change.
+
+    Together rather than up with the sliders because between them they are the
+    look of the thing, and the preview underneath is how it is judged.
+    """
+    smaller_column, larger_column, fit_column = st.columns(
+        [1, 1, 5], gap="small", vertical_alignment="center"
+    )
     with smaller_column:
         st.button(
             "A-",
@@ -6233,6 +6241,21 @@ def _render_reel_font_buttons(row_num: int, suffix: str, font_key: str) -> None:
             width="stretch",
             on_click=_bump_reel_font,
             args=(font_key, REEL_HEADLINE_FONT_STEP_PX),
+        )
+    with fit_column:
+        # The 5:4 crop is the look these reels are modelled on, so it stays the
+        # default. This is the option for a video that has to be seen whole,
+        # where cropping to 5:4 would cut the point of it off.
+        st.toggle(
+            "Fit whole video",
+            key=fit_key,
+            help=(
+                f"Fit the whole frame into a box {REEL_FIT_EXTRA_HEIGHT_PX}px "
+                "taller than the crop instead of cropping it to 5:4. Nothing is "
+                "cut off, and a vertical video gets black down each side. The bar "
+                "above it for the headline and the bar below it to caption in "
+                "Instagram both stay."
+            ),
         )
 
 
@@ -6320,19 +6343,8 @@ def _render_reel_video_tab(
             float(st.session_state.get(frame_key, 1.0) or 0.0), frame_ceiling
         )
 
-    # The 5:4 crop is the look these reels are modelled on, so it stays the
-    # default. This is the option for a video that has to be seen whole, where
-    # cropping to 5:4 would cut the point of it off.
-    st.toggle(
-        "Fit the whole video",
-        key=fit_key,
-        help=(
-            f"Fit the whole frame into a box {REEL_FIT_EXTRA_HEIGHT_PX}px taller "
-            "than the crop instead of cropping it to 5:4. Nothing is cut off, and "
-            "a vertical video gets black down each side. The bar above it for the "
-            "headline and the bar below it to caption in Instagram both stay."
-        ),
-    )
+    # Set by the toggle further down, beside the preview it changes. Read here
+    # off session state because the crop slider has to know before it is drawn.
     fit_whole = bool(st.session_state.get(fit_key, False))
 
     position_column, frame_column = st.columns(2, gap="small")
@@ -6401,6 +6413,11 @@ def _render_reel_video_tab(
             _rerun_workspace("Edit")
 
     if has_video and os.path.exists(source_cached):
+        # Before the preview rather than after it, so flipping the fit is on the
+        # still in the same run. Outside the try for the same reason the Reload
+        # button is: a preview that failed to build still has to be steerable.
+        _render_reel_preview_controls(row_num, "top", font_key, fit_key)
+        fit_whole = bool(st.session_state.get(fit_key, False))
         try:
             source_path = _reel_source_path(row_num, media_link)
             preview_image = _render_reel_preview_image(
@@ -6415,7 +6432,6 @@ def _render_reel_video_tab(
         except Exception as error:
             st.warning(f"Could not build the preview: {describe_error(error)}")
         else:
-            _render_reel_font_buttons(row_num, "top", font_key)
             st.image(preview_image, width=340)
 
         if st.button(
