@@ -460,6 +460,12 @@ def _render_reel_backdrop(
 # frame's worth of duration rather than none at all, so zero is not the test.
 REEL_MIN_CLIP_SECONDS = 0.5
 
+# The preview still is a black canvas, so against the page it reads as a
+# rectangle floating in nothing. It is laid on a panel of this instead: the full
+# width of the column, a shade off the canvas's own black so the edges of the
+# reel are still findable against it.
+REEL_PREVIEW_BACKDROP = "#1C2027"
+
 
 def _reel_clip_duration(src_path: str) -> float:
     """The clip's length, or 0.0 when nothing can read it."""
@@ -6256,6 +6262,30 @@ def _render_reel_preview_controls(
     )
 
 
+def _render_reel_preview_frame(row_num: int, image) -> None:
+    """The preview still, laid on a panel the width of the column.
+
+    Styled through the container's own key class rather than by wrapping it in
+    markup, because Streamlit elements cannot be nested inside raw HTML. The
+    still stretches to the panel's content box, so the backdrop shows as an even
+    margin all round it however wide the column is.
+    """
+    st.markdown(
+        f"""
+        <style>
+          [class*="st-key-workspace_reel_preview_"] {{
+            background: {REEL_PREVIEW_BACKDROP};
+            padding: 1rem;
+            border-radius: 0.5rem;
+          }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    with st.container(key=f"workspace_reel_preview_{row_num}"):
+        st.image(image, width="stretch")
+
+
 def _render_reel_video_tab(
     row_num: int,
     username: str,
@@ -6429,7 +6459,7 @@ def _render_reel_video_tab(
         except Exception as error:
             st.warning(f"Could not build the preview: {describe_error(error)}")
         else:
-            st.image(preview_image, width=340)
+            _render_reel_preview_frame(row_num, preview_image)
 
         if st.button(
             "Generate reel",
