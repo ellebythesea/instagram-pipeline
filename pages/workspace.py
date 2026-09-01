@@ -185,6 +185,10 @@ def _fit_video_to_bytes(src_path: str) -> bytes:
 # of a 1080x1920 black canvas, with a headline burnt into the black bar above
 # it. The bar below is left empty to be captioned in Instagram. The crop can be
 # nudged up or down so faces stay in frame.
+#
+# The Fit option replaces the crop with the whole frame inside a box a little
+# taller than the crop: nothing is cut off, both bars stay roughly the size they
+# are, and a vertical video sits between black sides.
 # ---------------------------------------------------------------------------
 
 REEL_CANVAS_WIDTH_PX = 1080
@@ -194,6 +198,19 @@ REEL_VIDEO_RATIO_H = 4
 REEL_VIDEO_WIDTH_PX = REEL_CANVAS_WIDTH_PX
 REEL_VIDEO_HEIGHT_PX = round(REEL_VIDEO_WIDTH_PX * REEL_VIDEO_RATIO_H / REEL_VIDEO_RATIO_W)
 REEL_VIDEO_TOP_PX = (REEL_CANVAS_HEIGHT_PX - REEL_VIDEO_HEIGHT_PX) // 2
+# The Fit option's box: the crop's height and a little more, rather than as tall
+# as the canvas will allow. The whole frame has to fit inside it, so its height
+# is what the video is scaled to — and the bars either side of it are the point,
+# one for the headline above and one for captions below. Buying the video more
+# height buys it out of those, so it takes only 48px. Whatever the box does not
+# fill stays black.
+REEL_FIT_EXTRA_HEIGHT_PX = 48
+REEL_FIT_WIDTH_PX = REEL_CANVAS_WIDTH_PX
+REEL_FIT_HEIGHT_PX = REEL_VIDEO_HEIGHT_PX + REEL_FIT_EXTRA_HEIGHT_PX
+REEL_FIT_TOP_PX = (REEL_CANVAS_HEIGHT_PX - REEL_FIT_HEIGHT_PX) // 2
+# Rounded down to even: h.264 subsamples chroma, so an odd offset lands the
+# colour plane half a pixel off the picture it belongs to.
+REEL_FIT_TOP_PX -= REEL_FIT_TOP_PX % 2
 REEL_HEADLINE_SIDE_MARGIN_PX = 84
 # The headline hangs off the video rather than floating in the middle of the
 # bar: it is bottom-aligned this far above the frame and grows upwards as it
@@ -277,6 +294,28 @@ def _centre_crop_box(width: int, height: int, ratio_w: int, ratio_h: int) -> tup
     crop_w -= crop_w % 2
     crop_h -= crop_h % 2
     return crop_w, crop_h, (width - crop_w) // 2, (height - crop_h) // 2
+
+
+def _reel_fit_box(width: int, height: int) -> tuple[int, int, int, int]:
+    """The whole frame scaled to sit inside the fit box, as (w, h, x, y).
+
+    Contained rather than cropped, so none of the picture is lost: a vertical
+    video fills the box's height and leaves black down each side, a wide one
+    fills its width and leaves black above and below inside the box.
+
+    The size and the position are worked out here rather than left to ffmpeg's
+    own aspect-preserving scale, so the encode lands on exactly what the Pillow
+    preview showed. Every value is even, for the same chroma reason as
+    REEL_FIT_TOP_PX.
+    """
+    scale = min(REEL_FIT_WIDTH_PX / max(1, width), REEL_FIT_HEIGHT_PX / max(1, height))
+    scaled_w = max(2, int(width * scale))
+    scaled_h = max(2, int(height * scale))
+    scaled_w -= scaled_w % 2
+    scaled_h -= scaled_h % 2
+    x = (REEL_CANVAS_WIDTH_PX - scaled_w) // 2
+    y = REEL_FIT_TOP_PX + ((REEL_FIT_HEIGHT_PX - scaled_h) // 2)
+    return scaled_w, scaled_h, x - (x % 2), y - (y % 2)
 
 
 def _reel_crop_box(width: int, height: int, offset_percent: int = 0) -> tuple[int, int, int, int]:
@@ -383,13 +422,21 @@ def _headline_block_image(text: str, font_path: str, font_adjust_px: int, max_he
     return scratch.crop(bbox) if bbox else None
 
 
-def _render_reel_backdrop(headline: str, transparent: bool = False, font_adjust: int = 0):
+def _render_reel_backdrop(
+    headline: str,
+    transparent: bool = False,
+    font_adjust: int = 0,
+    video_top: int = REEL_VIDEO_TOP_PX,
+):
     """The canvas with the headline drawn and the video area left clear.
 
     Opaque black for the preview, which pastes the frame in; transparent for the
     encode, where the black comes from padding the video and this is laid over
     the top as a text-only layer. The bar below the video is left empty: that
     space is there to be captioned in Instagram.
+
+    video_top is where the picture itself starts, not where its box does, so the
+    headline keeps the same gap to it however the video was fitted.
     """
     from PIL import Image
 
@@ -400,11 +447,11 @@ def _render_reel_backdrop(headline: str, transparent: bool = False, font_adjust:
 
     max_block_height = max(
         REEL_HEADLINE_MIN_FONT_PX,
-        REEL_VIDEO_TOP_PX - REEL_HEADLINE_VIDEO_GAP_PX - REEL_HEADLINE_EDGE_MARGIN_PX,
+        video_top - REEL_HEADLINE_VIDEO_GAP_PX - REEL_HEADLINE_EDGE_MARGIN_PX,
     )
     block = _headline_block_image(headline, _reel_font_file(), font_adjust, max_block_height)
     if block:
-        y = REEL_VIDEO_TOP_PX - REEL_HEADLINE_VIDEO_GAP_PX - block.height
+        y = video_top - REEL_HEADLINE_VIDEO_GAP_PX - block.height
         image.paste(block, ((REEL_CANVAS_WIDTH_PX - block.width) // 2, max(0, y)), block)
     return image
 
@@ -475,18 +522,32 @@ def _render_reel_preview_image(
     offset_percent: int,
     headline: str,
     font_adjust: int = 0,
+    fit_whole: bool = False,
 ):
     """One composed still, built entirely in Pillow so nudging a control is cheap."""
     from PIL import Image
 
     frame_path = _extract_reel_frame(src_path, seconds, os.path.join(tmp_dir, "reel_frame.jpg"))
-    canvas = _render_reel_backdrop(headline, font_adjust=font_adjust)
     with Image.open(frame_path) as frame:
         frame = frame.convert("RGB")
-        crop_w, crop_h, crop_x, crop_y = _reel_crop_box(frame.width, frame.height, offset_percent)
-        cropped = frame.crop((crop_x, crop_y, crop_x + crop_w, crop_y + crop_h))
-    cropped = cropped.resize((REEL_VIDEO_WIDTH_PX, REEL_VIDEO_HEIGHT_PX), Image.LANCZOS)
-    canvas.paste(cropped, (0, REEL_VIDEO_TOP_PX))
+        if fit_whole:
+            # The canvas is already black, so the slack the frame does not cover
+            # is the black down its sides with nothing more to draw.
+            scaled_w, scaled_h, place_x, place_y = _reel_fit_box(frame.width, frame.height)
+            placed = frame.resize((scaled_w, scaled_h), Image.LANCZOS)
+            position = (place_x, place_y)
+        else:
+            crop_w, crop_h, crop_x, crop_y = _reel_crop_box(
+                frame.width, frame.height, offset_percent
+            )
+            placed = frame.crop((crop_x, crop_y, crop_x + crop_w, crop_y + crop_h)).resize(
+                (REEL_VIDEO_WIDTH_PX, REEL_VIDEO_HEIGHT_PX), Image.LANCZOS
+            )
+            position = (0, REEL_VIDEO_TOP_PX)
+    # Built after the frame is placed so the headline can be hung off the
+    # picture's own top edge, wherever the fit put it.
+    canvas = _render_reel_backdrop(headline, font_adjust=font_adjust, video_top=position[1])
+    canvas.paste(placed, position)
     return canvas
 
 
@@ -517,20 +578,40 @@ def _compose_reel_video(
     offset_percent: int,
     headline: str,
     font_adjust: int = 0,
+    fit_whole: bool = False,
 ) -> str:
-    """Burn the headline in and lay the 5:4 crop into the 1080x1920 canvas."""
-    backdrop_path = os.path.join(tmp_dir, "reel_backdrop.png")
-    _render_reel_backdrop(headline, transparent=True, font_adjust=font_adjust).save(backdrop_path)
+    """Burn the headline in and lay the video into the 1080x1920 canvas.
 
+    Either the 5:4 crop, or — with fit_whole — the whole frame inside the fit
+    box, in both cases in the same place the preview put it.
+    """
     src_w, src_h = _video_dimensions(src_path)
-    crop_w, crop_h, crop_x, crop_y = _reel_crop_box(src_w, src_h, offset_percent)
+    if fit_whole:
+        scaled_w, scaled_h, place_x, place_y = _reel_fit_box(src_w, src_h)
+        video_top = place_y
+        placement = (
+            f"scale={scaled_w}:{scaled_h},setsar=1,"
+            f"pad={REEL_CANVAS_WIDTH_PX}:{REEL_CANVAS_HEIGHT_PX}:{place_x}:{place_y}:black"
+        )
+    else:
+        crop_w, crop_h, crop_x, crop_y = _reel_crop_box(src_w, src_h, offset_percent)
+        video_top = REEL_VIDEO_TOP_PX
+        placement = (
+            f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},"
+            f"scale={REEL_VIDEO_WIDTH_PX}:{REEL_VIDEO_HEIGHT_PX},setsar=1,"
+            f"pad={REEL_CANVAS_WIDTH_PX}:{REEL_CANVAS_HEIGHT_PX}:0:{REEL_VIDEO_TOP_PX}:black"
+        )
+
+    # Same anchor the preview used, so the headline lands where it was shown.
+    backdrop_path = os.path.join(tmp_dir, "reel_backdrop.png")
+    _render_reel_backdrop(
+        headline, transparent=True, font_adjust=font_adjust, video_top=video_top
+    ).save(backdrop_path)
     # The video is the base layer and the text is laid over it, rather than the
     # other way round: overlay takes its frame rate from the base, and a looped
     # still would otherwise resample the reel to the image input's 25fps.
     filter_complex = (
-        f"[1:v]crop={crop_w}:{crop_h}:{crop_x}:{crop_y},"
-        f"scale={REEL_VIDEO_WIDTH_PX}:{REEL_VIDEO_HEIGHT_PX},setsar=1,"
-        f"pad={REEL_CANVAS_WIDTH_PX}:{REEL_CANVAS_HEIGHT_PX}:0:{REEL_VIDEO_TOP_PX}:black[base];"
+        f"[1:v]{placement}[base];"
         f"[base][0:v]overlay=0:0:shortest=1,format=yuv420p[out]"
     )
     command = [
@@ -6055,6 +6136,7 @@ def _generate_reel_to_drive(
     offset_percent: int,
     headline: str,
     font_adjust: int,
+    fit_whole: bool = False,
 ) -> tuple[str, str, str]:
     """Compose the reel, put it beside the row's other previews in Drive, and
     say where the local copy is so the finished thing can be played back."""
@@ -6073,7 +6155,15 @@ def _generate_reel_to_drive(
     # overwrites it, and it goes when the cached source does.
     work_dir = os.path.dirname(src_path)
     output_path = os.path.join(work_dir, output_name)
-    _compose_reel_video(src_path, output_path, work_dir, offset_percent, headline, font_adjust)
+    _compose_reel_video(
+        src_path,
+        output_path,
+        work_dir,
+        offset_percent,
+        headline,
+        font_adjust,
+        fit_whole=fit_whole,
+    )
     reel_link = upload_to_drive(output_path, output_name, preview_folder_id)
     # On the row, not just in this session: the local copy dies with the
     # container, so without this the reel is unreachable from another machine.
@@ -6156,15 +6246,20 @@ def _render_reel_video_tab(
     speaker_name: str,
     saved_reel_link: str = "",
 ) -> None:
-    """Crop the row's video to 5:4 on a 1080x1920 canvas with headlines burnt in.
+    """Lay the row's video on a 1080x1920 canvas with its headline burnt in.
 
-    A still frame stands in for the finished reel while the headline, the crop
-    position, the font size and the frame are being settled, because composing
-    one frame in Pillow is instant where re-encoding the video is not.
+    Cropped to 5:4 by default, or — with **Fit the whole video** — the whole
+    frame inside a slightly taller box, black down the sides of anything
+    narrower.
+
+    A still frame stands in for the finished reel while the headline, the fit,
+    the crop position, the font size and the frame are being settled, because
+    composing one frame in Pillow is instant where re-encoding the video is not.
     """
     headline_key = f"workspace_reel_top_{row_num}"
     font_key = f"workspace_reel_font_top_{row_num}"
     offset_key = f"workspace_reel_offset_{row_num}"
+    fit_key = f"workspace_reel_fit_{row_num}"
     frame_key = f"workspace_reel_frame_{row_num}"
     output_key = f"workspace_reel_output_{row_num}"
     error_key = f"workspace_reel_error_{row_num}"
@@ -6187,6 +6282,7 @@ def _render_reel_video_tab(
     # Seeded here rather than passed as widget defaults: Streamlit warns when a
     # widget is given both a key that is already in session state and a value.
     st.session_state.setdefault(offset_key, 0)
+    st.session_state.setdefault(fit_key, False)
     st.session_state.setdefault(frame_key, 1.0)
 
     if not headlines:
@@ -6224,6 +6320,21 @@ def _render_reel_video_tab(
             float(st.session_state.get(frame_key, 1.0) or 0.0), frame_ceiling
         )
 
+    # The 5:4 crop is the look these reels are modelled on, so it stays the
+    # default. This is the option for a video that has to be seen whole, where
+    # cropping to 5:4 would cut the point of it off.
+    st.toggle(
+        "Fit the whole video",
+        key=fit_key,
+        help=(
+            f"Fit the whole frame into a box {REEL_FIT_EXTRA_HEIGHT_PX}px taller "
+            "than the crop instead of cropping it to 5:4. Nothing is cut off, and "
+            "a vertical video gets black down each side. The bar above it for the "
+            "headline and the bar below it to caption in Instagram both stay."
+        ),
+    )
+    fit_whole = bool(st.session_state.get(fit_key, False))
+
     position_column, frame_column = st.columns(2, gap="small")
     with position_column:
         st.slider(
@@ -6232,7 +6343,12 @@ def _render_reel_video_tab(
             max_value=100,
             step=5,
             key=offset_key,
-            help="Negative moves the crop up the frame, positive moves it down.",
+            disabled=fit_whole,
+            help=(
+                "There is nothing to position while the whole video is fitted."
+                if fit_whole
+                else "Negative moves the crop up the frame, positive moves it down."
+            ),
         )
     with frame_column:
         st.number_input(
@@ -6294,6 +6410,7 @@ def _render_reel_video_tab(
                 offset_percent,
                 headline,
                 font_adjust,
+                fit_whole=fit_whole,
             )
         except Exception as error:
             st.warning(f"Could not build the preview: {describe_error(error)}")
@@ -6319,6 +6436,7 @@ def _render_reel_video_tab(
                         offset_percent,
                         headline,
                         font_adjust,
+                        fit_whole=fit_whole,
                     )
             except Exception as error:
                 st.session_state[error_key] = describe_error(error)
