@@ -107,6 +107,15 @@ dropdown and the first one already in the headline box — the headlines are wri
 the video, so that is where they are wanted first. Picking a different one drops it into the box,
 where it can be edited before the reel is generated.
 
+The video is centre-cropped to 5:4 and laid into the middle of a 1080x1920 black canvas, with the
+headline burnt into the bar above it and the bar below left empty to caption in Instagram.
+**Crop position** slides the crop up or down so faces stay in frame. **Fit the whole video** drops
+the crop instead and fits the whole frame into a taller 4:5 box: nothing is cut off, and a vertical
+video fills the box top to bottom with black down each side. The headline still goes above it and
+the bar below is still there, both of them smaller. There is nothing to position in that mode, so
+the crop slider is greyed out. A still frame previews all of it; **Generate reel** is what encodes
+the video and uploads it to Drive.
+
 It also shows a `Headlines` tab in place of `Slides`, for copying the headlines out rather than
 burning one in: each headline sits in its own copy block, wrapped rather than
 scrolled so the whole line reads inside the block, and the caption to copy is at the bottom. Buttons at the top open the Instagram link, if there was one,
