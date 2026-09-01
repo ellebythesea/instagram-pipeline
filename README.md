@@ -112,7 +112,8 @@ headline burnt into the bar above it and the bar below left empty to caption in 
 **Crop position** slides the crop up or down so faces stay in frame. **Fit whole video**, the toggle
 under `A-` and `A+` above the preview, drops the crop instead and fits the whole frame into a box
 48px taller than the crop, 1080x912: nothing is cut off, and a vertical video fills the box top to
-bottom with black down each side — 512x912 with 284px of black either side, for a 9:16 reel. The
+bottom, 512x912 for a 9:16 reel. The box is a `#1C2027` panel the full width of the canvas, so the
+video sits in something rather than floating in black — that panel is the 284px either side. The
 bars above and below stay 504px, so there is still the room there was for the headline and for
 captioning in Instagram. There is nothing to position in that mode, so the crop slider is greyed
 out. A still frame previews all of it; **Generate reel** is what encodes the video and uploads it to
