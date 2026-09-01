@@ -460,11 +460,12 @@ def _render_reel_backdrop(
 # frame's worth of duration rather than none at all, so zero is not the test.
 REEL_MIN_CLIP_SECONDS = 0.5
 
-# The preview still is a black canvas, so against the page it reads as a
-# rectangle floating in nothing. It is laid on a panel of this instead: the full
-# width of the column, a shade off the canvas's own black so the edges of the
-# reel are still findable against it.
-REEL_PREVIEW_BACKDROP = "#1C2027"
+# A fitted video is narrower than the canvas, so on black it reads as a
+# rectangle floating in nothing. It sits on a panel of this instead: the full
+# width of the canvas and the height of the fit box, a shade off the black
+# around it so the video has something to sit in rather than a void.
+REEL_FIT_PANEL_COLOR = "#1C2027"
+REEL_FIT_PANEL_FFMPEG_COLOR = "0x1C2027"
 
 
 def _reel_clip_duration(src_path: str) -> float:
@@ -550,11 +551,33 @@ def _render_reel_preview_image(
                 (REEL_VIDEO_WIDTH_PX, REEL_VIDEO_HEIGHT_PX), Image.LANCZOS
             )
             position = (0, REEL_VIDEO_TOP_PX)
-    # Built after the frame is placed so the headline can be hung off the
-    # picture's own top edge, wherever the fit put it.
-    canvas = _render_reel_backdrop(headline, font_adjust=font_adjust, video_top=position[1])
+    # Fitted, the headline hangs off the panel rather than off the picture: the
+    # panel is what the eye reads as the top of the video.
+    video_top = REEL_FIT_TOP_PX if fit_whole else position[1]
+    canvas = _render_reel_backdrop(headline, font_adjust=font_adjust, video_top=video_top)
+    if fit_whole:
+        _paint_reel_fit_panel(canvas)
     canvas.paste(placed, position)
     return canvas
+
+
+def _paint_reel_fit_panel(canvas) -> None:
+    """Fill the fit box with the panel colour, full width of the canvas.
+
+    Drawn after the headline and before the video: the headline is bottom-
+    aligned clear of the box, and the video is laid on top of the panel.
+    """
+    from PIL import ImageDraw
+
+    ImageDraw.Draw(canvas).rectangle(
+        [
+            0,
+            REEL_FIT_TOP_PX,
+            REEL_CANVAS_WIDTH_PX - 1,
+            REEL_FIT_TOP_PX + REEL_FIT_HEIGHT_PX - 1,
+        ],
+        fill=REEL_FIT_PANEL_COLOR,
+    )
 
 
 def _audio_codec(src_path: str) -> str:
@@ -594,10 +617,14 @@ def _compose_reel_video(
     src_w, src_h = _video_dimensions(src_path)
     if fit_whole:
         scaled_w, scaled_h, place_x, place_y = _reel_fit_box(src_w, src_h)
-        video_top = place_y
+        video_top = REEL_FIT_TOP_PX
+        # Two pads: the video onto the panel, then the panel onto the canvas.
+        # One pad can only lay a single colour, and the panel is the point.
         placement = (
             f"scale={scaled_w}:{scaled_h},setsar=1,"
-            f"pad={REEL_CANVAS_WIDTH_PX}:{REEL_CANVAS_HEIGHT_PX}:{place_x}:{place_y}:black"
+            f"pad={REEL_FIT_WIDTH_PX}:{REEL_FIT_HEIGHT_PX}:{place_x}:"
+            f"{place_y - REEL_FIT_TOP_PX}:{REEL_FIT_PANEL_FFMPEG_COLOR},"
+            f"pad={REEL_CANVAS_WIDTH_PX}:{REEL_CANVAS_HEIGHT_PX}:0:{REEL_FIT_TOP_PX}:black"
         )
     else:
         crop_w, crop_h, crop_x, crop_y = _reel_crop_box(src_w, src_h, offset_percent)
@@ -6262,30 +6289,6 @@ def _render_reel_preview_controls(
     )
 
 
-def _render_reel_preview_frame(row_num: int, image) -> None:
-    """The preview still, laid on a panel the width of the column.
-
-    Styled through the container's own key class rather than by wrapping it in
-    markup, because Streamlit elements cannot be nested inside raw HTML. The
-    still stretches to the panel's content box, so the backdrop shows as an even
-    margin all round it however wide the column is.
-    """
-    st.markdown(
-        f"""
-        <style>
-          [class*="st-key-workspace_reel_preview_"] {{
-            background: {REEL_PREVIEW_BACKDROP};
-            padding: 1rem;
-            border-radius: 0.5rem;
-          }}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-    with st.container(key=f"workspace_reel_preview_{row_num}"):
-        st.image(image, width="stretch")
-
-
 def _render_reel_video_tab(
     row_num: int,
     username: str,
@@ -6459,7 +6462,7 @@ def _render_reel_video_tab(
         except Exception as error:
             st.warning(f"Could not build the preview: {describe_error(error)}")
         else:
-            _render_reel_preview_frame(row_num, preview_image)
+            st.image(preview_image, width=340)
 
         if st.button(
             "Generate reel",
