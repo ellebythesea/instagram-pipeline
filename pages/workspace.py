@@ -186,9 +186,9 @@ def _fit_video_to_bytes(src_path: str) -> bytes:
 # it. The bar below is left empty to be captioned in Instagram. The crop can be
 # nudged up or down so faces stay in frame.
 #
-# The Fit option replaces the crop with the whole frame inside a taller 4:5 box:
-# nothing is cut off, the bars above and below are smaller but still there, and
-# a vertical video sits between black sides.
+# The Fit option replaces the crop with the whole frame inside a box a little
+# taller than the crop: nothing is cut off, both bars stay roughly the size they
+# are, and a vertical video sits between black sides.
 # ---------------------------------------------------------------------------
 
 REEL_CANVAS_WIDTH_PX = 1080
@@ -198,13 +198,15 @@ REEL_VIDEO_RATIO_H = 4
 REEL_VIDEO_WIDTH_PX = REEL_CANVAS_WIDTH_PX
 REEL_VIDEO_HEIGHT_PX = round(REEL_VIDEO_WIDTH_PX * REEL_VIDEO_RATIO_H / REEL_VIDEO_RATIO_W)
 REEL_VIDEO_TOP_PX = (REEL_CANVAS_HEIGHT_PX - REEL_VIDEO_HEIGHT_PX) // 2
-# The Fit option's box. 4:5 rather than the crop's 5:4, so the video is as tall
-# as it can be and still leave a bar above for the headline and one below for
-# Instagram's own caption. Whatever the box does not fill stays black.
-REEL_FIT_RATIO_W = 4
-REEL_FIT_RATIO_H = 5
+# The Fit option's box: the crop's height and a little more, rather than as tall
+# as the canvas will allow. The whole frame has to fit inside it, so its height
+# is what the video is scaled to — and the bars either side of it are the point,
+# one for the headline above and one for captions below. Buying the video more
+# height buys it out of those, so it takes only 48px. Whatever the box does not
+# fill stays black.
+REEL_FIT_EXTRA_HEIGHT_PX = 48
 REEL_FIT_WIDTH_PX = REEL_CANVAS_WIDTH_PX
-REEL_FIT_HEIGHT_PX = round(REEL_FIT_WIDTH_PX * REEL_FIT_RATIO_H / REEL_FIT_RATIO_W)
+REEL_FIT_HEIGHT_PX = REEL_VIDEO_HEIGHT_PX + REEL_FIT_EXTRA_HEIGHT_PX
 REEL_FIT_TOP_PX = (REEL_CANVAS_HEIGHT_PX - REEL_FIT_HEIGHT_PX) // 2
 # Rounded down to even: h.264 subsamples chroma, so an odd offset lands the
 # colour plane half a pixel off the picture it belongs to.
@@ -295,7 +297,7 @@ def _centre_crop_box(width: int, height: int, ratio_w: int, ratio_h: int) -> tup
 
 
 def _reel_fit_box(width: int, height: int) -> tuple[int, int, int, int]:
-    """The whole frame scaled to sit inside the 4:5 box, as (w, h, x, y).
+    """The whole frame scaled to sit inside the fit box, as (w, h, x, y).
 
     Contained rather than cropped, so none of the picture is lost: a vertical
     video fills the box's height and leaves black down each side, a wide one
@@ -434,9 +436,7 @@ def _render_reel_backdrop(
     space is there to be captioned in Instagram.
 
     video_top is where the picture itself starts, not where its box does, so the
-    headline keeps the same gap to it however the video was fitted. The Fit
-    option's taller box leaves less room above, and the auto-fit takes the size
-    down to suit.
+    headline keeps the same gap to it however the video was fitted.
     """
     from PIL import Image
 
@@ -582,7 +582,7 @@ def _compose_reel_video(
 ) -> str:
     """Burn the headline in and lay the video into the 1080x1920 canvas.
 
-    Either the 5:4 crop, or — with fit_whole — the whole frame inside the 4:5
+    Either the 5:4 crop, or — with fit_whole — the whole frame inside the fit
     box, in both cases in the same place the preview put it.
     """
     src_w, src_h = _video_dimensions(src_path)
@@ -6249,7 +6249,8 @@ def _render_reel_video_tab(
     """Lay the row's video on a 1080x1920 canvas with its headline burnt in.
 
     Cropped to 5:4 by default, or — with **Fit the whole video** — the whole
-    frame inside a taller 4:5 box, black down the sides of anything narrower.
+    frame inside a slightly taller box, black down the sides of anything
+    narrower.
 
     A still frame stands in for the finished reel while the headline, the fit,
     the crop position, the font size and the frame are being settled, because
@@ -6326,10 +6327,10 @@ def _render_reel_video_tab(
         "Fit the whole video",
         key=fit_key,
         help=(
-            "Fit the whole frame into a taller 4:5 box instead of cropping it to "
-            "5:4. Nothing is cut off, and a vertical video gets black down each "
-            "side. The headline still goes above it, and the bar below is still "
-            "there to caption in Instagram."
+            f"Fit the whole frame into a box {REEL_FIT_EXTRA_HEIGHT_PX}px taller "
+            "than the crop instead of cropping it to 5:4. Nothing is cut off, and "
+            "a vertical video gets black down each side. The bar above it for the "
+            "headline and the bar below it to caption in Instagram both stay."
         ),
     )
     fit_whole = bool(st.session_state.get(fit_key, False))
