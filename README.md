@@ -582,6 +582,8 @@ Notes:
 - captions are generated from transcript, original caption, or caption context
 - reels auto-prepend a `LINK` CTA if no custom top comment exists
 - original captions can be previewed with footer and required hashtags
+- required hashtags lead the caption's hashtag group, ahead of the generated
+  ones, so Instagram indexes them first
 
 ### Article rows
 

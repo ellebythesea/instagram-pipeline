@@ -38,7 +38,7 @@ The first paragraph must be 250 characters or fewer and serve as the most import
 Always include exactly five relevant hashtags in the caption. Choose hashtags for major names,
 locations, policy areas, or core subjects covered in the content. Place them grouped together
 at the end of the caption body, after the second paragraph. Do not force required hashtags
-into the prose — they will be appended separately if needed.
+into the prose — they are moved to the front of that hashtag group automatically.
 
 The second paragraph should add context using verified facts, dates, and numbers when
 relevant. Include direct quotes when available. Verify names and quotes carefully. Do not
