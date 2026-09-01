@@ -110,7 +110,7 @@ where it can be edited before the reel is generated.
 The video is centre-cropped to 5:4 and laid into the middle of a 1080x1920 black canvas, with the
 headline burnt into the bar above it and the bar below left empty to caption in Instagram.
 **Crop position** slides the crop up or down so faces stay in frame. **Fit whole video**, the toggle
-beside `A-` and `A+` above the preview, drops the crop instead and fits the whole frame into a box
+under `A-` and `A+` above the preview, drops the crop instead and fits the whole frame into a box
 48px taller than the crop, 1080x912: nothing is cut off, and a vertical video fills the box top to
 bottom with black down each side — 512x912 with 284px of black either side, for a 9:16 reel. The
 bars above and below stay 504px, so there is still the room there was for the headline and for
