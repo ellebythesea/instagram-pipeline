@@ -165,6 +165,20 @@ def _lead_with_required_hashtags(caption: str, required: list[str]) -> str:
     return _tidy_hashtag_spacing(body) + separator + tail
 
 
+def lead_with_required_hashtags(caption: str, required_hashtags: str) -> str:
+    """Put the required tags at the front of the caption's hashtag group.
+
+    The public half of what a generated caption gets, without the stripping that
+    goes with it, so the editor can order a caption it is only displaying the
+    same way the pipeline orders one it writes.
+    """
+    caption = (caption or "").strip()
+    required = _unique_hashtags_in_order(required_hashtags)[:5]
+    if not caption or not required:
+        return caption
+    return _lead_with_required_hashtags(caption, required).strip()
+
+
 def _finalize_required_hashtags(caption: str, required_hashtags: str) -> str:
     required = _unique_hashtags_in_order(required_hashtags)[:5]
     existing = _unique_hashtags_in_order(caption)
