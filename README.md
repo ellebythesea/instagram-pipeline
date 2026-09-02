@@ -596,7 +596,9 @@ Notes:
 - reels auto-prepend a `LINK` CTA if no custom top comment exists
 - original captions can be previewed with footer and required hashtags
 - required hashtags lead the caption's hashtag group, ahead of the generated
-  ones, so Instagram indexes them first
+  ones, so Instagram indexes them first — in the editor's `Caption` tab as well
+  as in what is written to the sheet, so a caption generated before this was the
+  rule is reordered on its way to the screen
 
 ### Article rows
 

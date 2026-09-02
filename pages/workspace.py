@@ -2969,9 +2969,10 @@ def _build_footered_caption(caption_body: str, username: str, required_hashtags:
         "Help this information get to more voters. 🇺🇸 "
         "A well-informed electorate is a prerequisite to Democracy. - Thomas Jefferson"
     )
-    if required_hashtags.strip():
-        footer_parts.append(required_hashtags.strip())
-    return f"{caption_body.strip()}\n\n{' '.join(footer_parts)}"
+    # Ahead of the footer rather than trailing it, for the same reason: a tag
+    # below the Jefferson line is the last thing Instagram would reach.
+    body = pipeline_caption_ops.lead_with_required_hashtags(caption_body, required_hashtags)
+    return f"{body}\n\n{' '.join(footer_parts)}"
 
 
 def _build_original_caption_preview(
@@ -3000,15 +3001,15 @@ def _build_original_caption_preview(
 
 
 def _ensure_required_hashtags_text(value: str, required_hashtags: str) -> str:
-    caption = (value or "").strip()
-    required = re.findall(r"#\w+", required_hashtags or "")
-    if not caption or not required:
-        return caption
-    existing = {tag.lower() for tag in re.findall(r"#\w+", caption)}
-    missing = [tag for tag in required if tag.lower() not in existing]
-    if missing:
-        caption = f"{caption}\n\n{' '.join(missing)}"
-    return caption
+    """Lead the caption's hashtag group with the required tags.
+
+    Instagram only indexes the first handful of tags on a post, so a required one
+    appended at the end — behind the generated tags, or below the footer — can go
+    unpicked up. Shared with the pipeline so a caption shown here and the one
+    written to the sheet order their tags the same way, and so a caption
+    generated before this was the rule is put right on its way to the screen.
+    """
+    return pipeline_caption_ops.lead_with_required_hashtags(value, required_hashtags)
 
 
 def _caption_tab_value(
