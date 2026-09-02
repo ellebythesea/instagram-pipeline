@@ -202,9 +202,9 @@ REEL_VIDEO_TOP_PX = (REEL_CANVAS_HEIGHT_PX - REEL_VIDEO_HEIGHT_PX) // 2
 # as the canvas will allow. The whole frame has to fit inside it, so its height
 # is what the video is scaled to — and the bars either side of it are the point,
 # one for the headline above and one for captions below. Buying the video more
-# height buys it out of those, so it takes only 48px. Whatever the box does not
-# fill stays black.
-REEL_FIT_EXTRA_HEIGHT_PX = 48
+# height buys it out of those, so it takes 144px and no more. Whatever the box
+# does not fill is the panel.
+REEL_FIT_EXTRA_HEIGHT_PX = 144
 REEL_FIT_WIDTH_PX = REEL_CANVAS_WIDTH_PX
 REEL_FIT_HEIGHT_PX = REEL_VIDEO_HEIGHT_PX + REEL_FIT_EXTRA_HEIGHT_PX
 REEL_FIT_TOP_PX = (REEL_CANVAS_HEIGHT_PX - REEL_FIT_HEIGHT_PX) // 2
