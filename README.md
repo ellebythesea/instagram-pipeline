@@ -116,8 +116,9 @@ bottom, 566x1008 for a 9:16 reel. The box is a `#1C2027` panel the full width of
 video sits in something rather than floating in black — that panel is the ~256px either side. The
 bars above and below stay 456px, so there is still room for the headline and for captioning in
 Instagram. There is nothing to position in that mode, so the crop slider is greyed
-out. A still frame previews all of it; **Generate reel** is what encodes the video and uploads it to
-Drive.
+out. **Preview frame** picks which second the still is taken from; its track is the clip's own
+length, so it scrubs end to end whatever that is, and it stays greyed out until the video is loaded
+and its length is readable. **Generate reel** is what encodes the video and uploads it to Drive.
 
 It also shows a `Headlines` tab in place of `Slides`, for copying the headlines out rather than
 burning one in: each headline sits in its own copy block, wrapped rather than

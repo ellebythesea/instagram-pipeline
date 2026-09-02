@@ -460,6 +460,14 @@ def _render_reel_backdrop(
 # frame's worth of duration rather than none at all, so zero is not the test.
 REEL_MIN_CLIP_SECONDS = 0.5
 
+# A slider needs a top end, and a row's clip is only measurable once the video
+# is local. Until then the frame slider spans this and is disabled — there is
+# nothing to preview yet anyway.
+REEL_FRAME_FALLBACK_SECONDS = 60.0
+# Half-second steps are fine for scrubbing a reel; a clip of a few seconds wants
+# a finer hand than that.
+REEL_FRAME_FINE_STEP_UNDER_SECONDS = 10.0
+
 # A fitted video is narrower than the canvas, so on black it reads as a
 # rectangle floating in nothing. It sits on a panel of this instead: the full
 # width of the canvas and the height of the fit box, a shade off the black
@@ -6367,11 +6375,14 @@ def _render_reel_video_tab(
     # rather than letting a default of 1s ask for a second a short clip lacks.
     source_cached = (st.session_state.get(loaded_key) or {}).get("path", "")
     clip_duration = _reel_clip_duration(source_cached) if os.path.exists(source_cached) else 0.0
-    frame_ceiling = max(0.0, clip_duration - 0.05) if clip_duration > 0 else None
-    if frame_ceiling is not None:
-        st.session_state[frame_key] = min(
-            float(st.session_state.get(frame_key, 1.0) or 0.0), frame_ceiling
-        )
+    frame_ceiling = max(0.0, clip_duration - 0.05) if clip_duration > 0 else 0.0
+    frame_known = frame_ceiling > 0
+    # Clamped against whichever end is in force, the clip's or the fallback, so
+    # a value left over from a longer video can never sit outside the slider.
+    frame_max = frame_ceiling if frame_known else REEL_FRAME_FALLBACK_SECONDS
+    st.session_state[frame_key] = min(
+        float(st.session_state.get(frame_key, 1.0) or 0.0), frame_max
+    )
 
     # Set by the toggle further down, beside the preview it changes. Read here
     # off session state because the crop slider has to know before it is drawn.
@@ -6393,12 +6404,20 @@ def _render_reel_video_tab(
             ),
         )
     with frame_column:
-        st.number_input(
+        st.slider(
             "Preview frame (seconds)",
             min_value=0.0,
-            max_value=frame_ceiling,
-            step=0.5,
+            max_value=frame_max,
+            step=0.5 if frame_max > REEL_FRAME_FINE_STEP_UNDER_SECONDS else 0.1,
             key=frame_key,
+            disabled=not frame_known,
+            help=(
+                # The track is the clip, so it scrubs end to end whatever the
+                # video's length is.
+                "Drag to scrub the clip, start to finish."
+                if frame_known
+                else "Load the video and this scrubs it."
+            ),
         )
     if clip_duration >= REEL_MIN_CLIP_SECONDS:
         st.caption(f"Video is {_format_clip_duration(clip_duration)} long.")
