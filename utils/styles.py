@@ -390,34 +390,41 @@ div[data-testid="stVerticalBlock"]:has(> div.workspace-edit-main-anchor) [data-t
     flex: 0 0 58%;
     width: 58%;
 }
-div[data-testid="stVerticalBlock"]:has(> div.workspace-preview-controls-anchor) {
+div[data-testid="stVerticalBlock"]:has(> div.workspace-preview-controls-anchor),
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] div.workspace-preview-controls-anchor) {
     max-width: 420px;
     margin: 0.9rem auto 0;
 }
-div[data-testid="stVerticalBlock"]:has(> div.workspace-preview-controls-anchor) [data-testid="stHorizontalBlock"] {
+div[data-testid="stVerticalBlock"]:has(> div.workspace-preview-controls-anchor) [data-testid="stHorizontalBlock"],
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] div.workspace-preview-controls-anchor) [data-testid="stHorizontalBlock"] {
     display: grid;
     grid-auto-flow: column;
     grid-auto-columns: minmax(4.25rem, 1fr);
     gap: 0.65rem;
     overflow-x: auto;
 }
-div[data-testid="stVerticalBlock"]:has(> div.workspace-preview-controls-anchor) [data-testid="column"] {
+div[data-testid="stVerticalBlock"]:has(> div.workspace-preview-controls-anchor) [data-testid="column"],
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] div.workspace-preview-controls-anchor) [data-testid="column"] {
     min-width: 0;
     width: auto;
 }
-div[data-testid="stVerticalBlock"]:has(> div.workspace-preview-controls-anchor) .stButton > button {
+div[data-testid="stVerticalBlock"]:has(> div.workspace-preview-controls-anchor) .stButton > button,
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] div.workspace-preview-controls-anchor) .stButton > button {
     min-height: 2.8rem;
     border-radius: 14px;
     white-space: nowrap;
     font-weight: 700;
 }
-div[data-testid="stVerticalBlock"]:has(> div.workspace-slide1-ctrl-anchor) {
+div[data-testid="stVerticalBlock"]:has(> div.workspace-slide1-ctrl-anchor),
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] div.workspace-slide1-ctrl-anchor) {
     max-width: none;
 }
-div[data-testid="stVerticalBlock"]:has(> div.workspace-slide1-ctrl-anchor) [data-testid="stHorizontalBlock"] {
+div[data-testid="stVerticalBlock"]:has(> div.workspace-slide1-ctrl-anchor) [data-testid="stHorizontalBlock"],
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] div.workspace-slide1-ctrl-anchor) [data-testid="stHorizontalBlock"] {
     grid-auto-columns: 100px;
 }
-div[data-testid="stVerticalBlock"]:has(> div.workspace-slide1-ctrl-anchor) .stButton > button {
+div[data-testid="stVerticalBlock"]:has(> div.workspace-slide1-ctrl-anchor) .stButton > button,
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] div.workspace-slide1-ctrl-anchor) .stButton > button {
     width: 100px;
     min-width: 100px;
 }
@@ -613,7 +620,8 @@ div[data-testid="stVerticalBlock"]:has(> div.workspace-generate-anchor) {
         flex: 0 0 56%;
         width: 56%;
     }
-    div[data-testid="stVerticalBlock"]:has(> div.workspace-preview-controls-anchor) [data-testid="stHorizontalBlock"] {
+    div[data-testid="stVerticalBlock"]:has(> div.workspace-preview-controls-anchor) [data-testid="stHorizontalBlock"],
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] div.workspace-preview-controls-anchor) [data-testid="stHorizontalBlock"] {
         gap: 0.5rem;
     }
     div[data-testid="stVerticalBlock"]:has(> div.workspace-action-anchor) [data-testid="stHorizontalBlock"] {
