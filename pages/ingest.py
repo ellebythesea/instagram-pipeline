@@ -91,6 +91,10 @@ HIGHLIGHT_MATCH_MIN_CHARS = 12
 
 # In a Google Doc's markdown export each tab starts with its title as a `# ` heading.
 DOC_TAB_HEADING_RE = re.compile(r"^#\s+(\S.*)$")
+# An image sitting on its own: `![][image1]` in the export, or `![alt](url)`.
+IMAGE_ONLY_RE = re.compile(r"!\[[^\]]*\]\s*(?:\[[^\]]*\]|\([^)]*\))")
+# Leading hash marks, so a heading can be judged on its wording alone.
+HEADING_MARKER_RE = re.compile(r"^#+\s*")
 # Tab titles are usually dates, which is how the newest tab is picked.
 TAB_DATE_FORMATS = ("%m/%d/%y", "%m/%d/%Y", "%Y-%m-%d", "%m-%d-%y", "%m-%d-%Y", "%b %d %Y", "%B %d %Y")
 
@@ -291,10 +295,28 @@ def _link_blocks(blocks: list[dict]) -> list[dict]:
     return [block for block in blocks if block["kind"] == "link"]
 
 
+def _is_filler_line(line: str) -> bool:
+    """True for a line with nothing to read on it: blank, bare `#`, or just an image.
+
+    Between a tab's title and its first item Google's export writes the client's
+    letterhead image and an empty heading, both as `# ` lines. Those are what sits
+    between two headings that belong to the same tab.
+    """
+    stripped = HEADING_MARKER_RE.sub("", (line or "").strip()).strip()
+    return not IMAGE_ONLY_RE.sub("", stripped).strip()
+
+
 def _split_doc_tabs(markdown: str) -> list[dict]:
     """Split a Google Doc markdown export into its tabs.
 
-    Each `# ` heading starts a tab and its text is everything up to the next one.
+    Each `# ` heading starts a tab and its text is everything up to the next one —
+    except a heading that runs straight into another heading, which is not a tab
+    boundary. These documents open every tab with its date, the letterhead image and
+    a "Headlines for Consideration" title as three `# ` lines in a row, and splitting
+    on each of those leaves the tab you pick holding no text at all. A run like that
+    is one tab, titled by the first heading in it that says something and holding
+    everything down to the next heading that follows real content.
+
     Anything before the first heading becomes a leading "(start of document)" entry
     so no content is ever hidden.
     """
@@ -304,13 +326,33 @@ def _split_doc_tabs(markdown: str) -> list[dict]:
     if not headings:
         return [{"title": "(whole document)", "text": markdown or ""}]
 
+    heading_lines = {i for i, _ in headings}
+    # Runs of headings with no content of their own between them: one tab each.
+    runs: list[list[tuple[int, str]]] = []
+    for position, heading in enumerate(headings):
+        previous = headings[position - 1][0] if position else None
+        opens_tab = previous is None or any(
+            not _is_filler_line(lines[i])
+            for i in range(previous + 1, heading[0])
+            if i not in heading_lines
+        )
+        if opens_tab:
+            runs.append([heading])
+        else:
+            runs[-1].append(heading)
+
     tabs: list[dict] = []
     preamble = "\n".join(lines[: headings[0][0]]).strip()
     if preamble:
         tabs.append({"title": "(start of document)", "text": preamble})
 
-    bounds = [i for i, _ in headings] + [len(lines)]
-    for position, (start, title) in enumerate(headings):
+    bounds = [run[0][0] for run in runs] + [len(lines)]
+    for position, run in enumerate(runs):
+        start = run[0][0]
+        title = next(
+            (text for _, text in run if not _is_filler_line(text)),
+            run[0][1],
+        )
         body = "\n".join(lines[start + 1 : bounds[position + 1]]).strip()
         tabs.append({"title": _plain_text(title) or title, "text": body})
     return tabs
@@ -831,6 +873,13 @@ source_text = selected_tab_text or document_text
 # Pasted rich text carries its own highlighting, the same as a Doc export does.
 if not selected_tab_text and _looks_like_html(source_text):
     highlighted_texts = _highlighted_texts(source_text)
+
+# Without this the button just sits there greyed out with nothing to explain it.
+if tabs and not source_text.strip():
+    st.info(
+        "There is no text on that tab. Pick another tab above, or press Reload if the "
+        "document has changed since it was opened."
+    )
 
 if st.button(
     "Read this tab" if tabs else "Read this document",
