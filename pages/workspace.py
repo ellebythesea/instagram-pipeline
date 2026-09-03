@@ -6336,7 +6336,10 @@ def _render_reel_video_tab(
     # either place are on offer in both.
     session_headlines_key = f"workspace_caption_headlines_{row_num}"
 
-    headlines = list(headlines) or list(st.session_state.get(session_headlines_key, []) or [])
+    # A rewrite lands in session state, so what is there wins over what the sheet
+    # stored — otherwise redoing the headlines on a Reel Lines row would leave
+    # the same text1 lines on offer and look like nothing happened.
+    headlines = list(st.session_state.get(session_headlines_key, []) or []) or list(headlines)
 
     # Seeded the first time this row has headlines to offer rather than the
     # first time the tab is drawn, so a row opened before its headlines were
@@ -6355,26 +6358,35 @@ def _render_reel_video_tab(
 
     if not headlines:
         st.caption("No headlines on this row yet.")
-        if st.button(
-            f"Write {REEL_LINES_HEADLINE_COUNT} headlines",
-            key=f"workspace_reel_headlines_{row_num}",
-            width="stretch",
-            disabled=not (source_text or "").strip(),
-        ):
-            st.session_state.pop(error_key, None)
-            try:
-                with st.spinner("Writing headlines…"):
-                    st.session_state[session_headlines_key] = _generate_reel_lines_headlines(
-                        source_text,
-                        caption=caption_value,
-                        speaker_name=speaker_name,
-                        username=username,
-                    )
-            except Exception as error:
-                st.session_state[error_key] = describe_error(error)
-            _rerun_workspace("Edit")
-        if not (source_text or "").strip():
-            st.caption("No transcript or caption to write headlines from.")
+    # Offered whether or not the row already has headlines: a set that came out
+    # flat is only worth anything if it can be thrown away and rewritten here.
+    if st.button(
+        f"Rewrite {REEL_LINES_HEADLINE_COUNT} headlines"
+        if headlines
+        else f"Write {REEL_LINES_HEADLINE_COUNT} headlines",
+        key=f"workspace_reel_headlines_{row_num}",
+        width="stretch",
+        disabled=not (source_text or "").strip(),
+        help="Write a fresh set from the transcript, replacing the ones on offer here",
+    ):
+        st.session_state.pop(error_key, None)
+        try:
+            with st.spinner("Writing headlines…"):
+                st.session_state[session_headlines_key] = _generate_reel_lines_headlines(
+                    source_text,
+                    caption=caption_value,
+                    speaker_name=speaker_name,
+                    username=username,
+                )
+        except Exception as error:
+            st.session_state[error_key] = describe_error(error)
+        else:
+            # A rewrite starts over, so drop the seed and let the box land on the
+            # new first line instead of keeping a pick from the set just replaced.
+            st.session_state.pop(seeded_key, None)
+        _rerun_workspace("Edit")
+    if not (source_text or "").strip():
+        st.caption("No transcript or caption to write headlines from.")
 
     _render_reel_headline_input(row_num, "Headline", "top", headline_key, headlines)
 
@@ -6520,6 +6532,11 @@ def _render_reel_video_tab(
     if reel_link:
         if generated.get("link"):
             st.success(f"Saved {generated.get('name', 'the reel')} to Drive.")
+        # Above the preview rather than under it, so it is reachable without
+        # scrolling past a full-height video. Named apart from the row's own
+        # "Open reel in Drive", which stays pointed at the untouched source in
+        # Media Drive Link.
+        st.link_button("Open new reel in Drive", reel_link, width="stretch")
         if os.path.exists(generated.get("path", "")):
             st.video(generated["path"])
         else:
@@ -6529,9 +6546,6 @@ def _render_reel_video_tab(
             if poster:
                 st.image(poster, width=340)
             st.caption("Made in an earlier session — open it in Drive to watch it.")
-        # Named apart from the row's own "Open reel in Drive", which stays
-        # pointed at the untouched source in Media Drive Link.
-        st.link_button("Open new reel in Drive", reel_link, width="stretch")
 
     error_message = st.session_state.get(error_key, "")
     if error_message:
