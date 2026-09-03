@@ -1968,6 +1968,21 @@ else:
             sheet_ops.update_last_scheduled_time(sheet_id, scheduled_times[-1])
 
 
+# These two used to fall back to writing the canonical column letters when the
+# sheets module was too old to carry the function itself. That fallback is what
+# reordering the posts tab makes dangerous: the letter it writes is some other
+# field's cell now, so the caption lands in Source Username, the status in
+# Footer, and the row reads as a permutation of itself. sheets.py refuses to
+# guess a column for exactly that reason, so these refuse too — the fix is to
+# update the checkout, not to write to where the column used to be.
+_STALE_SHEETS_MODULE = (
+    "The sheets module in this checkout has no {name}, so the posts tab's column "
+    "positions cannot be read. Refusing to fall back to the original column letters: "
+    "on a sheet whose columns have been reordered every value would land in the wrong "
+    "field. Pull the latest code and try again."
+)
+
+
 def append_link_rows(
     sheet_id: str,
     urls: list[str],
@@ -1984,20 +1999,7 @@ def append_link_rows(
             sheet_ops.append_link_rows(sheet_id, urls, required_hashtags, top_comment)
         return
 
-    cleaned_urls = [url.strip() for url in urls if url.strip()]
-    if not cleaned_urls:
-        return
-
-    ws = sheet_ops._worksheet(sheet_id)
-    rows = []
-    for url in cleaned_urls:
-        row = [""] * len(sheet_ops._EXPECTED_HEADERS)
-        row[0] = url
-        row[1] = required_hashtags.strip()
-        row[10] = top_comment.strip()
-        rows.append(row)
-    sheet_ops._with_backoff(ws.append_rows, rows, value_input_option="USER_ENTERED")
-    sheet_ops._invalidate_rows_cache(sheet_id)
+    raise RuntimeError(_STALE_SHEETS_MODULE.format(name="append_link_rows"))
 
 
 def update_status(sheet_id: str, row_number: int, status: str) -> None:
@@ -2005,9 +2007,7 @@ def update_status(sheet_id: str, row_number: int, status: str) -> None:
         sheet_ops.update_status(sheet_id, row_number, status)
         return
 
-    ws = sheet_ops._worksheet(sheet_id)
-    sheet_ops._with_backoff(ws.update, f"N{row_number}", [[status]])
-    sheet_ops._invalidate_rows_cache(sheet_id)
+    raise RuntimeError(_STALE_SHEETS_MODULE.format(name="update_status"))
 
 
 def append_generated_post_rows(sheet_id: str, rows: list[dict]) -> None:
