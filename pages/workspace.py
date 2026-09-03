@@ -7211,38 +7211,41 @@ def _copy_tabs(
                 st.markdown(f'<div id="{anchor_id}" class="workspace-preview-controls-anchor workspace-slide1-ctrl-anchor"></div>', unsafe_allow_html=True)
                 _s1_col_count = 12 if slide_quote else 11
                 s1_cols = st.columns(_s1_col_count, gap="small")
-                with s1_cols[0]:
+                # The row is wider than the column and scrolls, so the two
+                # that get reached for — Quote and the blur toggle — lead it,
+                # and the nudge controls sit behind them.
+                with s1_cols[2]:
                     if st.button("Q-", key=f"workspace_quote_font_down_{row_num}", width="stretch"):
                         st.session_state[slide_quote_font_adjust_key] = max(-40, current_quote_font_adjust - 4)
                         st.session_state["workspace_preview_scroll_target"] = anchor_id
                         _rerun_workspace("Edit")
-                with s1_cols[1]:
+                with s1_cols[3]:
                     if st.button("Q+", key=f"workspace_quote_font_up_{row_num}", width="stretch"):
                         st.session_state[slide_quote_font_adjust_key] = min(40, current_quote_font_adjust + 4)
                         st.session_state["workspace_preview_scroll_target"] = anchor_id
                         _rerun_workspace("Edit")
-                with s1_cols[2]:
+                with s1_cols[4]:
                     if st.button("↑", key=f"workspace_preview_{row_num}_slide1_bg_up", width="stretch"):
                         st.session_state[slide_one_background_adjust_key] = max(-1200, current_slide_one_background_adjust - 48)
                         st.session_state["workspace_preview_scroll_target"] = anchor_id
                         _rerun_workspace("Edit")
-                with s1_cols[3]:
+                with s1_cols[5]:
                     if st.button("↓", key=f"workspace_preview_{row_num}_slide1_bg_down", width="stretch"):
                         st.session_state[slide_one_background_adjust_key] = min(1200, current_slide_one_background_adjust + 48)
                         st.session_state["workspace_preview_scroll_target"] = anchor_id
                         _rerun_workspace("Edit")
-                with s1_cols[4]:
+                with s1_cols[6]:
                     if st.button("A-", key=f"workspace_preview_{row_num}_slide1_font_down", width="stretch"):
                         st.session_state[slide_one_font_adjust_key] = max(-80, current_slide_one_font_adjust - 2)
                         st.session_state["workspace_preview_scroll_target"] = anchor_id
                         _rerun_workspace("Edit")
-                with s1_cols[5]:
+                with s1_cols[7]:
                     if st.button("A+", key=f"workspace_preview_{row_num}_slide1_font_up", width="stretch"):
                         st.session_state[slide_one_font_adjust_key] = min(200, current_slide_one_font_adjust + 2)
                         st.session_state["workspace_preview_scroll_target"] = anchor_id
                         _rerun_workspace("Edit")
                 if slide_quote:
-                    with s1_cols[6]:
+                    with s1_cols[0]:
                         if st.button("Quote", key=f"workspace_quote_edit_{row_num}", width="stretch"):
                             try:
                                 _opts = _generate_quote_options_for_row(prompt_row or {})
@@ -7252,7 +7255,7 @@ def _copy_tabs(
                                 st.session_state["workspace_error"] = f"Row {row_num}: could not generate quotes — {describe_error(_qe)}"
                             st.session_state["workspace_preview_scroll_target"] = anchor_id
                             _rerun_workspace("Edit")
-                    with s1_cols[7]:
+                    with s1_cols[1]:
                         _render_blur_toggle_button(row, row_num)
                     with s1_cols[8]:
                         fit_label = "Fill" if current_slide_one_fit_mode else "Fit"
@@ -7293,7 +7296,7 @@ def _copy_tabs(
                             _open_workspace_slide_action_dialog(row_num, "text1")
                             _rerun_workspace("Edit")
                 else:
-                    with s1_cols[6]:
+                    with s1_cols[0]:
                         if st.button("Quote", key=f"workspace_quote_edit_{row_num}", width="stretch"):
                             try:
                                 _opts = _generate_quote_options_for_row(prompt_row or {})
@@ -7303,7 +7306,7 @@ def _copy_tabs(
                                 st.session_state["workspace_error"] = f"Row {row_num}: could not generate quotes — {describe_error(_qe)}"
                             st.session_state["workspace_preview_scroll_target"] = anchor_id
                             _rerun_workspace("Edit")
-                    with s1_cols[7]:
+                    with s1_cols[1]:
                         _render_blur_toggle_button(row, row_num)
                     with s1_cols[8]:
                         fit_label = "Fill" if current_slide_one_fit_mode else "Fit"
