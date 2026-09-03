@@ -3071,7 +3071,13 @@ def _blurred_article_thumbnail(
     try:
         save_original_thumbnail(GOOGLE_SHEET_ID, int(row_number), original_link)
     except Exception:
-        pass
+        return blurred_link
+    # The session's copy of the map is read once, at startup, so a row ingested
+    # in an open session would still offer Blur — and blurring again would save
+    # the blurred copy over the sharp original it is meant to restore.
+    originals = st.session_state.get("workspace_original_thumbnails")
+    if originals is not None:
+        originals[str(int(row_number))] = original_link
     return blurred_link
 
 
