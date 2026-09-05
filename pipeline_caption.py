@@ -500,17 +500,35 @@ def generate_carousel_copy(row: dict) -> dict[str, str]:
     return generate_carousel_copy_with_model(row, model="gpt-4o")
 
 
-def _article_domain_name(row: dict) -> str:
-    """Extract domain.com from the article URL, e.g. thehill.com."""
-    url = (row.get("Instagram URL") or "").strip()
+_DOMAIN_RE = re.compile(r"^[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)+$")
+
+
+def article_outlet_name(username: str, url: str) -> str:
+    """The outlet to credit for an article, e.g. thehill.com.
+
+    Ingest saves the outlet the text was actually read from as the row's Source
+    Username, so that is the one the post quotes. It is the link's own domain
+    unless the link could not be read and another outlet's coverage stood in for
+    it. The link's domain is the fallback for a row with no outlet saved.
+    """
+    outlet = (username or "").strip().lstrip("@").lower()
+    if _DOMAIN_RE.match(outlet):
+        return outlet
     try:
-        host = urlparse(url).hostname or ""
+        host = urlparse((url or "").strip()).hostname or ""
         domain = re.sub(r"^www\.", "", host).lower()
         if domain:
             return domain
     except Exception:
         pass
-    return (row.get("Source Username") or "").strip()
+    return (username or "").strip()
+
+
+def _article_domain_name(row: dict) -> str:
+    return article_outlet_name(
+        row.get("Source Username") or "",
+        row.get("Instagram URL") or "",
+    )
 
 
 def _carousel_display_name(row: dict) -> str:

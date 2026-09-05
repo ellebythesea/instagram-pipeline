@@ -635,15 +635,21 @@ needs the text by hand. See [Pasting article text by hand](#pasting-article-text
 
 When step 3 supplies the text:
 
-- `Instagram URL` and the `Comment LINK` CTA keep the link you pasted, so the post
-  still promotes your source.
+- `Instagram URL` keeps the link you pasted, so the row's identity does not move.
+- The `Comment LINK` CTA in the caption points at the article that was actually
+  read, so readers land on a page they can open rather than the one that failed.
+  A `Top Comment` you already filled in is still left alone.
 - `Source Username` becomes the outlet the text actually came from (for example
-  `apnews.com`), so attribution stays honest.
+  `apnews.com`), so attribution stays honest. Slide copy credits that outlet too,
+  and it is the name shown on slide 1 when the slide falls back to a domain
+  instead of a topic label.
 - The app shows a notice naming the outlet and the alternate URL; `run_pipeline.py`
   prints the same line.
 
 The payload carries `alternate_source: True`, `source_url` (the article that was
 read) and `requested_url` (the link you pasted) if you need them elsewhere.
+`article_source.article_link(payload)` returns the link a caption should use — the
+read article when there is one, the pasted link otherwise.
 
 Everything here needs `SERPER_API_KEY`. Without it, the chain stops after step 2
 and the row goes straight to the paste step below.

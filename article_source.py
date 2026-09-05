@@ -810,6 +810,16 @@ def _run_article_source_worker(url: str, mode: str, timeout_seconds: int) -> dic
     raise RuntimeError(f"{error_name}{status_label}: {message}")
 
 
+def article_link(payload: dict) -> str:
+    """The link a caption should point readers at for this article payload.
+
+    Normally the pasted link. When that link could not be read and the text came
+    from another outlet covering the same story, it is that outlet's article, so
+    the post links to the piece it was actually written from.
+    """
+    return (payload.get("source_url") or payload.get("url") or "").strip()
+
+
 def fetch_article_source(url: str) -> dict:
     try:
         return _run_article_source_worker(url, "full", _ARTICLE_TIMEOUT_SECONDS)

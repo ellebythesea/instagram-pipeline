@@ -26,7 +26,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from article_source import fetch_article_source
+from article_source import article_link, fetch_article_source
 from caption import transcribe_video
 from config import GOOGLE_DRIVE_FOLDER_ID, GOOGLE_DRIVE_SCREENSHOTS_SUBFOLDER, GOOGLE_SHEET_ID
 from drive import (
@@ -198,7 +198,13 @@ def _build_read_cta(link: str) -> str:
     return f"Comment LINK (on instagram) and we will DM you the link to {_clean_public_url(link)}"
 
 
-def _row_caption_inputs(row: dict) -> dict:
+def _row_caption_inputs(row: dict, read_link: str = "") -> dict:
+    """Caption inputs for a row.
+
+    ``read_link`` is the article the text was actually read from, which differs
+    from the pasted link only when that link could not be read and another
+    outlet's coverage stood in for it.
+    """
     url = (row.get("Instagram URL") or "").strip()
     username = (row.get("Source Username") or "").strip()
     context = (row.get("Caption Context") or "").strip()
@@ -210,7 +216,7 @@ def _row_caption_inputs(row: dict) -> dict:
     if not top and _is_instagram_url(url):
         top = _build_watch_cta(username or speaker, url)
     elif not top and _is_article_url(url):
-        top = _build_read_cta(url)
+        top = _build_read_cta(read_link or url)
     return {
         "Caption Context": context,
         "Speaker Name": speaker,
@@ -349,7 +355,7 @@ def _ingest_row(row: dict) -> dict:
             if article.get("alternate_source"):
                 print(
                     f"    could not read {url[:60]}; using coverage from "
-                    f"{article.get('domain', '')} — {article.get('source_url', '')}"
+                    f"{article.get('domain', '')} — {article_link(article)}"
                 )
             article_source_text = (
                 (article.get("source_text") or "").strip()
@@ -364,6 +370,7 @@ def _ingest_row(row: dict) -> dict:
                 "thumbnail_link": _article_thumbnail_link(article.get("image_url", ""), row.get("row_number"), article_username),
                 "original_caption": article_source_text,
                 "transcript": article_source_text,
+                "source_url": article_link(article) or url,
                 "status": "ingested",
             }
         if _row_is_reel(row):
@@ -381,6 +388,7 @@ def _ingest_row(row: dict) -> dict:
             "thumbnail_link": uploaded["thumbnail_link"],
             "original_caption": data["original_caption"],
             "transcript": data["transcript"],
+            "source_url": url,
             "status": "ingested",
         }
     except Exception as e:
@@ -390,12 +398,13 @@ def _ingest_row(row: dict) -> dict:
                 "username": urlparse(url).netloc.replace("www.", ""),
                 "media_type": "article", "photo_count": "",
                 "media_link": "", "thumbnail_link": "", "original_caption": "",
-                "transcript": "", "status": f"{NEEDS_SOURCE_PREFIX}: {describe_error(e)}",
+                "transcript": "", "source_url": url,
+                "status": f"{NEEDS_SOURCE_PREFIX}: {describe_error(e)}",
             }
         return {
             "username": "", "media_type": "", "photo_count": "",
             "media_link": "", "thumbnail_link": "", "original_caption": "",
-            "transcript": "", "status": f"error: {e}",
+            "transcript": "", "source_url": url, "status": f"error: {e}",
         }
     finally:
         if tmp_dir:
@@ -471,7 +480,7 @@ def _ingest_and_caption_row(sheet_id: str, row: dict) -> bool:
             "Source Username": result["username"],
             "Media Type": result["media_type"],
         }
-        inputs = _row_caption_inputs(enriched_row)
+        inputs = _row_caption_inputs(enriched_row, read_link=result.get("source_url", ""))
         update_metadata(
             sheet_id, row_num,
             inputs["Caption Context"], inputs["Speaker Name"],
