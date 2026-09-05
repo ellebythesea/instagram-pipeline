@@ -6304,6 +6304,23 @@ def _render_reel_preview_controls(
     )
 
 
+def _render_delete_row_button(row_num: int, prompt_row: dict, key: str) -> None:
+    """The "Delete row" button a content tab carries at its foot.
+
+    Pushed well down the tab so it is never what a hurried click lands on. The
+    row goes to the Safe to Delete tab, so a mistake here is recoverable.
+    """
+    st.markdown("<div style='padding-top:100px'></div>", unsafe_allow_html=True)
+    if st.button("Delete row", key=key, width="stretch"):
+        try:
+            _delete_workspace_row(prompt_row)
+        except Exception as e:
+            st.session_state["workspace_error"] = f"Row {row_num}: could not move row to Safe to Delete - {describe_error(e)}"
+        else:
+            st.session_state["workspace_success"] = f"Row {row_num}: moved to the Safe to Delete tab."
+        _rerun_workspace("Edit")
+
+
 def _render_reel_video_tab(
     row_num: int,
     username: str,
@@ -7051,19 +7068,9 @@ def _copy_tabs(
             username,
         )
         if prompt_row:
-            st.markdown("<div style='padding-top:100px'></div>", unsafe_allow_html=True)
-            if st.button(
-                "Delete row",
-                key=f"workspace_caption_delete_{row_num}",
-                width="stretch",
-            ):
-                try:
-                    _delete_workspace_row(prompt_row)
-                except Exception as e:
-                    st.session_state["workspace_error"] = f"Row {row_num}: could not move row to Safe to Delete - {describe_error(e)}"
-                else:
-                    st.session_state["workspace_success"] = f"Row {row_num}: moved to the Safe to Delete tab."
-                _rerun_workspace("Edit")
+            _render_delete_row_button(
+                row_num, prompt_row, f"workspace_caption_delete_{row_num}"
+            )
     elif selected_content_tab == "Original":
         _tab_copy_preview(original_preview)
         # An uploaded video has no Instagram URL but still has a transcript to copy.
@@ -7094,6 +7101,10 @@ def _copy_tabs(
             _cell_text(st.session_state.get(f"workspace_speaker_row_{row_num}", speaker_name)).strip(),
             _cell_text((prompt_row or {}).get("Reel Drive Link")).strip(),
         )
+        if prompt_row:
+            _render_delete_row_button(
+                row_num, prompt_row, f"workspace_reel_delete_{row_num}"
+            )
     elif selected_content_tab == "Headlines":
         _render_reel_lines_headlines_tab(
             _reel_lines_row_headlines(prompt_row or {}),
@@ -7570,19 +7581,9 @@ def _copy_tabs(
             st.caption("Custom link text")
             st.code(top_comment or "(none)", language=None)
         if (slide_text1 or "").strip() and prompt_row:
-            st.markdown("<div style='padding-top:100px'></div>", unsafe_allow_html=True)
-            if st.button(
-                "Delete row",
-                key=f"workspace_slides_delete_{row_num}",
-                width="stretch",
-            ):
-                try:
-                    _delete_workspace_row(prompt_row)
-                except Exception as e:
-                    st.session_state["workspace_error"] = f"Row {row_num}: could not move row to Safe to Delete - {describe_error(e)}"
-                else:
-                    st.session_state["workspace_success"] = f"Row {row_num}: moved to the Safe to Delete tab."
-                _rerun_workspace("Edit")
+            _render_delete_row_button(
+                row_num, prompt_row, f"workspace_slides_delete_{row_num}"
+            )
 
 
 def _icon_copy_button(label: str, value: str) -> None:
