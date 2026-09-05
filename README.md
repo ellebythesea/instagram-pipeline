@@ -640,7 +640,9 @@ When step 3 supplies the text:
   read, so readers land on a page they can open rather than the one that failed.
   A `Top Comment` you already filled in is still left alone.
 - `Source Username` becomes the outlet the text actually came from (for example
-  `apnews.com`), so attribution stays honest.
+  `apnews.com`), so attribution stays honest. Slide copy credits that outlet too,
+  and it is the name shown on slide 1 when the slide falls back to a domain
+  instead of a topic label.
 - The app shows a notice naming the outlet and the alternate URL; `run_pipeline.py`
   prints the same line.
 

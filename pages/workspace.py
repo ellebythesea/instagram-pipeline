@@ -7211,11 +7211,12 @@ def _copy_tabs(
                 else current_speaker_name
             )
         elif is_article_row:
-            # Article with no manual name: topic label (never an @), else domain.
-            _article_domain = urlparse(source_url).netloc.lower().removeprefix("www.") if source_url else ""
+            # Article with no manual name: topic label (never an @), else the
+            # outlet the text was read from, which is the link's own domain
+            # unless another outlet's coverage stood in for an unreadable link.
             slide_handle = (
                 pipeline_caption_ops.normalize_slide_name(slide_name, "article")
-                or _article_domain
+                or pipeline_caption_ops.article_outlet_name(username, source_url)
             )
         else:
             # Post/reel with no manual name: credit the creator with an @handle.
