@@ -1074,9 +1074,12 @@ def _get_apify_client_class():
 
 
 def _fetch_article_source_data(url: str) -> dict:
-    from article_source import fetch_article_source
+    from article_source import article_link, fetch_article_source
 
     data = fetch_article_source(url)
+    # The link the text was actually read from: the pasted one, unless it could
+    # not be read and another outlet's coverage stood in for it.
+    data["source_url"] = article_link(data) or url
     if data.get("alternate_source"):
         # The pasted link could not be read, so the text came from another outlet
         # covering the same story. Say so instead of swapping it in silently.
@@ -2907,6 +2910,7 @@ def _fetch_link_data(url: str) -> dict:
         post = _fetch_post_data(url)
         return {
             "url": url,
+            "link": url,
             "username": post.get("username", ""),
             "source_text": (post.get("original_caption") or "").strip(),
             "is_instagram": True,
@@ -2919,6 +2923,9 @@ def _fetch_link_data(url: str) -> dict:
     )
     return {
         "url": article.get("url", url),
+        # Where the text was read from, which the CTA links to: the pasted link
+        # unless another outlet's coverage stood in for an unreadable one.
+        "link": article.get("source_url", "") or article.get("url", url),
         "username": "",
         "display_name": article.get("domain", ""),
         "source_text": article_source_text,
@@ -4358,7 +4365,7 @@ def _apply_top_comment_to_caption(
     return bool(caption)
 
 
-def _current_row_caption_inputs(row: dict) -> dict:
+def _current_row_caption_inputs(row: dict, read_link: str = "") -> dict:
     current_context = st.session_state.get(
         _workspace_key(row, "context"),
         row.get("Caption Context", ""),
@@ -4384,7 +4391,9 @@ def _current_row_caption_inputs(row: dict) -> dict:
     if not current_top and _is_instagram_url(url):
         current_top = _build_watch_cta(current_username or current_speaker, url)
     elif not current_top and _is_article_url(url):
-        current_top = _build_read_cta(url)
+        # read_link is the article the text was actually read from, which is the
+        # pasted link unless that one could not be read.
+        current_top = _build_read_cta(read_link or url)
 
     return {
         "Caption Context": current_context,
@@ -7974,14 +7983,17 @@ def _process_pending_rows_from_sheet() -> int:
                     result["transcript"],
                     result["status"],
                 )
-                existing_inputs = _current_row_caption_inputs(row)
+                # The link the material came from, which differs from the pasted
+                # link when an unreadable article was sourced from another outlet.
+                read_url = result.get("source_url", "") or _cell_text(row.get("Instagram URL")).strip()
+                existing_inputs = _current_row_caption_inputs(row, read_link=read_url)
                 sheet_top_comment = _cell_text(row.get("Top Comment", "")).strip()
                 row_url = _cell_text(row.get("Instagram URL")).strip()
                 if result["status"] == "ingested":
                     if result["media_type"] == "article" and not existing_inputs["Caption Context"].strip():
                         existing_inputs["Caption Context"] = result["original_caption"]
                     if result["media_type"] == "article":
-                        default_top_comment = _build_read_cta(row_url) if not sheet_top_comment else sheet_top_comment
+                        default_top_comment = _build_read_cta(read_url) if not sheet_top_comment else sheet_top_comment
                     elif _is_instagram_url(row_url):
                         default_top_comment = _build_watch_cta(result["username"], row_url)
                     else:
@@ -8117,7 +8129,8 @@ def _process_single_url_to_editor(url: str, required_hashtags: str = "") -> tupl
     default_top_comment = ""
     row_url = _cell_text(row.get("Instagram URL")).strip()
     if result["media_type"] == "article":
-        default_top_comment = _build_read_cta(row_url)
+        # Points at the outlet the text was read from, not at a link nobody could open.
+        default_top_comment = _build_read_cta(result.get("source_url", "") or row_url)
     elif _is_instagram_url(row_url):
         default_top_comment = _build_watch_cta(result["username"], row_url)
 
@@ -8193,7 +8206,12 @@ def _split_row_video_into_segments(row_num: int, mode: str = "fill") -> bool:
 
 
 def _ingest_row(row: dict) -> dict:
-    """Process one row through ingest and return sheet fields."""
+    """Process one row through ingest and return sheet fields.
+
+    ``source_url`` is the link the material was actually read from. It is the
+    pasted link for everything except an article whose own page could not be
+    read, where it is the outlet the story was sourced from instead.
+    """
     url = row["Instagram URL"].strip()
     tmp_dir = None
     try:
@@ -8212,6 +8230,7 @@ def _ingest_row(row: dict) -> dict:
                 "thumbnail_link": _upload_article_thumbnail(article.get("image_url", ""), row.get("row_number"), article_username),
                 "original_caption": article_source_text,
                 "transcript": article_source_text,
+                "source_url": article.get("source_url", "") or url,
                 "status": "ingested",
             }
         if _row_is_reel(row):
@@ -8230,6 +8249,7 @@ def _ingest_row(row: dict) -> dict:
             "thumbnail_link": uploaded["thumbnail_link"],
             "original_caption": data["original_caption"],
             "transcript": data["transcript"],
+            "source_url": url,
             "status": "ingested",
         }
     except Exception as e:
@@ -8244,6 +8264,7 @@ def _ingest_row(row: dict) -> dict:
                 "thumbnail_link": "",
                 "original_caption": "",
                 "transcript": "",
+                "source_url": url,
                 "status": f"{NEEDS_SOURCE_PREFIX}: {describe_error(e)}",
             }
         return {
@@ -8254,6 +8275,7 @@ def _ingest_row(row: dict) -> dict:
             "thumbnail_link": "",
             "original_caption": "",
             "transcript": "",
+            "source_url": url,
             "status": f"error: {describe_error(e)}",
         }
     finally:
@@ -8756,13 +8778,14 @@ def _apply_pasted_article_source(
     pasted_text: str,
     username: str = "",
     thumbnail_link: str = "",
+    read_link: str = "",
 ) -> None:
     """Save article text onto a row that could not be read, pasted or re-fetched.
 
     Writes the text as both the original caption and the transcript so every
     downstream step — caption, slide copy, quotes — has the same source, and
     promotes the row out of the needs-source state. A successful re-read passes
-    the outlet and thumbnail it found; a hand paste leaves them to the row.
+    the outlet, thumbnail and link it found; a hand paste leaves them to the row.
     """
     text = _cell_text(pasted_text).strip()
     if not text:
@@ -8782,7 +8805,7 @@ def _apply_pasted_article_source(
     updated_row = dict(row)
     updated_row["Original Caption"] = text
     updated_row["Transcript"] = text
-    inputs = _current_row_caption_inputs(updated_row)
+    inputs = _current_row_caption_inputs(updated_row, read_link=read_link)
 
     update_ingest_result(
         GOOGLE_SHEET_ID,
@@ -8837,6 +8860,7 @@ def _retry_article_source(row: dict) -> None:
         text,
         username=domain,
         thumbnail_link=_upload_article_thumbnail(article.get("image_url", ""), row_num, domain),
+        read_link=_cell_text(article.get("source_url")).strip(),
     )
 
 
@@ -9887,7 +9911,7 @@ def _run_home_mode(mode: str, urls: list[str], org_hashtag: str) -> tuple[str, l
             final_caption = _build_footered_caption(source_text, footer_username)
             if not source.get("is_instagram", False):
                 final_caption = _build_footered_caption(
-                    f"{source_text}\n\n{_build_read_cta(source['url'])}",
+                    f"{source_text}\n\n{_build_read_cta(source.get('link') or source['url'])}",
                     "",
                 )
             results.append(
@@ -9919,7 +9943,7 @@ def _run_home_mode(mode: str, urls: list[str], org_hashtag: str) -> tuple[str, l
                 "Top Comment": (
                     _build_watch_cta(source.get("username", ""), source["url"])
                     if source.get("is_instagram", False)
-                    else _build_read_cta(source["url"])
+                    else _build_read_cta(source.get("link") or source["url"])
                 ),
             }
             if not row["Original Caption"]:
