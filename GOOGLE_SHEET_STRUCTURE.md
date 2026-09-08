@@ -72,8 +72,8 @@ the video's own filename, and each file inside says what it is:
 ```
 voteinorout_250828_reel.mp4          <- the source, left where it is
 voteinorout_250828_reel/             <- everything made from it
-    60_voteinorout_250828_reel_01.mp4    60-second cuts, cropped to 4:5
-    60_voteinorout_250828_reel_02.mp4
+    60_01_voteinorout_250828_reel.mp4    60-second cuts, cropped to 4:5
+    60_02_voteinorout_250828_reel.mp4
     fit_voteinorout_250828_reel.mp4      letterboxed into 4:5, numbered too when it runs past a minute
     reel_voteinorout_250828_reel.mp4     the 5:4-with-headline reel
 ```

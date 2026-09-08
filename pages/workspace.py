@@ -3743,15 +3743,17 @@ def _upload_preview_pngs(
 def _split_segment_name(stem: str, mode: str, index: int, total: int) -> str:
     """What a split segment is called inside the source file's folder.
 
-    Prefix says what it is and the stem ties it to the video it came from, so a
-    folder reads 60_clip_01, 60_clip_02, fit_clip, reel_clip. The 60-second cuts
-    are a series and always carry a number; a fit that came out whole does not
-    need one.
+    Prefix says what it is, the number orders the series, and the stem ties it
+    to the video it came from, so a folder reads 60_01_clip, 60_02_clip,
+    fit_clip, reel_clip. The number goes up front so a long series sorts and
+    reads in order without the eye having to travel past the stem; the
+    60-second cuts are a series and always carry one, while a fit that came out
+    whole does not need it.
     """
     prefix = "fit" if mode == "fit" else "60"
     if mode == "fit" and total <= 1:
         return f"fit_{stem}.mp4"
-    return f"{prefix}_{stem}_{index + 1:02d}.mp4"
+    return f"{prefix}_{index + 1:02d}_{stem}.mp4"
 
 
 def _ensure_preview_folder(row_num: int, username: str, handle_text: str, media_link: str) -> tuple[str, str, str]:
