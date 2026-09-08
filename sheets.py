@@ -61,6 +61,9 @@ _RETRY_MAX_DELAY_SECONDS = 32.0
 # instead of hanging the run.
 _REQUEST_TIMEOUT_SECONDS = (10.0, 60.0)
 _STATUS_IN_MESSAGE_RE = re.compile(r"\[(\d{3})\]")
+# Long enough to carry Google's own reason, short enough that the whole line
+# stays readable in a hosting log pane that does not wrap.
+_MAX_LOGGED_ERROR_CHARS = 300
 
 _EXPECTED_HEADERS = [
     "Instagram URL",
@@ -206,27 +209,52 @@ def _is_retryable(exc: Exception) -> bool:
     return any(fragment in message for fragment in _RETRYABLE_MESSAGE_FRAGMENTS)
 
 
+def _error_summary(exc: Exception) -> str:
+    """One bounded line naming why a call failed, status code first.
+
+    The status and Google's own reason lead the string because a hosting log
+    pane clips a long line rather than wrapping it, and the cause is the part
+    worth reading. gspread's APIError carries the whole JSON body, newlines
+    included, so it is flattened and capped here.
+    """
+    message = " ".join(str(exc).split()) or exc.__class__.__name__
+    if len(message) > _MAX_LOGGED_ERROR_CHARS:
+        message = message[: _MAX_LOGGED_ERROR_CHARS - 1] + "…"
+    status = _error_status_code(exc)
+    if status is None or f"[{status}]" in message:
+        return message
+    return f"[{status}] {message}"
+
+
 def _with_backoff(fn, *args, **kwargs):
     """Call `fn`, retrying transient Sheets API failures with jittered backoff."""
     delay = _RETRY_BASE_DELAY_SECONDS
-    last_attempt = _RETRY_ATTEMPTS - 1
+    retries = _RETRY_ATTEMPTS - 1
+    name = getattr(fn, "__name__", repr(fn))
     for attempt in range(_RETRY_ATTEMPTS):
         try:
-            return fn(*args, **kwargs)
+            result = fn(*args, **kwargs)
         except Exception as e:
-            if attempt == last_attempt or not _is_retryable(e):
+            if not _is_retryable(e):
+                _log.error("Sheets %s: %s — not retryable", name, _error_summary(e))
+                raise
+            if attempt == retries:
+                _log.error(
+                    "Sheets %s: %s — gave up after %d attempts",
+                    name, _error_summary(e), _RETRY_ATTEMPTS,
+                )
                 raise
             sleep_for = delay + random.uniform(0, 0.5)
             _log.warning(
-                "Sheets API call %s failed (attempt %d/%d): %s — retrying in %.1fs",
-                getattr(fn, "__name__", repr(fn)),
-                attempt + 1,
-                _RETRY_ATTEMPTS,
-                e,
-                sleep_for,
+                "Sheets %s: %s — retry %d/%d in %.1fs",
+                name, _error_summary(e), attempt + 1, retries, sleep_for,
             )
             time.sleep(sleep_for)
             delay = min(delay * 2, _RETRY_MAX_DELAY_SECONDS)
+        else:
+            if attempt:
+                _log.info("Sheets %s: succeeded on attempt %d", name, attempt + 1)
+            return result
 
 
 def _workbook(sheet_id: str):
