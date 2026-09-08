@@ -588,26 +588,6 @@ def _paint_reel_fit_panel(canvas) -> None:
     )
 
 
-def _audio_codec(src_path: str) -> str:
-    """The source's audio codec, or "" when it has no audio or cannot be read."""
-    try:
-        result = subprocess.run(
-            [
-                _crop_ffprobe_path(), "-v", "error",
-                "-select_streams", "a:0",
-                "-show_entries", "stream=codec_name",
-                "-of", "csv=p=0",
-                src_path,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=MEDIA_PROBE_TIMEOUT_SECONDS,
-        )
-    except Exception:
-        return ""
-    return (result.stdout or "").strip().lower() if result.returncode == 0 else ""
-
-
 def _compose_reel_video(
     src_path: str,
     output_path: str,
@@ -662,9 +642,10 @@ def _compose_reel_video(
         "-filter_complex", filter_complex,
         "-map", "[out]", "-map", "1:a?",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
-        # Nothing here touches the audio, so re-encoding it only costs time.
-        # Anything that is not already AAC still has to be converted for MP4.
-        *(["-c:a", "copy"] if _audio_codec(src_path) == "aac" else ["-c:a", "aac", "-b:a", "192k"]),
+        # Copying the source audio stream keeps its original timestamps against
+        # a video track that starts fresh at zero, which QuickTime/iOS refuse
+        # to play even though ffprobe and VLC don't mind - so re-encode always.
+        "-c:a", "aac", "-b:a", "192k",
         "-movflags", "+faststart",
         "-shortest",
         output_path,
