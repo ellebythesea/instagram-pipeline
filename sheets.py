@@ -24,6 +24,8 @@ import logging
 import os
 import random
 import re
+import socket
+import threading
 import time
 from datetime import datetime, timezone
 from json import JSONDecodeError
@@ -32,6 +34,7 @@ from zoneinfo import ZoneInfo
 import gspread
 import requests
 from google.oauth2.service_account import Credentials
+from requests.adapters import HTTPAdapter
 
 from config import GOOGLE_SERVICE_ACCOUNT_JSON, GOOGLE_WORKSHEET_NAME
 
@@ -58,8 +61,16 @@ _RETRY_ATTEMPTS = 6
 _RETRY_BASE_DELAY_SECONDS = 1.0
 _RETRY_MAX_DELAY_SECONDS = 32.0
 # (connect, read) timeout so a stalled request fails fast enough to be retried
-# instead of hanging the run.
-_REQUEST_TIMEOUT_SECONDS = (10.0, 60.0)
+# instead of hanging the run. The read half is deliberately far below what a
+# healthy Sheets response needs: the failure this guards against is a socket
+# that never answers at all, and every second spent waiting on one is a second
+# the page is frozen. A response that genuinely needs longer than this does not
+# exist for a sheet of this size.
+_REQUEST_TIMEOUT_SECONDS = (10.0, 30.0)
+# Ceiling on one call including every retry. Without it a run of read timeouts
+# costs the read timeout six times over plus backoff — minutes of a page that
+# looks hung — and the caller never gets to show an error.
+_RETRY_TOTAL_DEADLINE_SECONDS = 180.0
 _STATUS_IN_MESSAGE_RE = re.compile(r"\[(\d{3})\]")
 # Long enough to carry Google's own reason, short enough that the whole line
 # stays readable in a hosting log pane that does not wrap.
@@ -102,6 +113,9 @@ _workbooks: dict[str, gspread.Spreadsheet] = {}
 _worksheets: dict[tuple[str, str], gspread.Worksheet] = {}
 _rows_cache: dict[tuple[str, str], tuple[float, list[dict]]] = {}
 _ROWS_CACHE_TTL_SECONDS = 120.0
+_metadata_cache: dict[str, tuple[float, list[tuple[str, str]]]] = {}
+_METADATA_CACHE_TTL_SECONDS = 60.0
+_metadata_lock = threading.Lock()
 _METADATA_SHEET_TITLE = "__workspace_meta__"
 _LAST_SCHEDULED_TIMES_KEY = "last_scheduled_times"
 _SLIDE_CTA_OPTIONS_KEY = "slide_cta_options"
@@ -144,6 +158,61 @@ _SUBSTACK_LEGACY_HEADERS_NO_NAME = [
 ]
 
 
+def _keepalive_socket_options() -> list[tuple[int, int, int]]:
+    """Socket options that keep an idle HTTPS connection answering.
+
+    A Streamlit app sits idle between clicks, and an idle connection through a
+    NAT or load balancer gets silently dropped at the far end. The pooled socket
+    still looks open, so the next Sheets call writes its request into a
+    connection nothing is listening to and waits out the whole read timeout.
+    Keepalive probes surface the dead peer while the app is idle instead.
+    """
+    options = [(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1),
+               (socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)]
+    # Not every platform names all three; whichever exist are worth setting.
+    for name, value in (("TCP_KEEPIDLE", 60), ("TCP_KEEPINTVL", 20), ("TCP_KEEPCNT", 3)):
+        option = getattr(socket, name, None)
+        if option is not None:
+            options.append((socket.IPPROTO_TCP, option, value))
+    return options
+
+
+class _KeepAliveAdapter(HTTPAdapter):
+    """HTTPAdapter that hands the keepalive options down to the pool manager."""
+
+    def init_poolmanager(self, *args, **kwargs):
+        kwargs.setdefault("socket_options", _keepalive_socket_options())
+        return super().init_poolmanager(*args, **kwargs)
+
+
+def _client_session() -> requests.Session | None:
+    """The requests session gspread is using, wherever this version keeps it."""
+    if _client is None:
+        return None
+    for holder in (getattr(_client, "http_client", None), _client):
+        session = getattr(holder, "session", None)
+        if isinstance(session, requests.Session):
+            return session
+    return None
+
+
+def _drop_pooled_connections() -> None:
+    """Throw away pooled sockets so the next attempt dials a fresh one.
+
+    Retrying a read timeout over the same pool can hand the retry the very
+    socket that just failed to answer, which is how one dead connection turns
+    into a run of identical timeouts. Closing the session clears its pools; the
+    session itself stays usable and reconnects on the next request.
+    """
+    session = _client_session()
+    if session is None:
+        return
+    try:
+        session.close()
+    except Exception as exc:  # never let cleanup mask the error being retried
+        _log.debug("Could not reset the Sheets connection pool: %s", exc)
+
+
 def _get_client() -> gspread.Client:
     global _client
     if _client is not None:
@@ -172,6 +241,9 @@ def _get_client() -> gspread.Client:
     # can hang indefinitely and never reach the retry path.
     if hasattr(_client, "set_timeout"):
         _client.set_timeout(_REQUEST_TIMEOUT_SECONDS)
+    session = _client_session()
+    if session is not None:
+        session.mount("https://", _KeepAliveAdapter())
     return _client
 
 
@@ -190,17 +262,22 @@ def _error_status_code(exc: Exception) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def _is_retryable(exc: Exception) -> bool:
-    if isinstance(exc, (gspread.WorksheetNotFound, gspread.SpreadsheetNotFound)):
-        return False
-    if isinstance(
+def _is_connection_level(exc: Exception) -> bool:
+    """True when the socket, not the API, is what failed."""
+    return isinstance(
         exc,
         (
             requests.exceptions.ConnectionError,
             requests.exceptions.Timeout,
             requests.exceptions.ChunkedEncodingError,
         ),
-    ):
+    )
+
+
+def _is_retryable(exc: Exception) -> bool:
+    if isinstance(exc, (gspread.WorksheetNotFound, gspread.SpreadsheetNotFound)):
+        return False
+    if _is_connection_level(exc):
         return True
     status = _error_status_code(exc)
     if status is not None:
@@ -231,6 +308,7 @@ def _with_backoff(fn, *args, **kwargs):
     delay = _RETRY_BASE_DELAY_SECONDS
     retries = _RETRY_ATTEMPTS - 1
     name = getattr(fn, "__name__", repr(fn))
+    started = time.monotonic()
     for attempt in range(_RETRY_ATTEMPTS):
         try:
             result = fn(*args, **kwargs)
@@ -245,6 +323,15 @@ def _with_backoff(fn, *args, **kwargs):
                 )
                 raise
             sleep_for = delay + random.uniform(0, 0.5)
+            elapsed = time.monotonic() - started
+            if elapsed + sleep_for >= _RETRY_TOTAL_DEADLINE_SECONDS:
+                _log.error(
+                    "Sheets %s: %s — gave up after %.0fs",
+                    name, _error_summary(e), elapsed,
+                )
+                raise
+            if _is_connection_level(e):
+                _drop_pooled_connections()
             _log.warning(
                 "Sheets %s: %s — retry %d/%d in %.1fs",
                 name, _error_summary(e), attempt + 1, retries, sleep_for,
@@ -946,15 +1033,67 @@ def update_carousel_fields(
     _invalidate_rows_cache(sheet_id)
 
 
+def _invalidate_metadata_cache(sheet_id: str) -> None:
+    _metadata_cache.pop(sheet_id, None)
+
+
+def _metadata_pairs(sheet_id: str, force: bool = False) -> list[tuple[str, str]]:
+    """Every key/value row of the metadata tab, read at most once per TTL.
+
+    Three unrelated getters each want one key out of this two-column tab, and
+    Streamlit re-runs the whole page on every widget change, so reading it per
+    getter turned a lookup of a handful of cells into a burst of identical
+    whole-tab requests. The lock matters as much as the TTL: each browser
+    session runs the script in its own thread, and on a cold cache every one of
+    them would otherwise fire its own copy of the same request at once.
+
+    `force` is for the read-modify-write paths, where acting on a cached row
+    number could overwrite the wrong key.
+    """
+    def _fresh(entry) -> bool:
+        return bool(entry) and time.monotonic() - entry[0] <= _METADATA_CACHE_TTL_SECONDS
+
+    if not force and _fresh(_metadata_cache.get(sheet_id)):
+        return list(_metadata_cache[sheet_id][1])
+    with _metadata_lock:
+        # Re-check: another thread may have filled the cache while we queued.
+        if not force and _fresh(_metadata_cache.get(sheet_id)):
+            return list(_metadata_cache[sheet_id][1])
+        ws = _metadata_worksheet(sheet_id)
+        # A2:B rather than the whole grid. The tab is a fixed key/value list, so
+        # get_all_records' header parsing bought nothing and read every column.
+        values = _with_backoff(ws.get_values, "A2:B") or []
+        pairs = [
+            ((row[0] if row else "").strip(), (row[1] if len(row) > 1 else "").strip())
+            for row in values
+        ]
+        _metadata_cache[sheet_id] = (time.monotonic(), pairs)
+        return list(pairs)
+
+
+def _metadata_row(sheet_id: str, keys: set[str], force: bool = False):
+    """(row number, key, value) of the first metadata row matching `keys`."""
+    for index, (key, value) in enumerate(_metadata_pairs(sheet_id, force), start=2):
+        if key in keys:
+            return index, key, value
+    return None
+
+
+def _write_metadata_row(sheet_id: str, key: str, value: str, row_number: int | None) -> None:
+    """Overwrite an existing metadata row, or append one when there is none."""
+    ws = _metadata_worksheet(sheet_id)
+    if row_number is None:
+        _with_backoff(ws.append_row, [key, value], value_input_option="USER_ENTERED")
+    else:
+        _with_backoff(ws.update, f"A{row_number}:B{row_number}", [[key, value]])
+    _invalidate_metadata_cache(sheet_id)
+
+
 def get_last_scheduled_times(sheet_id: str) -> list[str]:
     """Return the last saved workspace scheduled times from metadata."""
-    ws = _metadata_worksheet(sheet_id)
-    records = _with_backoff(ws.get_all_records, default_blank="")
-    for record in records:
-        key = (record.get("key", "") or "").strip()
-        if key not in {"last_scheduled_time", _LAST_SCHEDULED_TIMES_KEY}:
-            continue
-        raw_value = (record.get("value", "") or "").strip()
+    found = _metadata_row(sheet_id, {"last_scheduled_time", _LAST_SCHEDULED_TIMES_KEY})
+    if found is not None:
+        _, key, raw_value = found
         if not raw_value:
             return []
         if key == "last_scheduled_time":
@@ -971,40 +1110,31 @@ def get_last_scheduled_times(sheet_id: str) -> list[str]:
 
 def update_last_scheduled_times(sheet_id: str, scheduled_times: list[str]) -> None:
     """Persist the last assigned workspace scheduled times in metadata."""
-    ws = _metadata_worksheet(sheet_id)
     payload = json.dumps([value.strip() for value in scheduled_times if value.strip()])
-    records = _with_backoff(ws.get_all_records, default_blank="")
-    for index, record in enumerate(records, start=2):
-        key = (record.get("key", "") or "").strip()
-        if key in {"last_scheduled_time", _LAST_SCHEDULED_TIMES_KEY}:
-            _with_backoff(ws.update, f"A{index}:B{index}", [[_LAST_SCHEDULED_TIMES_KEY, payload]])
-            return
-    _with_backoff(ws.append_row, [_LAST_SCHEDULED_TIMES_KEY, payload], value_input_option="USER_ENTERED")
+    found = _metadata_row(sheet_id, {"last_scheduled_time", _LAST_SCHEDULED_TIMES_KEY}, force=True)
+    _write_metadata_row(sheet_id, _LAST_SCHEDULED_TIMES_KEY, payload,
+                        found[0] if found else None)
 
 
 def get_slide_cta_options(sheet_id: str) -> dict[str, str]:
     """Return saved slide 3 CTA choices keyed by sheet row number."""
-    ws = _metadata_worksheet(sheet_id)
-    records = _with_backoff(ws.get_all_records, default_blank="")
-    for record in records:
-        key = (record.get("key", "") or "").strip()
-        if key != _SLIDE_CTA_OPTIONS_KEY:
-            continue
-        raw_value = (record.get("value", "") or "").strip()
-        if not raw_value:
-            return {}
-        try:
-            values = json.loads(raw_value)
-        except json.JSONDecodeError:
-            return {}
-        if not isinstance(values, dict):
-            return {}
-        return {
-            str(row_number).strip(): str(option).strip()
-            for row_number, option in values.items()
-            if str(row_number).strip() and str(option).strip()
-        }
-    return {}
+    found = _metadata_row(sheet_id, {_SLIDE_CTA_OPTIONS_KEY})
+    if found is None:
+        return {}
+    raw_value = found[2]
+    if not raw_value:
+        return {}
+    try:
+        values = json.loads(raw_value)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(values, dict):
+        return {}
+    return {
+        str(row_number).strip(): str(option).strip()
+        for row_number, option in values.items()
+        if str(row_number).strip() and str(option).strip()
+    }
 
 
 def update_slide_cta_option(sheet_id: str, row_number: int, option: str) -> None:
@@ -1050,47 +1180,54 @@ def update_quote(sheet_id: str, row_number: int, quote: str) -> None:
     _invalidate_rows_cache(sheet_id)
 
 
+def _decode_thumbnail_map(raw: str) -> dict[str, str]:
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return {str(k): str(v) for k, v in data.items() if k and v} if isinstance(data, dict) else {}
+
+
 def get_original_thumbnails(sheet_id: str) -> dict[str, str]:
     """Return saved pre-blur thumbnail links keyed by row number (as str)."""
-    ws = _metadata_worksheet(sheet_id)
-    records = _with_backoff(ws.get_all_records, default_blank="")
-    for record in records:
-        if (record.get("key", "") or "").strip() != _ORIGINAL_THUMBNAILS_KEY:
-            continue
-        raw = (record.get("value", "") or "").strip()
-        if not raw:
-            return {}
-        try:
-            data = json.loads(raw)
-        except json.JSONDecodeError:
-            return {}
-        return {str(k): str(v) for k, v in data.items() if k and v} if isinstance(data, dict) else {}
-    return {}
+    found = _metadata_row(sheet_id, {_ORIGINAL_THUMBNAILS_KEY})
+    return _decode_thumbnail_map(found[2]) if found else {}
 
 
-def _update_original_thumbnails(sheet_id: str, data: dict) -> None:
-    ws = _metadata_worksheet(sheet_id)
-    payload = json.dumps(data)
-    records = _with_backoff(ws.get_all_records, default_blank="")
-    for index, record in enumerate(records, start=2):
-        if (record.get("key", "") or "").strip() == _ORIGINAL_THUMBNAILS_KEY:
-            _with_backoff(ws.update, f"A{index}:B{index}", [[_ORIGINAL_THUMBNAILS_KEY, payload]])
-            return
-    _with_backoff(ws.append_row, [_ORIGINAL_THUMBNAILS_KEY, payload], value_input_option="USER_ENTERED")
+def _edit_original_thumbnails(sheet_id: str, edit) -> None:
+    """Read the blur map fresh, hand it to `edit`, write it back if it changed.
+
+    One read serves both the map and the row number to write to, and reading
+    past the cache is what keeps two blurs in the same minute from clobbering
+    each other.
+    """
+    found = _metadata_row(sheet_id, {_ORIGINAL_THUMBNAILS_KEY}, force=True)
+    data = _decode_thumbnail_map(found[2]) if found else {}
+    edited = edit(dict(data))
+    if edited is None or edited == data:
+        return
+    _write_metadata_row(sheet_id, _ORIGINAL_THUMBNAILS_KEY, json.dumps(edited),
+                        found[0] if found else None)
 
 
 def save_original_thumbnail(sheet_id: str, row_number: int, link: str) -> None:
     """Persist a row's pre-blur thumbnail link so Unblur can restore it."""
-    data = get_original_thumbnails(sheet_id)
-    data[str(row_number)] = link
-    _update_original_thumbnails(sheet_id, data)
+    def _set(data: dict) -> dict:
+        data[str(row_number)] = link
+        return data
+
+    _edit_original_thumbnails(sheet_id, _set)
 
 
 def clear_original_thumbnail(sheet_id: str, row_number: int) -> None:
     """Remove the stored pre-blur thumbnail link after Unblur is used."""
-    data = get_original_thumbnails(sheet_id)
-    data.pop(str(row_number), None)
-    _update_original_thumbnails(sheet_id, data)
+    def _pop(data: dict) -> dict:
+        data.pop(str(row_number), None)
+        return data
+
+    _edit_original_thumbnails(sheet_id, _pop)
 
 
 def shift_original_thumbnails_after_delete(sheet_id: str, deleted_row_number: int) -> None:
@@ -1099,23 +1236,23 @@ def shift_original_thumbnails_after_delete(sheet_id: str, deleted_row_number: in
     Removes the deleted row's entry and shifts all higher row numbers down by 1
     so blur state stays aligned with the sheet after rows renumber.
     """
-    data = get_original_thumbnails(sheet_id)
-    if not data:
-        # Nothing stored, so nothing to re-key: skip the read-modify-write entirely.
-        return
-    shifted = {}
-    for k, v in data.items():
-        if k == str(deleted_row_number):
-            continue
-        try:
-            n = int(k)
-        except ValueError:
-            shifted[k] = v
-            continue
-        shifted[str(n - 1) if n > deleted_row_number else k] = v
-    if shifted == data:
-        return
-    _update_original_thumbnails(sheet_id, shifted)
+    def _shift(data: dict) -> dict | None:
+        if not data:
+            # Nothing stored, so nothing to re-key.
+            return None
+        shifted = {}
+        for k, v in data.items():
+            if k == str(deleted_row_number):
+                continue
+            try:
+                n = int(k)
+            except ValueError:
+                shifted[k] = v
+                continue
+            shifted[str(n - 1) if n > deleted_row_number else k] = v
+        return shifted
+
+    _edit_original_thumbnails(sheet_id, _shift)
 
 
 def get_fundraising_links(sheet_id: str) -> list[dict[str, str]]:
